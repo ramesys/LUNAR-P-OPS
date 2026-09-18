@@ -1,7 +1,18 @@
 name: clps-lunar-mission-browser
 
 services:
+  kernels:
+    image: clps-lunar-mission-browser-api
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    command: ["clps-fetch-kernels"]
+    volumes:
+      - ./data:/data
+    restart: "no"
+
   api:
+    image: clps-lunar-mission-browser-api
     build:
       context: .
       dockerfile: services/api/Dockerfile
@@ -9,6 +20,9 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/data
+    depends_on:
+      kernels:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
