@@ -1,0 +1,17 @@
+[project]
+name = "clps-pipelines"
+version = "0.1.0"
+description = "One-off data tasks: download SPICE kernels, fetch JPL Horizons golden data."
+requires-python = ">=3.12,<3.13"
+dependencies = ["lunar-core"]
+
+[project.scripts]
+clps-fetch-kernels = "clps_pipelines.fetch_kernels:main"
+clps-fetch-horizons-golden = "clps_pipelines.fetch_horizons_golden:main"
+
+[tool.uv.sources]
+lunar-core = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"

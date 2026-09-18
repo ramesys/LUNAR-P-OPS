@@ -2,7 +2,7 @@
 name = "clps-workspace"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["lunar-core", "clps-api"]
+dependencies = ["lunar-core", "clps-api", "clps-pipelines"]
 
 [dependency-groups]
 dev = [
@@ -16,11 +16,12 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["libs/lunar_core", "services/api"]
+members = ["libs/lunar_core", "services/api", "pipelines"]
 
 [tool.uv.sources]
 lunar-core = { workspace = true }
 clps-api = { workspace = true }
+clps-pipelines = { workspace = true }
 
 [tool.ruff]
 line-length = 100
@@ -34,7 +35,11 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ANN", "RUF"]
 
 [tool.mypy]
 strict = true
-packages = ["lunar_core", "clps_api"]
+packages = ["lunar_core", "clps_api", "clps_pipelines"]
+
+[[tool.mypy.overrides]]
+module = "spiceypy"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["libs/lunar_core/tests", "services/api/tests"]
