@@ -33,6 +33,8 @@ Para la recarga en caliente (sincroniza el código al editar), usa `docker compo
 | `make up` / `make down` | Levanta en segundo plano (espera a que esté *healthy*) / detiene |
 | `make dev` | Levanta con `--watch` |
 | `make fetch-data` | Descarga los kernels SPICE que falten (idempotente) |
+| `make fetch-terrain` | Descarga las ventanas de terreno LOLA de los sitios del catálogo (~5-12 s por sitio) |
+| `make spike-terrain` | Repite la validación del Spike B (mapa PSR de la NASA + comparación entre horizonte plano y con terreno) |
 | `make golden` | Regenera los datos de referencia de JPL Horizons para el test dorado (requiere red) |
 | `make test` | `pytest` (Python, incluye el test dorado) + `vitest` (web), dentro de contenedores |
 | `make lint` | `ruff` + `mypy --strict` / `eslint` + `tsc` |
@@ -64,7 +66,7 @@ docs/                 Brief, roadmap, dominio y ADRs
 
 - **Kernels SPICE (NASA/JPL NAIF):** `naif0012.tls`, `pck00011.tpc`, `moon_pa_de421_1900-2050.bpc`, `moon_080317.tf`, `de440s.bsp`, desde https://naif.jpl.nasa.gov/pub/naif/generic_kernels/ (detalle en el [ADR 0005](docs/adr/0005-spike-a-geometria-y-donde-se-calcula.md)).
 - **Referencia de validación:** JPL Horizons API, https://ssd.jpl.nasa.gov/api/horizons.api.
-- Pendiente (Capa 2): DEM del polo sur de LOLA (PGDA/GSFC). La lista completa está en [docs/brief.md §8](docs/brief.md).
+- **Terreno (Spike B, todavía no integrado en la app):** DEM de LOLA del polo sur (`LDEM_80S_20MPP_ADJ`, `LDEM_60S_240MPP_ADJ`) y mapa de sombra permanente (`LPSR_80S_20MPP_ADJ`), de NASA GSFC PGDA, https://pgda.gsfc.nasa.gov/products/90 (Barker et al. 2023, doi:10.3847/PSJ/acf3e1). Ver el [ADR 0009](docs/adr/0009-spike-b-horizonte-con-terreno.md). La lista completa está en [docs/brief.md §8](docs/brief.md).
 
 ## Licencia
 
