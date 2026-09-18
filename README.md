@@ -2,7 +2,7 @@
 
 Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a partir de la posición del Sol y la Tierra sobre el horizonte, con foco en el potencial de energía solar y las ventanas de comunicación directa con la Tierra (DTE). Proyecto para el **NASA Space Apps Challenge 2026** (desafío #2).
 
-> Estado: **Sprint 2 completado**. La API compara de 2 a 4 sitios de ejemplo en un rango de hasta un año: posiciones del Sol y la Tierra (validadas contra JPL Horizons, error máximo de 0,05″), ventanas de luz y comunicación directa, métricas y ranking. La interfaz llega en el Sprint 3. Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
+> Estado: **MVP (Capa 1) completo, Sprint 3**. En http://localhost:5180 se eligen de 2 a 4 sitios de ejemplo y un rango de hasta un año, y se obtienen una tabla comparativa con ranking, un diagrama de cielo, una línea de tiempo con bandas de luz y comunicación directa, el panel de supuestos y fuentes, y un glosario. Las posiciones del Sol y la Tierra están validadas contra JPL Horizons (error máximo de 0,05″). Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
 
 ## Requisitos
 
