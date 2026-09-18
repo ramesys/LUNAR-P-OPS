@@ -1,0 +1,41 @@
+[project]
+name = "clps-workspace"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["lunar-core", "clps-api"]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.0",
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "ruff>=0.11",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["libs/lunar_core", "services/api"]
+
+[tool.uv.sources]
+lunar-core = { workspace = true }
+clps-api = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ANN", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["ANN201"]
+
+[tool.mypy]
+strict = true
+packages = ["lunar_core", "clps_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["libs/lunar_core/tests", "services/api/tests"]
+addopts = "--import-mode=importlib"
