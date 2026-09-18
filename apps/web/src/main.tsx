@@ -2,6 +2,7 @@ import { createApiClient, type ApiClient } from "@clps/api-client";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import "./styles.css";
 
 const rootElement: HTMLElement | null = document.getElementById("root");
 if (rootElement === null) {

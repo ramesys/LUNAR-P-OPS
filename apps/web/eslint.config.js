@@ -20,6 +20,8 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+      // Project convention: explicit types everywhere, even when inferable from a literal.
+      "@typescript-eslint/no-inferrable-types": "off",
       "@typescript-eslint/explicit-function-return-type": "error",
       "@typescript-eslint/explicit-module-boundary-types": "error",
       "@typescript-eslint/typedef": [
