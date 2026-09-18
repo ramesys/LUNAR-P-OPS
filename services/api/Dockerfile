@@ -14,11 +14,15 @@ WORKDIR /workspace
 COPY pyproject.toml uv.lock .python-version ./
 COPY libs/lunar_core/pyproject.toml libs/lunar_core/
 COPY services/api/pyproject.toml services/api/
+COPY pipelines/pyproject.toml pipelines/
 RUN uv sync --frozen --no-install-workspace
 
 COPY libs/lunar_core libs/lunar_core
 COPY services/api services/api
+COPY pipelines pipelines
 RUN uv sync --frozen
+
+ENV CLPS_DATA_DIR=/data
 
 EXPOSE 8000
 CMD ["uvicorn", "clps_api.main:app", "--host", "0.0.0.0", "--port", "8000", \

@@ -1,4 +1,4 @@
-.PHONY: up dev down logs test test-py test-web lint lint-py lint-web fmt openapi check-openapi
+.PHONY: up dev down logs fetch-data golden test test-py test-web lint lint-py lint-web fmt openapi check-openapi
 
 # Git Bash on Windows rewrites /container/paths into C:/...; harmless elsewhere.
 export MSYS_NO_PATHCONV := 1
@@ -7,6 +7,7 @@ PY_RUN  = docker compose run --rm --no-deps -T \
 	-v ./pyproject.toml:/workspace/pyproject.toml \
 	-v ./libs/lunar_core:/workspace/libs/lunar_core \
 	-v ./services/api:/workspace/services/api \
+	-v ./pipelines:/workspace/pipelines \
 	api
 WEB_RUN = docker compose run --rm --no-deps -T --build \
 	-v ./apps/web/src:/workspace/apps/web/src \
@@ -26,9 +27,15 @@ down:
 logs:
 	docker compose logs -f
 
+fetch-data:
+	$(PY_RUN) clps-fetch-kernels
+
+golden:
+	$(PY_RUN) clps-fetch-horizons-golden libs/lunar_core/tests/golden/horizons_2026.json
+
 test: test-py test-web
 
-test-py:
+test-py: fetch-data
 	$(PY_RUN) pytest -q -p no:cacheprovider
 
 test-web:
