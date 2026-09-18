@@ -11,9 +11,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 
 const SITES: Site[] = [
-  { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "" },
-  { id: "sample-b", name: "Sample B", latitude_deg: -89, longitude_deg: 120, origin: "sample", note: "" },
-  { id: "sample-c", name: "Sample C", latitude_deg: -88.5, longitude_deg: 240, origin: "sample", note: "" },
+  { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "", terrain_available: true },
+  { id: "sample-b", name: "Sample B", latitude_deg: -89, longitude_deg: 120, origin: "sample", note: "", terrain_available: true },
+  { id: "sample-c", name: "Sample C", latitude_deg: -88.5, longitude_deg: 240, origin: "sample", note: "", terrain_available: true },
 ];
 
 const TIMES: string[] = ["2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"];
@@ -34,8 +34,10 @@ function siteResult(site: Site, rank: number, sunFraction: number): SiteResult {
       },
       longest_earth_outage: null,
     },
-    sun: { azimuth_deg: [10, 20], elevation_deg: [-1, 1.5] },
-    earth: { azimuth_deg: [350, 355], elevation_deg: [2, 3] },
+    horizon_model: "terrain",
+    horizon_mask: { azimuth_deg: [0, 90, 180, 270], elevation_deg: [1, 2, 3, 2] },
+    sun: { azimuth_deg: [10, 20], elevation_deg: [-1, 1.5], horizon_deg: [1.1, 1.2] },
+    earth: { azimuth_deg: [350, 355], elevation_deg: [2, 3], horizon_deg: [1.1, 1.05] },
     sun_windows: [
       { start: TIMES[0] ?? "", end: "2026-01-01T02:00:00Z", duration_hours: 2, visible: false, truncated: true },
     ],
@@ -82,6 +84,7 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
 
 afterEach((): void => {
   cleanup();
+  window.history.replaceState(null, "", "/");
 });
 
 describe("App", (): void => {
@@ -103,7 +106,10 @@ describe("App", (): void => {
       end: "2026-04-14T00:00:00.000Z",
       step_minutes: 60,
       observer_height_m: 2,
+      horizon: "terrain",
+      earth_min_clearance_deg: 0,
     });
+    expect(window.location.search).toContain("sites=sample-a%2Csample-b%2Csample-c");
     expect(screen.getByText("Flat local horizon")).toBeDefined();
     expect(screen.getByRole("link", { name: /de440s\.bsp/ })).toBeDefined();
     expect(screen.getByRole("img", { name: /Sky diagram for Sample B/ })).toBeDefined();
@@ -125,5 +131,27 @@ describe("App", (): void => {
     fireEvent.click(screen.getByRole("button", { name: "Compare sites" }));
 
     expect(await screen.findByText("unknown site ids: sample-c")).toBeDefined();
+  });
+
+  it("opens the scenario encoded in a shared URL", async (): Promise<void> => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?sites=sample-b,sample-a,unknown&from=2026-06-01&to=2026-06-07&step=120&height=5&horizon=flat&dte=3",
+    );
+    const requests: AnalysisRequest[] = [];
+    render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+
+    expect(requests[0]).toEqual({
+      site_ids: ["sample-b", "sample-a"],
+      start: "2026-06-01T00:00:00Z",
+      end: "2026-06-08T00:00:00.000Z",
+      step_minutes: 120,
+      observer_height_m: 5,
+      horizon: "flat",
+      earth_min_clearance_deg: 3,
+    });
+    expect(screen.getByRole("combobox", { name: /Horizon/ })).toHaveProperty("value", "flat");
   });
 });

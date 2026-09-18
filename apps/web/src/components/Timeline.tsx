@@ -24,11 +24,16 @@ interface TimelineProps {
   onHover: (index: number | null) => void;
 }
 
-function linePath(times: readonly number[], series: BodySeries, x: Scale, y: Scale): string {
+/** Degrees above the local horizon (flat or terrain) in the body's direction. */
+function clearance(series: BodySeries): number[] {
+  return series.elevation_deg.map((e: number, i: number): number => e - (series.horizon_deg[i] ?? 0));
+}
+
+function linePath(times: readonly number[], values: readonly number[], x: Scale, y: Scale): string {
   return times
     .map((t: number, i: number): string => {
-      const elevation: number = series.elevation_deg[i] ?? 0;
-      return `${i === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(elevation).toFixed(1)}`;
+      const value: number = values[i] ?? 0;
+      return `${i === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(value).toFixed(1)}`;
     })
     .join("");
 }
@@ -67,19 +72,23 @@ export function Timeline({
   const t0: number = timeMs[0] ?? 0;
   const tEnd: number = Date.parse(rangeEnd);
   const x: Scale = useMemo((): Scale => linearScale([t0, tEnd], [LEFT, WIDTH - RIGHT]), [t0, tEnd]);
+  const sunClearance: number[] = useMemo((): number[] => clearance(focused.sun), [focused]);
+  const earthClearance: number[] = useMemo((): number[] => clearance(focused.earth), [focused]);
   const [yMin, yMax] = useMemo(
-    (): [number, number] =>
-      elevationDomain([...focused.sun.elevation_deg, ...focused.earth.elevation_deg]),
-    [focused],
+    (): [number, number] => elevationDomain([...sunClearance, ...earthClearance]),
+    [sunClearance, earthClearance],
   );
   const y: Scale = useMemo(
     (): Scale => linearScale([yMin, yMax], [TOP + PLOT_HEIGHT, TOP]),
     [yMin, yMax],
   );
-  const sunPath: string = useMemo((): string => linePath(timeMs, focused.sun, x, y), [timeMs, focused, x, y]);
+  const sunPath: string = useMemo(
+    (): string => linePath(timeMs, sunClearance, x, y),
+    [timeMs, sunClearance, x, y],
+  );
   const earthPath: string = useMemo(
-    (): string => linePath(timeMs, focused.earth, x, y),
-    [timeMs, focused, x, y],
+    (): string => linePath(timeMs, earthClearance, x, y),
+    [timeMs, earthClearance, x, y],
   );
 
   const bandsTop: number = TOP + PLOT_HEIGHT + SECTION_GAP;
@@ -110,7 +119,7 @@ export function Timeline({
       className="chart"
       viewBox={`0 0 ${WIDTH.toString()} ${height.toString()}`}
       role="img"
-      aria-label={`Timeline: elevation of the Sun and the Earth at ${focused.site.name}, and sunlight and direct-to-Earth periods for every site`}
+      aria-label={`Timeline: height of the Sun and the Earth above the ${focused.horizon_model} horizon at ${focused.site.name}, and sunlight and direct-to-Earth periods for every site`}
       onMouseMove={handleMove}
       onMouseLeave={(): void => {
         onHover(null);
@@ -128,7 +137,7 @@ export function Timeline({
         ),
       )}
       <text className="axis-title" x={0} y={TOP + 10}>
-        Elevation
+        Above horizon
       </text>
       <text className="axis-title muted" x={0} y={TOP + 24}>
         {focused.site.name}

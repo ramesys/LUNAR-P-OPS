@@ -1,4 +1,4 @@
-import type { SiteResult } from "@clps/api-client";
+import type { HorizonMask, SiteResult } from "@clps/api-client";
 import { useMemo, type JSX, type MouseEvent } from "react";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "../lib/scale.ts";
 import { splitAtAzimuthWrap, type SkyPoint } from "../lib/sky.ts";
@@ -50,7 +50,11 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
   );
   const [yMin, yMax] = useMemo(
     (): [number, number] =>
-      elevationDomain([...result.sun.elevation_deg, ...result.earth.elevation_deg]),
+      elevationDomain([
+        ...result.sun.elevation_deg,
+        ...result.earth.elevation_deg,
+        ...(result.horizon_mask?.elevation_deg ?? []),
+      ]),
     [result],
   );
   const y: Scale = useMemo(
@@ -67,6 +71,21 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
       toPath(splitAtAzimuthWrap(result.earth.azimuth_deg, result.earth.elevation_deg), x, y),
     [result, x, y],
   );
+  const terrainPath: string | null = useMemo((): string | null => {
+    const mask: HorizonMask | null = result.horizon_mask;
+    if (mask === null) {
+      return null;
+    }
+    const first: number = mask.elevation_deg[0] ?? 0;
+    const outline: string = [...mask.azimuth_deg, 360]
+      .map((azimuth: number, i: number): string => {
+        const elevation: number = mask.elevation_deg[i] ?? first;
+        return `L${x(azimuth).toFixed(1)},${y(elevation).toFixed(1)}`;
+      })
+      .join("");
+    const bottom: string = (HEIGHT - MARGIN.bottom).toFixed(1);
+    return `M${x(0).toFixed(1)},${bottom}${outline}L${x(360).toFixed(1)},${bottom}Z`;
+  }, [result, x, y]);
   const yTicks: number[] = niceTicks(yMin, yMax, 6);
 
   function handleMove(event: MouseEvent<SVGSVGElement>): void {
@@ -110,19 +129,21 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
       className="chart"
       viewBox={`0 0 ${WIDTH.toString()} ${HEIGHT.toString()}`}
       role="img"
-      aria-label={`Sky diagram for ${result.site.name}: azimuth and elevation of the Sun and the Earth`}
+      aria-label={`Sky diagram for ${result.site.name}: azimuth and elevation of the Sun and the Earth over the ${result.horizon_model === "terrain" ? "terrain" : "flat"} horizon`}
       onMouseMove={handleMove}
       onMouseLeave={(): void => {
         onHover(null);
       }}
     >
-      <rect
-        className="below-horizon"
-        x={MARGIN.left}
-        y={y(0)}
-        width={WIDTH - MARGIN.left - MARGIN.right}
-        height={HEIGHT - MARGIN.bottom - y(0)}
-      />
+      {terrainPath === null && (
+        <rect
+          className="below-horizon"
+          x={MARGIN.left}
+          y={y(0)}
+          width={WIDTH - MARGIN.left - MARGIN.right}
+          height={HEIGHT - MARGIN.bottom - y(0)}
+        />
+      )}
       {yTicks.map(
         (tick: number): JSX.Element => (
           <g key={`y${tick.toString()}`}>
@@ -143,15 +164,27 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
           </g>
         ),
       )}
-      <line className="horizon" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(0)} y2={y(0)} />
-      <text className="horizon-label" x={x(112.5)} y={y(0) + 14} textAnchor="middle">
-        Horizon (flat) · below it: not visible
-      </text>
+      {terrainPath === null ? (
+        <>
+          <line className="horizon" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(0)} y2={y(0)} />
+          <text className="horizon-label" x={x(112.5)} y={y(0) + 14} textAnchor="middle">
+            Horizon (flat) · below it: not visible
+          </text>
+        </>
+      ) : (
+        <>
+          <line className="grid zero" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(0)} y2={y(0)} />
+          <text className="horizon-label" x={WIDTH - MARGIN.right - 4} y={y(0) - 4} textAnchor="end">
+            0°
+          </text>
+        </>
+      )}
       <text className="axis-title" x={MARGIN.left} y={HEIGHT - 4}>
         Azimuth (clockwise from north)
       </text>
       <path className="track sun" d={sunPath} />
       <path className="track earth" d={earthPath} />
+      {terrainPath !== null && <path className="terrain" d={terrainPath} />}
       {sunMarker !== null && (
         <circle className="marker sun" cx={x(sunMarker.azimuthDeg)} cy={y(sunMarker.elevationDeg)} r={5} />
       )}

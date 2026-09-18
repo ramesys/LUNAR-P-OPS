@@ -1,7 +1,13 @@
 import type { Site } from "@clps/api-client";
 import type { ChangeEvent, JSX, SyntheticEvent } from "react";
 import { formatLatLon } from "../lib/format.ts";
-import { MAX_SITES, STEP_OPTIONS, toggleSite, type ScenarioForm as Form } from "../lib/scenario.ts";
+import {
+  MAX_EARTH_CLEARANCE_DEG,
+  MAX_SITES,
+  STEP_OPTIONS,
+  toggleSite,
+  type ScenarioForm as Form,
+} from "../lib/scenario.ts";
 import { InfoTip } from "./InfoTip.tsx";
 
 interface ScenarioFormProps {
@@ -47,6 +53,11 @@ export function ScenarioForm({
               />
               <span className="site-name">{site.name}</span>
               {site.origin === "sample" && <span className="chip">sample</span>}
+              {!site.terrain_available && (
+                <span className="chip chip-muted" title="Terrain data not downloaded: a flat horizon is used">
+                  flat only
+                </span>
+              )}
               <span className="muted coords">
                 {formatLatLon(site.latitude_deg, site.longitude_deg)}
               </span>
@@ -99,8 +110,39 @@ export function ScenarioForm({
         </label>
         <label>
           <span>
+            Horizon{" "}
+            <InfoTip text="Terrain uses NASA LOLA elevation data to find which hills and crater walls block the Sun and the Earth. Flat ignores the terrain (useful to see how much it matters)." />
+          </span>
+          <select
+            value={form.horizon}
+            onChange={(event: ChangeEvent<HTMLSelectElement>): void => {
+              onChange({ ...form, horizon: event.target.value === "flat" ? "flat" : "terrain" });
+            }}
+          >
+            <option value="terrain">Terrain (LOLA)</option>
+            <option value="flat">Flat</option>
+          </select>
+        </label>
+        <label>
+          <span>
+            Min. Earth elevation (°){" "}
+            <InfoTip text="Direct-to-Earth needs the Earth at least this many degrees above the horizon (antenna clearance). 0° means just above it." />
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={MAX_EARTH_CLEARANCE_DEG}
+            step={0.5}
+            value={form.earthMinClearanceDeg}
+            onChange={(event: ChangeEvent<HTMLInputElement>): void => {
+              onChange({ ...form, earthMinClearanceDeg: Number(event.target.value) });
+            }}
+          />
+        </label>
+        <label>
+          <span>
             Observer height (m){" "}
-            <InfoTip text="Height of the solar panel or antenna above the ground. With the current flat horizon its effect is negligible; it matters once terrain is modeled." />
+            <InfoTip text="Height of the solar panel or antenna above the ground. A higher viewpoint sees over nearby terrain; with a flat horizon its effect is negligible." />
           </span>
           <input
             type="number"

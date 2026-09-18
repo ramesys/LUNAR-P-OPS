@@ -10,7 +10,13 @@ import { Timeline } from "./components/Timeline.tsx";
 import { WindowsTable } from "./components/WindowsTable.tsx";
 import { HealthStatus } from "./HealthStatus.tsx";
 import { describeApiError } from "./lib/apiError.ts";
-import { toRequest, validateForm, type ScenarioForm as Form } from "./lib/scenario.ts";
+import {
+  formFromSearch,
+  formToSearch,
+  toRequest,
+  validateForm,
+  type ScenarioForm as Form,
+} from "./lib/scenario.ts";
 
 const DEFAULT_SITE_COUNT: number = 3;
 const DEFAULT_RANGE_DAYS: number = 30;
@@ -29,7 +35,15 @@ function isoDate(date: Date): string {
 export function defaultForm(now: Date): Form {
   const start: Date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const end: Date = new Date(start.getTime() + (DEFAULT_RANGE_DAYS - 1) * 24 * 60 * 60 * 1000);
-  return { siteIds: [], startDate: isoDate(start), endDate: isoDate(end), stepMinutes: 60, observerHeightM: 2 };
+  return {
+    siteIds: [],
+    startDate: isoDate(start),
+    endDate: isoDate(end),
+    stepMinutes: 60,
+    observerHeightM: 2,
+    horizon: "terrain",
+    earthMinClearanceDeg: 0,
+  };
 }
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
@@ -46,6 +60,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
       const requestId: number = latestRequest.current + 1;
       latestRequest.current = requestId;
       setStatus({ kind: "loading" });
+      window.history.replaceState(null, "", formToSearch(current));
       try {
         const { data, error, response } = await apiClient.POST("/api/analysis", {
           body: toRequest(current),
@@ -82,17 +97,22 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           return;
         }
         setSites(data);
-        const initial: Form = {
+        const fallback: Form = {
           ...defaultForm(now),
           siteIds: data.slice(0, DEFAULT_SITE_COUNT).map((s: Site): string => s.id),
         };
+        const initial: Form = formFromSearch(
+          window.location.search,
+          fallback,
+          data.map((s: Site): string => s.id),
+        );
         setForm(initial);
         void runAnalysis(initial);
       })
       .catch((caught: unknown): void => {
         setStatus({ kind: "error", message: caught instanceof Error ? caught.message : String(caught) });
       });
-    // Load the catalog once on mount.
+    // Load the catalog (and any scenario in the URL) once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -110,7 +130,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         </p>
         <p className="notice" role="note">
           The sites below are <strong>placeholder samples</strong> with arbitrary coordinates, not official
-          CLPS landing sites. The horizon is modeled as flat; real terrain is not included yet.
+          CLPS landing sites. Horizons use NASA LOLA terrain where it is available. The page address keeps
+          your selection, so you can share it.
         </p>
       </header>
 
@@ -165,9 +186,15 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
               <span>
                 <span className="swatch earth" aria-hidden="true" /> Earth
               </span>
-              <span>
-                <span className="swatch below" aria-hidden="true" /> Below the horizon
-              </span>
+              {focused.horizon_model === "terrain" ? (
+                <span>
+                  <span className="swatch terrain" aria-hidden="true" /> Terrain horizon (LOLA)
+                </span>
+              ) : (
+                <span>
+                  <span className="swatch below" aria-hidden="true" /> Below the flat horizon
+                </span>
+              )}
             </div>
             <HoverReadout times={result.times} focused={focused} hoverIndex={hoverIndex} />
             <h3 className="chart-title">Sky diagram · {focused.site.name}</h3>

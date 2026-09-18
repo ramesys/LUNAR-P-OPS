@@ -13,6 +13,8 @@
   --sun: #eb6834;
   --earth: #2a78d6;
   --below: rgba(11, 11, 11, 0.05);
+  --terrain: rgba(98, 94, 86, 0.55);
+  --terrain-edge: #6f6b62;
   --notice-bg: #fff4e0;
   --notice-border: #eda100;
   --error: #d03b3b;
@@ -36,6 +38,8 @@
     --sun: #d95926;
     --earth: #3987e5;
     --below: rgba(255, 255, 255, 0.04);
+    --terrain: rgba(150, 145, 132, 0.45);
+    --terrain-edge: #a8a396;
     --notice-bg: #2b2412;
     --notice-border: #c98500;
     --error: #e66767;
@@ -150,6 +154,11 @@ h3 {
   border: 1px solid var(--notice-border);
   color: var(--text-secondary);
   margin-left: 6px;
+}
+
+.chip-muted {
+  border-color: var(--axis);
+  color: var(--text-muted);
 }
 
 .form-row {
@@ -360,6 +369,12 @@ tr.focused {
   background: var(--earth);
 }
 
+.swatch.terrain {
+  height: 12px;
+  background: var(--terrain);
+  border: 1px solid var(--terrain-edge);
+}
+
 .swatch.below {
   height: 12px;
   background: var(--below);
@@ -392,6 +407,16 @@ tr.focused {
 .chart .horizon {
   stroke: var(--axis);
   stroke-width: 1.5;
+}
+
+.chart .terrain {
+  fill: var(--terrain);
+  stroke: var(--terrain-edge);
+  stroke-width: 1.5;
+}
+
+.chart .grid.zero {
+  stroke: var(--axis);
 }
 
 .chart .below-horizon {

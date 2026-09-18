@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import { describeApiError } from "./apiError.ts";
 import { formatHours, formatLatLon, formatPercent, formatWindowDuration } from "./format.ts";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "./scale.ts";
-import { toRequest, toggleSite, validateForm, type ScenarioForm } from "./scenario.ts";
+import {
+  formFromSearch,
+  formToSearch,
+  toRequest,
+  toggleSite,
+  validateForm,
+  type ScenarioForm,
+} from "./scenario.ts";
 import { splitAtAzimuthWrap, type SkyPoint } from "./sky.ts";
 
 const window: VisibilityWindow = {
@@ -20,6 +27,8 @@ const form: ScenarioForm = {
   endDate: "2026-01-31",
   stepMinutes: 60,
   observerHeightM: 2,
+  horizon: "terrain",
+  earthMinClearanceDeg: 0,
 };
 
 describe("format", (): void => {
@@ -70,6 +79,8 @@ describe("scenario", (): void => {
       end: "2026-02-01T00:00:00.000Z",
       step_minutes: 60,
       observer_height_m: 2,
+      horizon: "terrain",
+      earth_min_clearance_deg: 0,
     });
   });
 
@@ -84,11 +95,29 @@ describe("scenario", (): void => {
     ]);
     expect(validateForm({ ...form, endDate: "2027-01-01" })).toEqual([]);
     expect(validateForm({ ...form, observerHeightM: -1 })).toEqual(["Observer height must be 0 m or more."]);
+    expect(validateForm({ ...form, earthMinClearanceDeg: 11 })).toEqual([
+      "Minimum Earth elevation must be between 0° and 10°.",
+    ]);
   });
 
   it("toggles site selection", (): void => {
     expect(toggleSite(["a"], "b")).toEqual(["a", "b"]);
     expect(toggleSite(["a", "b"], "a")).toEqual(["b"]);
+  });
+});
+
+describe("shareable URL", (): void => {
+  const known: string[] = ["sample-a", "sample-b", "sample-c"];
+
+  it("round-trips a scenario through the query string", (): void => {
+    const custom: ScenarioForm = { ...form, horizon: "flat", earthMinClearanceDeg: 2.5, stepMinutes: 360 };
+    expect(formFromSearch(formToSearch(custom), form, known)).toEqual(custom);
+  });
+
+  it("keeps fallbacks for missing or malformed values and drops unknown sites", (): void => {
+    const parsed: ScenarioForm = formFromSearch("?sites=nope,sample-c&from=bad&step=7&horizon=x&dte=abc", form, known);
+    expect(parsed).toEqual({ ...form, siteIds: ["sample-c"] });
+    expect(formFromSearch("", form, known)).toEqual(form);
   });
 });
 

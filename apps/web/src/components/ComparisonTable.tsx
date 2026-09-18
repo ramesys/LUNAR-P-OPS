@@ -33,6 +33,10 @@ export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTablePr
               Longest DTE gap{" "}
               <InfoTip text="Longest continuous period with the Earth below the horizon (no direct communication)." />
             </th>
+            <th scope="col">
+              Horizon{" "}
+              <InfoTip text="Terrain: NASA LOLA elevation data. Flat: no terrain (requested, or no terrain data for this site)." />
+            </th>
             <th scope="col">Location</th>
           </tr>
         </thead>
@@ -61,6 +65,7 @@ export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTablePr
                 <td className="num">
                   {formatWindowDuration(result.metrics.longest_earth_outage)}
                 </td>
+                <td>{result.horizon_model === "terrain" ? "Terrain" : "Flat"}</td>
                 <td className="muted">
                   {formatLatLon(result.site.latitude_deg, result.site.longitude_deg)}
                 </td>
