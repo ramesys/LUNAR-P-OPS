@@ -17,6 +17,7 @@
 | **VisibilityWindow** | Intervalo continuo de muestras en que un Body está visible (o no) desde un Site | inicio < fin; precisión de ±1 paso; `truncated` si toca el borde del rango |
 | **SiteMetrics** | Métricas de un Site en un Scenario: % de tiempo con Sol, % con Tierra, ventanas de luz, oscuridad y DTE, oscuridad continua más larga (marcada "≥" si está truncada) | Los porcentajes son fracciones de las mismas muestras |
 | **Ranking** | Orden de los Sites de un Scenario por % de tiempo con Sol, de mayor a menor | Los empates conservan el orden del catálogo |
+| **PoleMap** | Mapa 2D del polo en proyección polar estereográfica LOLA: extensión calculada desde el catálogo, grilla de paralelos y meridianos, y posición de cada Site | Contiene todos los sitios del catálogo con margen; el meridiano 0° hacia arriba (ADR 0012) |
 | **Assumption / DataSource** | Supuestos de cálculo y fuentes citadas en la UI (RF-09) | Todo cálculo referencia los suyos |
 
 En el código (`libs/lunar_core`): `Site` (`sites.py`), `SurfacePoint` (la parte geométrica de Observer), `Body` y `HorizontalPosition` (`geometry.py`), las reglas de visibilidad (`visibility.py`), `VisibilityWindow` (`windows.py`), `Scenario`, `SiteMetrics` y el ranking (`analysis.py`), y `Assumption` y `DataSource` (`assumptions.py`), `HorizonModel` (`analysis.py`), `HorizonMask` (`horizon.py`) y `TerrainGrid` (`terrain.py`).
