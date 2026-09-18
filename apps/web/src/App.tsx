@@ -1,16 +1,19 @@
-import type { AnalysisResponse, ApiClient, Site, SiteResult } from "@clps/api-client";
+import type { AnalysisResponse, ApiClient, PoleMap as PoleMapData, Site, SiteResult } from "@clps/api-client";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { Glossary } from "./components/Glossary.tsx";
 import { ScenarioForm } from "./components/ScenarioForm.tsx";
+import { PoleMap } from "./components/PoleMap.tsx";
 import { HealthStatus } from "./HealthStatus.tsx";
 import { describeApiError } from "./lib/apiError.ts";
 import {
   formFromSearch,
   formToSearch,
+  MAX_SITES,
   toRequest,
+  toggleSite,
   validateForm,
   type ScenarioForm as Form,
 } from "./lib/scenario.ts";
@@ -45,6 +48,7 @@ export function defaultForm(now: Date): Form {
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [sites, setSites] = useState<Site[]>([]);
+  const [poleMap, setPoleMap] = useState<PoleMapData | null>(null);
   const [form, setForm] = useState<Form>((): Form => defaultForm(now));
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -87,6 +91,14 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
 
   useEffect((): void => {
     apiClient
+      .GET("/api/map")
+      .then(({ data }): void => {
+        setPoleMap(data ?? null);
+      })
+      .catch((): void => {
+        setPoleMap(null);
+      });
+    apiClient
       .GET("/api/sites")
       .then(({ data, error, response }): void => {
         if (data === undefined) {
@@ -114,6 +126,9 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   }, []);
 
   const errors: string[] = validateForm(form);
+  const ranks: Map<string, number> = new Map<string, number>(
+    (result?.sites ?? []).map((s: SiteResult): [string, number] => [s.site.id, s.rank]),
+  );
   const focused: SiteResult | undefined =
     result?.sites.find((s: SiteResult): boolean => s.site.id === focusedId) ?? result?.sites[0];
 
@@ -132,16 +147,33 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         </p>
       </header>
 
-      <ScenarioForm
-        sites={sites}
-        form={form}
-        errors={errors}
-        busy={status.kind === "loading"}
-        onChange={setForm}
-        onSubmit={(): void => {
-          void runAnalysis(form);
-        }}
-      />
+      <div className="setup">
+        <ScenarioForm
+          sites={sites}
+          form={form}
+          errors={errors}
+          busy={status.kind === "loading"}
+          onChange={setForm}
+          onSubmit={(): void => {
+            void runAnalysis(form);
+          }}
+        />
+        {poleMap !== null && (
+          <section className="card" aria-labelledby="map-title">
+            <h2 id="map-title">South pole map</h2>
+            <PoleMap
+              map={poleMap}
+              sites={sites}
+              selectedIds={form.siteIds}
+              ranks={ranks}
+              maxSelected={MAX_SITES}
+              onToggle={(siteId: string): void => {
+                setForm({ ...form, siteIds: toggleSite(form.siteIds, siteId) });
+              }}
+            />
+          </section>
+        )}
+      </div>
 
       {status.kind === "error" && (
         <p className="error-banner" role="alert">

@@ -601,3 +601,104 @@ a {
 .page-footer p {
   margin: 0;
 }
+
+/* Setup: form + pole map side by side on wide screens */
+.setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+
+.setup > * {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .setup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pole-map {
+  margin: 0;
+}
+
+.pole-map figcaption {
+  font-size: 0.8rem;
+  margin-top: 6px;
+}
+
+.chart.map {
+  cursor: default;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.map-empty {
+  fill: var(--surface-2);
+}
+
+.chart .graticule {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1;
+}
+
+.chart .graticule-label {
+  fill: #ffffff;
+  font-size: 17px;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 4px;
+}
+
+.chart .pole-mark {
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.chart .map-label {
+  fill: #ffffff;
+  font-size: 21px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 4px;
+  pointer-events: none;
+}
+
+.map-site {
+  cursor: pointer;
+  outline: none;
+}
+
+.map-site .hit {
+  fill: transparent;
+}
+
+.map-site .dot {
+  fill: #ffffff;
+  stroke: #0b0b0b;
+  stroke-width: 3;
+}
+
+.map-site.selected .dot {
+  fill: var(--accent);
+  stroke: #ffffff;
+}
+
+.map-site.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.map-site:focus-visible .hit {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.chart .scale-bar line {
+  stroke: #ffffff;
+  stroke-width: 4;
+}

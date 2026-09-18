@@ -19,6 +19,8 @@ const SITE: Site = {
   origin: "sample",
   note: "",
   terrain_available: false,
+  map_x_m: 0,
+  map_y_m: 15_000,
 };
 
 const series: { azimuth_deg: number[]; elevation_deg: number[]; horizon_deg: number[] } = {

@@ -11,9 +11,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 
 const SITES: Site[] = [
-  { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "", terrain_available: true },
-  { id: "sample-b", name: "Sample B", latitude_deg: -89, longitude_deg: 120, origin: "sample", note: "", terrain_available: true },
-  { id: "sample-c", name: "Sample C", latitude_deg: -88.5, longitude_deg: 240, origin: "sample", note: "", terrain_available: true },
+  { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "", terrain_available: true, map_x_m: 0, map_y_m: 15000 },
+  { id: "sample-b", name: "Sample B", latitude_deg: -89, longitude_deg: 120, origin: "sample", note: "", terrain_available: true, map_x_m: 0, map_y_m: 15000 },
+  { id: "sample-c", name: "Sample C", latitude_deg: -88.5, longitude_deg: 240, origin: "sample", note: "", terrain_available: true, map_x_m: 0, map_y_m: 15000 },
 ];
 
 const TIMES: string[] = ["2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"];
@@ -68,6 +68,16 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
       const path: string = new URL(input.url).pathname;
       if (path === "/api/sites") {
         return Response.json(SITES);
+      }
+      if (path === "/api/map") {
+        return Response.json({
+          half_width_m: 100_000,
+          image_url: null,
+          parallels: [],
+          meridians: [],
+          source_name: "LOLA hillshade",
+          source_url: "https://pgda.gsfc.nasa.gov/products/90",
+        });
       }
       if (path === "/api/analysis") {
         const body: AnalysisRequest = (await input.json()) as AnalysisRequest;
@@ -153,5 +163,15 @@ describe("App", (): void => {
       earth_min_clearance_deg: 3,
     });
     expect(screen.getByRole("combobox", { name: /Horizon/ })).toHaveProperty("value", "flat");
+  });
+
+  it("selects sites from the pole map", async (): Promise<void> => {
+    render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+
+    const checkboxC: HTMLElement = screen.getByRole("checkbox", { name: /Sample C/ });
+    expect(checkboxC).toHaveProperty("checked", true);
+    fireEvent.click(await screen.findByRole("button", { name: /^Sample C,/ }));
+    expect(checkboxC).toHaveProperty("checked", false);
   });
 });
