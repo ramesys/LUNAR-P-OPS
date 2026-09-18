@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
+import numpy as np
 import pytest
 from lunar_core.analysis import (
     Scenario,
@@ -10,6 +11,7 @@ from lunar_core.analysis import (
     analyze,
     rank,
 )
+from lunar_core.horizon import HorizonMask
 from lunar_core.sites import Site, load_catalog
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -55,7 +57,7 @@ def test_sample_times_cover_half_open_range_with_partial_last_step():
 
 def fake_analysis(site: Site, sun_fraction: float) -> SiteAnalysis:
     metrics = SiteMetrics(sun_fraction, 0.0, None, None)
-    return SiteAnalysis(site, [], [], [], [], metrics)
+    return SiteAnalysis(site, None, [], [], [], [], [], [], metrics)
 
 
 def test_rank_orders_by_sun_fraction_and_keeps_catalog_order_on_ties():
@@ -82,3 +84,57 @@ def test_analyze_produces_consistent_windows_and_metrics():
         assert 0.0 <= analysis.metrics.earth_fraction <= 1.0
     fractions = [a.metrics.sun_fraction for a in result.ranked]
     assert fractions == sorted(fractions, reverse=True)
+
+
+def uniform_mask(elevation_deg: float) -> HorizonMask:
+    return HorizonMask(
+        azimuths_deg=np.arange(0.0, 360.0, 90.0), elevations_deg=np.full(4, elevation_deg)
+    )
+
+
+def two_week_scenario(**overrides: object) -> Scenario:
+    base: dict[str, object] = {"sites": (A, B), "start": T0, "end": T0 + timedelta(days=14)}
+    return Scenario(**{**base, **overrides})  # type: ignore[arg-type]
+
+
+def by_id(result: ScenarioResult) -> dict[str, SiteAnalysis]:
+    return {a.site.id: a for a in result.ranked}
+
+
+@pytest.mark.usefixtures("kernels_loaded")
+def test_terrain_masks_block_or_clear_the_sky_and_missing_masks_fall_back_to_flat():
+    flat = by_id(analyze(two_week_scenario(horizon_model="flat")))
+    result = by_id(analyze(two_week_scenario(), {A.id: uniform_mask(45.0)}))
+
+    walled = result[A.id]
+    assert walled.horizon_mask is not None
+    assert walled.metrics.sun_fraction == 0.0
+    assert walled.metrics.earth_fraction == 0.0
+    assert walled.sun_horizon_deg == [45.0] * len(walled.sun)
+    fallback = result[B.id]
+    assert fallback.horizon_mask is None
+    assert fallback.metrics == flat[B.id].metrics
+    assert set(fallback.earth_horizon_deg) == {0.0}
+
+    open_sky = by_id(analyze(two_week_scenario(), {A.id: uniform_mask(-5.0)}))[A.id]
+    assert open_sky.metrics.sun_fraction >= flat[A.id].metrics.sun_fraction
+    assert open_sky.metrics.earth_fraction >= flat[A.id].metrics.earth_fraction
+
+
+@pytest.mark.usefixtures("kernels_loaded")
+def test_flat_model_ignores_masks_and_earth_clearance_reduces_dte():
+    ignored = by_id(analyze(two_week_scenario(horizon_model="flat"), {A.id: uniform_mask(45.0)}))
+    assert ignored[A.id].horizon_mask is None
+    assert ignored[A.id].metrics.sun_fraction > 0.0
+
+    base = by_id(analyze(two_week_scenario(horizon_model="flat")))[A.id]
+    strict = by_id(analyze(two_week_scenario(horizon_model="flat", earth_min_clearance_deg=3.0)))[
+        A.id
+    ]
+    assert strict.metrics.earth_fraction < base.metrics.earth_fraction
+    assert strict.metrics.sun_fraction == base.metrics.sun_fraction
+
+
+def test_earth_clearance_is_validated():
+    with pytest.raises(ValueError, match="Earth clearance"):
+        two_week_scenario(earth_min_clearance_deg=11.0)

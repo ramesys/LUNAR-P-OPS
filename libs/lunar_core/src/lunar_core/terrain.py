@@ -21,6 +21,11 @@ def polar_stereographic_south(
     return rho * np.sin(lon), rho * np.cos(lon)
 
 
+def terrain_files(terrain_dir: Path, site_id: str) -> tuple[Path, Path]:
+    """(near-field, far-field) grid files for a site, as written by `clps-fetch-terrain`."""
+    return terrain_dir / f"{site_id}_near.npz", terrain_dir / f"{site_id}_far.npz"
+
+
 def polar_stereographic_south_inverse(
     x: FloatArray | float, y: FloatArray | float
 ) -> tuple[FloatArray, FloatArray]:

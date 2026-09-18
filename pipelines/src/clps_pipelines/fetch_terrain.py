@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from lunar_core.sites import Site, load_catalog
-from lunar_core.terrain import TerrainGrid, polar_stereographic_south
+from lunar_core.terrain import TerrainGrid, polar_stereographic_south, terrain_files
 from rasterio.windows import Window, from_bounds
 
 from clps_pipelines import data_dir
@@ -51,8 +51,7 @@ def read_window(url: str, center_x: float, center_y: float, half_width_m: float)
 
 
 def terrain_paths(site_id: str) -> tuple[Path, Path]:
-    base: Path = data_dir() / "terrain"
-    return base / f"{site_id}_near.npz", base / f"{site_id}_far.npz"
+    return terrain_files(data_dir() / "terrain", site_id)
 
 
 def fetch_site(site: Site) -> None:
