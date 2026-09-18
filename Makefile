@@ -58,6 +58,10 @@ lint-py:
 lint-web:
 	$(WEB_RUN) sh -c "pnpm -r --workspace-root lint && pnpm -r --workspace-root typecheck"
 
+# Runs on the host (Node + Microsoft Edge) against the running stack: make up first.
+e2e:
+	pnpm --filter @clps/web e2e
+
 fmt:
 	$(PY_RUN) sh -c "ruff check --fix . && ruff format ."
 
