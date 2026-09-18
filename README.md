@@ -2,7 +2,7 @@
 
 Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a partir de la posición del Sol y la Tierra sobre el horizonte, con foco en el potencial de energía solar y las ventanas de comunicación directa con la Tierra (DTE). Proyecto para el **NASA Space Apps Challenge 2026** (desafío #2).
 
-> Estado: **Paso 1, andamiaje**. La web muestra el estado de la API; todavía no hay cálculo lunar. El contexto completo está en [docs/brief.md](docs/brief.md) y las decisiones en [docs/adr/](docs/adr/).
+> Estado: **Sprint 1 completado**. `lunar_core` calcula el azimut y la elevación del Sol y la Tierra con SPICE, validados contra JPL Horizons con un error máximo de 0,05″. Todavía no hay endpoint ni interfaz para ese cálculo (Sprints 2 y 3). Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [borrador de dominio](docs/domain.md) y los [ADR](docs/adr/).
 
 ## Requisitos
 
@@ -13,8 +13,11 @@ Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a p
 ## Cómo correrlo
 
 ```sh
+make fetch-data            # una vez: descarga los kernels SPICE de NAIF (~35 MB) a data/kernels
 docker compose up --build
 ```
+
+Sin `make`: `docker compose run --rm --no-deps api clps-fetch-kernels`.
 
 | Servicio | URL |
 |---|---|
@@ -30,7 +33,9 @@ Para la recarga en caliente (sincroniza el código al editar), usa `docker compo
 |---|---|
 | `make up` / `make down` | Levanta en segundo plano (espera a que esté *healthy*) / detiene |
 | `make dev` | Levanta con `--watch` |
-| `make test` | `pytest` (Python) + `vitest` (web), dentro de contenedores |
+| `make fetch-data` | Descarga los kernels SPICE que falten (idempotente) |
+| `make golden` | Regenera los datos de referencia de JPL Horizons para el test dorado (requiere red) |
+| `make test` | `pytest` (Python, incluye el test dorado) + `vitest` (web), dentro de contenedores |
 | `make lint` | `ruff` + `mypy --strict` / `eslint` + `tsc` |
 | `make fmt` | Formatea Python con `ruff` |
 | `make openapi` | Regenera `packages/api-client` desde la API |
@@ -44,9 +49,10 @@ Sin `make`, por ejemplo: `docker compose run --rm --no-deps api pytest`.
 apps/web/             React + TypeScript (Vite): interfaz
 services/api/         FastAPI: expone el cálculo y su contrato OpenAPI
 libs/lunar_core/      Python puro: geometría y métricas lunares (sin web)
+pipelines/            Tareas puntuales: descarga de kernels, datos de referencia de Horizons
 packages/api-client/  Tipos TS generados desde OpenAPI + cliente tipado
 data/                 Kernels, DEM y cachés (no versionado)
-docs/                 Brief y ADRs
+docs/                 Brief, roadmap, dominio y ADRs
 ```
 
 ## Convenciones
@@ -57,7 +63,9 @@ docs/                 Brief y ADRs
 
 ## Fuentes de datos
 
-Se citarán aquí y en la interfaz a medida que se incorporen (efemérides JPL/NAIF, DEM de LOLA). La lista verificada inicial está en [docs/brief.md §8](docs/brief.md).
+- **Kernels SPICE (NASA/JPL NAIF):** `naif0012.tls`, `pck00011.tpc`, `moon_pa_de421_1900-2050.bpc`, `moon_080317.tf`, `de440s.bsp`, desde https://naif.jpl.nasa.gov/pub/naif/generic_kernels/ (detalle en el [ADR 0005](docs/adr/0005-spike-a-geometria-y-donde-se-calcula.md)).
+- **Referencia de validación:** JPL Horizons API, https://ssd.jpl.nasa.gov/api/horizons.api.
+- Pendiente (Capa 2): DEM del polo sur de LOLA (PGDA/GSFC). La lista completa está en [docs/brief.md §8](docs/brief.md).
 
 ## Licencia
 
