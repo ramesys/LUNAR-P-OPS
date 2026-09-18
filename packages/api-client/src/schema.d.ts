@@ -21,10 +21,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sites */
+        get: operations["listSites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Scenario */
+        post: operations["analyzeScenario"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalysisRequest */
+        AnalysisRequest: {
+            /** Site Ids */
+            site_ids: string[];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Step Minutes
+             * @default 60
+             */
+            step_minutes: number;
+            /**
+             * Observer Height M
+             * @default 2
+             */
+            observer_height_m: number;
+        };
+        /** AnalysisResponse */
+        AnalysisResponse: {
+            request: components["schemas"]["AnalysisRequest"];
+            /** Times */
+            times: string[];
+            /** Sites */
+            sites: components["schemas"]["SiteResult"][];
+            /** Assumptions */
+            assumptions: components["schemas"]["AssumptionOut"][];
+            /** Data Sources */
+            data_sources: components["schemas"]["DataSourceOut"][];
+        };
+        /** AssumptionOut */
+        AssumptionOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * BodySeries
+         * @description Columnar series aligned with `AnalysisResponse.times`.
+         */
+        BodySeries: {
+            /** Azimuth Deg */
+            azimuth_deg: number[];
+            /** Elevation Deg */
+            elevation_deg: number[];
+        };
+        /** DataSourceOut */
+        DataSourceOut: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Url */
+            url: string;
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -36,6 +135,65 @@ export interface components {
             api_version: string;
             /** Lunar Core Version */
             lunar_core_version: string;
+        };
+        /** MetricsOut */
+        MetricsOut: {
+            /** Sun Fraction */
+            sun_fraction: number;
+            /** Earth Fraction */
+            earth_fraction: number;
+            longest_darkness: components["schemas"]["WindowOut"] | null;
+            longest_earth_outage: components["schemas"]["WindowOut"] | null;
+        };
+        /** SiteOut */
+        SiteOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Latitude Deg */
+            latitude_deg: number;
+            /** Longitude Deg */
+            longitude_deg: number;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "sample" | "official";
+            /** Note */
+            note: string;
+        };
+        /** SiteResult */
+        SiteResult: {
+            /** Rank */
+            rank: number;
+            site: components["schemas"]["SiteOut"];
+            metrics: components["schemas"]["MetricsOut"];
+            sun: components["schemas"]["BodySeries"];
+            earth: components["schemas"]["BodySeries"];
+            /** Sun Windows */
+            sun_windows: components["schemas"]["WindowOut"][];
+            /** Earth Windows */
+            earth_windows: components["schemas"]["WindowOut"][];
+        };
+        /** WindowOut */
+        WindowOut: {
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Duration Hours */
+            duration_hours: number;
+            /** Visible */
+            visible: boolean;
+            /** Truncated */
+            truncated: boolean;
         };
     };
     responses: never;
@@ -63,6 +221,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
+            };
+        };
+    };
+    listSites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteOut"][];
+                };
+            };
+        };
+    };
+    analyzeScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisResponse"];
+                };
+            };
+            /** @description Invalid scenario (sites, dates, step or height) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

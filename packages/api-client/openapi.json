@@ -22,10 +22,222 @@
           }
         }
       }
+    },
+    "/api/sites": {
+      "get": {
+        "summary": "List Sites",
+        "operationId": "listSites",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SiteOut"
+                  },
+                  "type": "array",
+                  "title": "Response Listsites"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analysis": {
+      "post": {
+        "summary": "Analyze Scenario",
+        "operationId": "analyzeScenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid scenario (sites, dates, step or height)"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AnalysisRequest": {
+        "properties": {
+          "site_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Site Ids"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "step_minutes": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Step Minutes",
+            "default": 60
+          },
+          "observer_height_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Observer Height M",
+            "default": 2.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "site_ids",
+          "start",
+          "end"
+        ],
+        "title": "AnalysisRequest"
+      },
+      "AnalysisResponse": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/AnalysisRequest"
+          },
+          "times": {
+            "items": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "type": "array",
+            "title": "Times"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/SiteResult"
+            },
+            "type": "array",
+            "title": "Sites"
+          },
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/AssumptionOut"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "data_sources": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceOut"
+            },
+            "type": "array",
+            "title": "Data Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request",
+          "times",
+          "sites",
+          "assumptions",
+          "data_sources"
+        ],
+        "title": "AnalysisResponse"
+      },
+      "AssumptionOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "value"
+        ],
+        "title": "AssumptionOut"
+      },
+      "BodySeries": {
+        "properties": {
+          "azimuth_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Azimuth Deg"
+          },
+          "elevation_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Elevation Deg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "azimuth_deg",
+          "elevation_deg"
+        ],
+        "title": "BodySeries",
+        "description": "Columnar series aligned with `AnalysisResponse.times`."
+      },
+      "DataSourceOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "url"
+        ],
+        "title": "DataSourceOut"
+      },
       "HealthResponse": {
         "properties": {
           "status": {
@@ -49,6 +261,168 @@
           "lunar_core_version"
         ],
         "title": "HealthResponse"
+      },
+      "MetricsOut": {
+        "properties": {
+          "sun_fraction": {
+            "type": "number",
+            "title": "Sun Fraction"
+          },
+          "earth_fraction": {
+            "type": "number",
+            "title": "Earth Fraction"
+          },
+          "longest_darkness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WindowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "longest_earth_outage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WindowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "sun_fraction",
+          "earth_fraction",
+          "longest_darkness",
+          "longest_earth_outage"
+        ],
+        "title": "MetricsOut"
+      },
+      "SiteOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "latitude_deg": {
+            "type": "number",
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "type": "number",
+            "title": "Longitude Deg"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "sample",
+              "official"
+            ],
+            "title": "Origin"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "latitude_deg",
+          "longitude_deg",
+          "origin",
+          "note"
+        ],
+        "title": "SiteOut"
+      },
+      "SiteResult": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "site": {
+            "$ref": "#/components/schemas/SiteOut"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsOut"
+          },
+          "sun": {
+            "$ref": "#/components/schemas/BodySeries"
+          },
+          "earth": {
+            "$ref": "#/components/schemas/BodySeries"
+          },
+          "sun_windows": {
+            "items": {
+              "$ref": "#/components/schemas/WindowOut"
+            },
+            "type": "array",
+            "title": "Sun Windows"
+          },
+          "earth_windows": {
+            "items": {
+              "$ref": "#/components/schemas/WindowOut"
+            },
+            "type": "array",
+            "title": "Earth Windows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "site",
+          "metrics",
+          "sun",
+          "earth",
+          "sun_windows",
+          "earth_windows"
+        ],
+        "title": "SiteResult"
+      },
+      "WindowOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "duration_hours": {
+            "type": "number",
+            "title": "Duration Hours"
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "duration_hours",
+          "visible",
+          "truncated"
+        ],
+        "title": "WindowOut"
       }
     }
   }
