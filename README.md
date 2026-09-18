@@ -52,6 +52,7 @@ Para la recarga en caliente (sincroniza el código al editar), usa `docker compo
 | `make spike-terrain` | Repite la validación del Spike B (mapa PSR de la NASA + comparación entre horizonte plano y con terreno) |
 | `make golden` | Regenera los datos de referencia de JPL Horizons para el test dorado (requiere red) |
 | `make test` | `pytest` (Python, incluye el test dorado) + `vitest` (web), dentro de contenedores |
+| `make e2e` | Tests end-to-end con Playwright y el Microsoft Edge del sistema, contra el stack levantado (`make up` antes; requiere Node y pnpm en el host) |
 | `make lint` | `ruff` + `mypy --strict` / `eslint` + `tsc` |
 | `make fmt` | Formatea Python con `ruff` |
 | `make openapi` | Regenera `packages/api-client` desde la API |
