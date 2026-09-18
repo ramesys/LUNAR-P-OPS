@@ -1,0 +1,23 @@
+# Data (kernels, DEM, caches) — downloaded, never versioned
+data/*
+!data/README.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Env / editors / OS
+.env
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
