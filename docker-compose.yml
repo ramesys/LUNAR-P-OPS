@@ -1,0 +1,69 @@
+name: clps-lunar-mission-browser
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    develop:
+      watch:
+        - action: sync
+          path: ./services/api/src
+          target: /workspace/services/api/src
+        - action: sync
+          path: ./services/api/tests
+          target: /workspace/services/api/tests
+        - action: sync
+          path: ./libs/lunar_core/src
+          target: /workspace/libs/lunar_core/src
+        - action: sync
+          path: ./libs/lunar_core/tests
+          target: /workspace/libs/lunar_core/tests
+        - action: rebuild
+          path: ./uv.lock
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5180:5173"
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:5173').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /workspace/apps/web/src
+        - action: sync
+          path: ./packages/api-client/src
+          target: /workspace/packages/api-client/src
+        - action: rebuild
+          path: ./pnpm-lock.yaml
