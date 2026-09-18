@@ -1,12 +1,16 @@
 name: clps-lunar-mission-browser
 
 services:
-  kernels:
+  data:
     image: clps-lunar-mission-browser-api
     build:
       context: .
       dockerfile: services/api/Dockerfile
-    command: ["clps-fetch-kernels"]
+    # Kernels are required; terrain is optional (the API falls back to a flat horizon).
+    command:
+      - sh
+      - -c
+      - clps-fetch-kernels && (clps-fetch-terrain || echo "WARNING - terrain download failed; flat horizon will be used")
     volumes:
       - ./data:/data
     restart: "no"
@@ -21,7 +25,7 @@ services:
     volumes:
       - ./data:/data
     depends_on:
-      kernels:
+      data:
         condition: service_completed_successfully
     healthcheck:
       test:

@@ -11,6 +11,8 @@ export type SiteResult = Schemas["SiteResult"];
 export type SiteMetrics = Schemas["MetricsOut"];
 export type VisibilityWindow = Schemas["WindowOut"];
 export type BodySeries = Schemas["BodySeries"];
+export type HorizonMask = Schemas["HorizonMaskOut"];
+export type HorizonModel = AnalysisRequest["horizon"];
 export type Assumption = Schemas["AssumptionOut"];
 export type DataSource = Schemas["DataSourceOut"];
 

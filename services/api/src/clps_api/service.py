@@ -1,18 +1,21 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from functools import lru_cache
 
 from lunar_core.analysis import Scenario, ScenarioResult, SiteAnalysis, analyze
 from lunar_core.assumptions import assumptions_for, data_sources
 from lunar_core.geometry import HorizontalPosition
+from lunar_core.horizon import HorizonMask
 from lunar_core.sites import Site, load_catalog
 from lunar_core.windows import VisibilityWindow
 
+from clps_api import terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     AssumptionOut,
     BodySeries,
     DataSourceOut,
+    HorizonMaskOut,
     MetricsOut,
     SiteOut,
     SiteResult,
@@ -32,6 +35,7 @@ def site_out(site: Site) -> SiteOut:
         longitude_deg=site.longitude_deg,
         origin=site.origin,
         note=site.note,
+        terrain_available=terrain_store.terrain_available(site.id),
     )
 
 
@@ -45,10 +49,24 @@ def _window_out(window: VisibilityWindow) -> WindowOut:
     )
 
 
-def _series(positions: list[HorizontalPosition]) -> BodySeries:
+def _round(values: list[float]) -> list[float]:
+    return [round(v, DECIMALS) for v in values]
+
+
+def _series(positions: list[HorizontalPosition], horizon_deg: list[float]) -> BodySeries:
     return BodySeries(
-        azimuth_deg=[round(p.azimuth_deg, DECIMALS) for p in positions],
-        elevation_deg=[round(p.elevation_deg, DECIMALS) for p in positions],
+        azimuth_deg=_round([p.azimuth_deg for p in positions]),
+        elevation_deg=_round([p.elevation_deg for p in positions]),
+        horizon_deg=_round(horizon_deg),
+    )
+
+
+def _mask_out(mask: HorizonMask | None) -> HorizonMaskOut | None:
+    if mask is None:
+        return None
+    return HorizonMaskOut(
+        azimuth_deg=_round([float(v) for v in mask.azimuths_deg]),
+        elevation_deg=_round([float(v) for v in mask.elevations_deg]),
     )
 
 
@@ -57,6 +75,8 @@ def _site_result(rank: int, analysis: SiteAnalysis) -> SiteResult:
     return SiteResult(
         rank=rank,
         site=site_out(analysis.site),
+        horizon_model="flat" if analysis.horizon_mask is None else "terrain",
+        horizon_mask=_mask_out(analysis.horizon_mask),
         metrics=MetricsOut(
             sun_fraction=round(metrics.sun_fraction, DECIMALS),
             earth_fraction=round(metrics.earth_fraction, DECIMALS),
@@ -67,8 +87,8 @@ def _site_result(rank: int, analysis: SiteAnalysis) -> SiteResult:
             if metrics.longest_earth_outage is None
             else _window_out(metrics.longest_earth_outage),
         ),
-        sun=_series(analysis.sun),
-        earth=_series(analysis.earth),
+        sun=_series(analysis.sun, analysis.sun_horizon_deg),
+        earth=_series(analysis.earth, analysis.earth_horizon_deg),
         sun_windows=[_window_out(w) for w in analysis.sun_windows],
         earth_windows=[_window_out(w) for w in analysis.earth_windows],
     )
@@ -84,41 +104,45 @@ def build_scenario(request: AnalysisRequest) -> Scenario:
         end=request.end,
         step=timedelta(minutes=request.step_minutes),
         observer_height_m=request.observer_height_m,
+        horizon_model=request.horizon,
+        earth_min_clearance_deg=request.earth_min_clearance_deg,
     )
 
 
 @lru_cache(maxsize=16)
 def _cached_analysis(
-    site_ids: tuple[str, ...], start: datetime, end: datetime, step_minutes: int, height_m: float
+    request_json: str,
+    terrain_key: tuple[bool, ...],  # part of the key: new terrain downloads invalidate results
 ) -> AnalysisResponse:
-    request: AnalysisRequest = AnalysisRequest(
-        site_ids=list(site_ids),
-        start=start,
-        end=end,
-        step_minutes=step_minutes,
-        observer_height_m=height_m,
-    )
+    request: AnalysisRequest = AnalysisRequest.model_validate_json(request_json)
     scenario: Scenario = build_scenario(request)
-    result: ScenarioResult = analyze(scenario)
+    masks: dict[str, HorizonMask] = {}
+    if scenario.horizon_model == "terrain":
+        for site in scenario.sites:
+            mask: HorizonMask | None = terrain_store.mask_for(site, scenario.observer_height_m)
+            if mask is not None:
+                masks[site.id] = mask
+    result: ScenarioResult = analyze(scenario, masks)
     return AnalysisResponse(
         request=request,
         times=result.times,
         sites=[_site_result(i + 1, a) for i, a in enumerate(result.ranked)],
         assumptions=[
-            AssumptionOut(key=a.key, label=a.label, value=a.value)
-            for a in assumptions_for(scenario)
+            AssumptionOut(key=a.key, label=a.label, value=a.value) for a in assumptions_for(result)
         ],
         data_sources=[
-            DataSourceOut(name=s.name, description=s.description, url=s.url) for s in data_sources()
+            DataSourceOut(name=s.name, description=s.description, url=s.url)
+            for s in data_sources(result)
         ],
     )
+
+
+def clear_cache() -> None:
+    _cached_analysis.cache_clear()
 
 
 def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
-    return _cached_analysis(
-        tuple(request.site_ids),
-        request.start,
-        request.end,
-        request.step_minutes,
-        request.observer_height_m,
+    terrain_key: tuple[bool, ...] = tuple(
+        terrain_store.terrain_available(site_id) for site_id in request.site_ids
     )
+    return _cached_analysis(request.model_dump_json(), terrain_key)

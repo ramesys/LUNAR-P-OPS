@@ -83,6 +83,17 @@ export interface components {
              * @default 2
              */
             observer_height_m: number;
+            /**
+             * Horizon
+             * @default terrain
+             * @enum {string}
+             */
+            horizon: "terrain" | "flat";
+            /**
+             * Earth Min Clearance Deg
+             * @default 0
+             */
+            earth_min_clearance_deg: number;
         };
         /** AnalysisResponse */
         AnalysisResponse: {
@@ -114,6 +125,8 @@ export interface components {
             azimuth_deg: number[];
             /** Elevation Deg */
             elevation_deg: number[];
+            /** Horizon Deg */
+            horizon_deg: number[];
         };
         /** DataSourceOut */
         DataSourceOut: {
@@ -135,6 +148,13 @@ export interface components {
             api_version: string;
             /** Lunar Core Version */
             lunar_core_version: string;
+        };
+        /** HorizonMaskOut */
+        HorizonMaskOut: {
+            /** Azimuth Deg */
+            azimuth_deg: number[];
+            /** Elevation Deg */
+            elevation_deg: number[];
         };
         /** MetricsOut */
         MetricsOut: {
@@ -162,12 +182,20 @@ export interface components {
             origin: "sample" | "official";
             /** Note */
             note: string;
+            /** Terrain Available */
+            terrain_available: boolean;
         };
         /** SiteResult */
         SiteResult: {
             /** Rank */
             rank: number;
             site: components["schemas"]["SiteOut"];
+            /**
+             * Horizon Model
+             * @enum {string}
+             */
+            horizon_model: "terrain" | "flat";
+            horizon_mask: components["schemas"]["HorizonMaskOut"] | null;
             metrics: components["schemas"]["MetricsOut"];
             sun: components["schemas"]["BodySeries"];
             earth: components["schemas"]["BodySeries"];

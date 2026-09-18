@@ -1,6 +1,11 @@
 from typing import Literal
 
-from lunar_core.analysis import DEFAULT_OBSERVER_HEIGHT_M, MAX_SITES, MIN_SITES
+from lunar_core.analysis import (
+    DEFAULT_OBSERVER_HEIGHT_M,
+    MAX_EARTH_CLEARANCE_DEG,
+    MAX_SITES,
+    MIN_SITES,
+)
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 
@@ -17,6 +22,7 @@ class SiteOut(BaseModel):
     longitude_deg: float
     origin: Literal["sample", "official"]
     note: str
+    terrain_available: bool
 
 
 class AnalysisRequest(BaseModel):
@@ -27,6 +33,8 @@ class AnalysisRequest(BaseModel):
     end: AwareDatetime
     step_minutes: int = Field(default=60, ge=1)
     observer_height_m: float = Field(default=DEFAULT_OBSERVER_HEIGHT_M, ge=0.0)
+    horizon: Literal["terrain", "flat"] = "terrain"
+    earth_min_clearance_deg: float = Field(default=0.0, ge=0.0, le=MAX_EARTH_CLEARANCE_DEG)
 
 
 class WindowOut(BaseModel):
@@ -42,6 +50,13 @@ class BodySeries(BaseModel):
 
     azimuth_deg: list[float]
     elevation_deg: list[float]
+    horizon_deg: list[float]
+    """Horizon elevation in the body's direction: 0 when flat, else the terrain mask."""
+
+
+class HorizonMaskOut(BaseModel):
+    azimuth_deg: list[float]
+    elevation_deg: list[float]
 
 
 class MetricsOut(BaseModel):
@@ -54,6 +69,8 @@ class MetricsOut(BaseModel):
 class SiteResult(BaseModel):
     rank: int
     site: SiteOut
+    horizon_model: Literal["terrain", "flat"]
+    horizon_mask: HorizonMaskOut | None
     metrics: MetricsOut
     sun: BodySeries
     earth: BodySeries

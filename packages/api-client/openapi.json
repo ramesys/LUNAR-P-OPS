@@ -111,6 +111,22 @@
             "minimum": 0.0,
             "title": "Observer Height M",
             "default": 2.0
+          },
+          "horizon": {
+            "type": "string",
+            "enum": [
+              "terrain",
+              "flat"
+            ],
+            "title": "Horizon",
+            "default": "terrain"
+          },
+          "earth_min_clearance_deg": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Earth Min Clearance Deg",
+            "default": 0.0
           }
         },
         "additionalProperties": false,
@@ -205,12 +221,20 @@
             },
             "type": "array",
             "title": "Elevation Deg"
+          },
+          "horizon_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Horizon Deg"
           }
         },
         "type": "object",
         "required": [
           "azimuth_deg",
-          "elevation_deg"
+          "elevation_deg",
+          "horizon_deg"
         ],
         "title": "BodySeries",
         "description": "Columnar series aligned with `AnalysisResponse.times`."
@@ -261,6 +285,30 @@
           "lunar_core_version"
         ],
         "title": "HealthResponse"
+      },
+      "HorizonMaskOut": {
+        "properties": {
+          "azimuth_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Azimuth Deg"
+          },
+          "elevation_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Elevation Deg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "azimuth_deg",
+          "elevation_deg"
+        ],
+        "title": "HorizonMaskOut"
       },
       "MetricsOut": {
         "properties": {
@@ -331,6 +379,10 @@
           "note": {
             "type": "string",
             "title": "Note"
+          },
+          "terrain_available": {
+            "type": "boolean",
+            "title": "Terrain Available"
           }
         },
         "type": "object",
@@ -340,7 +392,8 @@
           "latitude_deg",
           "longitude_deg",
           "origin",
-          "note"
+          "note",
+          "terrain_available"
         ],
         "title": "SiteOut"
       },
@@ -352,6 +405,24 @@
           },
           "site": {
             "$ref": "#/components/schemas/SiteOut"
+          },
+          "horizon_model": {
+            "type": "string",
+            "enum": [
+              "terrain",
+              "flat"
+            ],
+            "title": "Horizon Model"
+          },
+          "horizon_mask": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HorizonMaskOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "metrics": {
             "$ref": "#/components/schemas/MetricsOut"
@@ -381,6 +452,8 @@
         "required": [
           "rank",
           "site",
+          "horizon_model",
+          "horizon_mask",
           "metrics",
           "sun",
           "earth",
