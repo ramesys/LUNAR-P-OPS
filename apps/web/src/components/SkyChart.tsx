@@ -26,8 +26,10 @@ const HOVER_RADIUS_PX: number = 24;
 
 interface SkyChartProps {
   result: SiteResult;
-  hoverIndex: number | null;
+  index: number;
+  trailSamples: number;
   onHover: (index: number | null) => void;
+  onSelect: (index: number) => void;
 }
 
 function toPath(segments: readonly SkyPoint[][], x: Scale, y: Scale): string {
@@ -43,7 +45,23 @@ function toPath(segments: readonly SkyPoint[][], x: Scale, y: Scale): string {
     .join("");
 }
 
-export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.Element {
+function trailPath(
+  azimuthDeg: readonly number[],
+  elevationDeg: readonly number[],
+  index: number,
+  length: number,
+  x: Scale,
+  y: Scale,
+): string {
+  const from: number = Math.max(0, index - length);
+  return toPath(
+    splitAtAzimuthWrap(azimuthDeg.slice(from, index + 1), elevationDeg.slice(from, index + 1)),
+    x,
+    y,
+  );
+}
+
+export function SkyChart({ result, index, trailSamples, onHover, onSelect }: SkyChartProps): JSX.Element {
   const x: Scale = useMemo(
     (): Scale => linearScale([0, 360], [MARGIN.left, WIDTH - MARGIN.right]),
     [],
@@ -88,41 +106,44 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
   }, [result, x, y]);
   const yTicks: number[] = niceTicks(yMin, yMax, 6);
 
-  function handleMove(event: MouseEvent<SVGSVGElement>): void {
+  function nearestIndex(event: MouseEvent<SVGSVGElement>): number | null {
     const rect: DOMRect = event.currentTarget.getBoundingClientRect();
     const px: number = ((event.clientX - rect.left) / rect.width) * WIDTH;
     const py: number = ((event.clientY - rect.top) / rect.height) * HEIGHT;
     let best: number | null = null;
     let bestDistance: number = HOVER_RADIUS_PX * HOVER_RADIUS_PX;
     for (const series of [result.sun, result.earth]) {
-      series.azimuth_deg.forEach((azimuth: number, index: number): void => {
-        const elevation: number = series.elevation_deg[index] ?? 0;
+      series.azimuth_deg.forEach((azimuth: number, sampleIndex: number): void => {
+        const elevation: number = series.elevation_deg[sampleIndex] ?? 0;
         const dx: number = x(azimuth) - px;
         const dy: number = y(elevation) - py;
         const distance: number = dx * dx + dy * dy;
         if (distance < bestDistance) {
           bestDistance = distance;
-          best = index;
+          best = sampleIndex;
         }
       });
     }
-    onHover(best);
+    return best;
   }
 
-  const sunMarker: SkyPoint | null =
-    hoverIndex === null
-      ? null
-      : {
-          azimuthDeg: result.sun.azimuth_deg[hoverIndex] ?? 0,
-          elevationDeg: result.sun.elevation_deg[hoverIndex] ?? 0,
-        };
-  const earthMarker: SkyPoint | null =
-    hoverIndex === null
-      ? null
-      : {
-          azimuthDeg: result.earth.azimuth_deg[hoverIndex] ?? 0,
-          elevationDeg: result.earth.elevation_deg[hoverIndex] ?? 0,
-        };
+  const sunMarker: SkyPoint = {
+    azimuthDeg: result.sun.azimuth_deg[index] ?? 0,
+    elevationDeg: result.sun.elevation_deg[index] ?? 0,
+  };
+  const earthMarker: SkyPoint = {
+    azimuthDeg: result.earth.azimuth_deg[index] ?? 0,
+    elevationDeg: result.earth.elevation_deg[index] ?? 0,
+  };
+  const sunTrail: string = trailPath(result.sun.azimuth_deg, result.sun.elevation_deg, index, trailSamples, x, y);
+  const earthTrail: string = trailPath(
+    result.earth.azimuth_deg,
+    result.earth.elevation_deg,
+    index,
+    trailSamples,
+    x,
+    y,
+  );
 
   return (
     <svg
@@ -130,7 +151,15 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
       viewBox={`0 0 ${WIDTH.toString()} ${HEIGHT.toString()}`}
       role="img"
       aria-label={`Sky diagram for ${result.site.name}: azimuth and elevation of the Sun and the Earth over the ${result.horizon_model === "terrain" ? "terrain" : "flat"} horizon`}
-      onMouseMove={handleMove}
+      onMouseMove={(event: MouseEvent<SVGSVGElement>): void => {
+        onHover(nearestIndex(event));
+      }}
+      onClick={(event: MouseEvent<SVGSVGElement>): void => {
+        const nearest: number | null = nearestIndex(event);
+        if (nearest !== null) {
+          onSelect(nearest);
+        }
+      }}
       onMouseLeave={(): void => {
         onHover(null);
       }}
@@ -184,13 +213,11 @@ export function SkyChart({ result, hoverIndex, onHover }: SkyChartProps): JSX.El
       </text>
       <path className="track sun" d={sunPath} />
       <path className="track earth" d={earthPath} />
+      <path className="trail sun" d={sunTrail} />
+      <path className="trail earth" d={earthTrail} />
       {terrainPath !== null && <path className="terrain" d={terrainPath} />}
-      {sunMarker !== null && (
-        <circle className="marker sun" cx={x(sunMarker.azimuthDeg)} cy={y(sunMarker.elevationDeg)} r={5} />
-      )}
-      {earthMarker !== null && (
-        <circle className="marker earth" cx={x(earthMarker.azimuthDeg)} cy={y(earthMarker.elevationDeg)} r={5} />
-      )}
+      <circle className="marker sun" cx={x(sunMarker.azimuthDeg)} cy={y(sunMarker.elevationDeg)} r={6} />
+      <circle className="marker earth" cx={x(earthMarker.azimuthDeg)} cy={y(earthMarker.elevationDeg)} r={6} />
     </svg>
   );
 }

@@ -447,6 +447,67 @@ tr.focused {
   stroke-linecap: round;
 }
 
+.chart .track {
+  opacity: 0.45;
+}
+
+.chart .trail {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart .trail.sun {
+  stroke: var(--sun);
+}
+
+.chart .trail.earth {
+  stroke: var(--earth);
+}
+
+.chart {
+  cursor: crosshair;
+}
+
+.time-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.time-control .play {
+  min-width: 6.5rem;
+  font-weight: 600;
+}
+
+.time-slider {
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.time-label {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  min-width: 11rem;
+}
+
+.speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 .chart .track.sun {
   stroke: var(--sun);
 }

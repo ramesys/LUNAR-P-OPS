@@ -20,8 +20,9 @@ interface TimelineProps {
   sites: readonly SiteResult[];
   focused: SiteResult;
   rangeEnd: string;
-  hoverIndex: number | null;
+  index: number;
   onHover: (index: number | null) => void;
+  onSelect: (index: number) => void;
 }
 
 /** Degrees above the local horizon (flat or terrain) in the body's direction. */
@@ -65,8 +66,9 @@ export function Timeline({
   sites,
   focused,
   rangeEnd,
-  hoverIndex,
+  index,
   onHover,
+  onSelect,
 }: TimelineProps): JSX.Element {
   const timeMs: number[] = useMemo((): number[] => times.map((t: string): number => Date.parse(t)), [times]);
   const t0: number = timeMs[0] ?? 0;
@@ -101,18 +103,17 @@ export function Timeline({
     (_unused: unknown, i: number): number => t0 + ((tEnd - t0) * i) / (TIME_TICKS - 1),
   );
 
-  function handleMove(event: MouseEvent<SVGSVGElement>): void {
+  function indexAt(event: MouseEvent<SVGSVGElement>): number | null {
     const rect: DOMRect = event.currentTarget.getBoundingClientRect();
     const px: number = ((event.clientX - rect.left) / rect.width) * WIDTH;
     if (px < LEFT || px > WIDTH - RIGHT || timeMs.length === 0) {
-      onHover(null);
-      return;
+      return null;
     }
     const t: number = t0 + ((px - LEFT) / (WIDTH - RIGHT - LEFT)) * (tEnd - t0);
-    onHover(Math.min(timeMs.length - 1, Math.max(0, Math.round((t - t0) / step))));
+    return Math.min(timeMs.length - 1, Math.max(0, Math.round((t - t0) / step)));
   }
 
-  const hoverX: number | null = hoverIndex === null ? null : x(timeMs[hoverIndex] ?? t0);
+  const cursorX: number = x(timeMs[index] ?? t0);
 
   return (
     <svg
@@ -120,7 +121,15 @@ export function Timeline({
       viewBox={`0 0 ${WIDTH.toString()} ${height.toString()}`}
       role="img"
       aria-label={`Timeline: height of the Sun and the Earth above the ${focused.horizon_model} horizon at ${focused.site.name}, and sunlight and direct-to-Earth periods for every site`}
-      onMouseMove={handleMove}
+      onMouseMove={(event: MouseEvent<SVGSVGElement>): void => {
+        onHover(indexAt(event));
+      }}
+      onClick={(event: MouseEvent<SVGSVGElement>): void => {
+        const at: number | null = indexAt(event);
+        if (at !== null) {
+          onSelect(at);
+        }
+      }}
       onMouseLeave={(): void => {
         onHover(null);
       }}
@@ -194,9 +203,9 @@ export function Timeline({
           </text>
         ),
       )}
-      {hoverX !== null && (
-        <line className="crosshair" x1={hoverX} x2={hoverX} y1={TOP} y2={axisTop} />
-      )}
+      <line className="crosshair" x1={cursorX} x2={cursorX} y1={TOP} y2={axisTop} />
+      <circle className="marker sun" cx={cursorX} cy={y(sunClearance[index] ?? 0)} r={4} />
+      <circle className="marker earth" cx={cursorX} cy={y(earthClearance[index] ?? 0)} r={4} />
     </svg>
   );
 }

@@ -2,6 +2,7 @@ import type { VisibilityWindow } from "@clps/api-client";
 import { describe, expect, it } from "vitest";
 import { describeApiError } from "./apiError.ts";
 import { formatHours, formatLatLon, formatPercent, formatWindowDuration } from "./format.ts";
+import { clampIndex, samplesPerTick, trailSamples, visibleAt } from "./playback.ts";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "./scale.ts";
 import {
   formFromSearch,
@@ -118,6 +119,27 @@ describe("shareable URL", (): void => {
     const parsed: ScenarioForm = formFromSearch("?sites=nope,sample-c&from=bad&step=7&horizon=x&dte=abc", form, known);
     expect(parsed).toEqual({ ...form, siteIds: ["sample-c"] });
     expect(formFromSearch("", form, known)).toEqual(form);
+  });
+});
+
+describe("playback", (): void => {
+  it("converts speed to samples per tick and trail length to samples", (): void => {
+    expect(samplesPerTick(24, 60)).toBeCloseTo(1.2);
+    expect(samplesPerTick(6, 30)).toBeCloseTo(0.6);
+    expect(trailSamples(60)).toBe(24);
+    expect(trailSamples(720)).toBe(2);
+    expect(clampIndex(-3, 10)).toBe(0);
+    expect(clampIndex(42, 10)).toBe(9);
+  });
+
+  it("reads visibility from half-open windows", (): void => {
+    const windows: VisibilityWindow[] = [
+      { ...window, start: "2026-01-01T00:00:00Z", end: "2026-01-01T06:00:00Z", visible: true },
+      { ...window, start: "2026-01-01T06:00:00Z", end: "2026-01-02T00:00:00Z", visible: false },
+    ];
+    expect(visibleAt(windows, "2026-01-01T05:00:00Z")).toBe(true);
+    expect(visibleAt(windows, "2026-01-01T06:00:00Z")).toBe(false);
+    expect(visibleAt(windows, "2026-01-03T00:00:00Z")).toBe(false);
   });
 });
 
