@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Pure computation library: lunar geometry, visibility and metrics (no web)."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "numpy>=2.5.3",
     "spiceypy>=8.2.0",
 ]
 

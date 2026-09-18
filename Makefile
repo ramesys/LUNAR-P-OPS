@@ -1,4 +1,4 @@
-.PHONY: up dev down logs fetch-data golden test test-py test-web lint lint-py lint-web fmt openapi check-openapi
+.PHONY: up dev down logs fetch-data fetch-terrain spike-terrain golden test test-py test-web lint lint-py lint-web fmt openapi check-openapi
 
 # Git Bash on Windows rewrites /container/paths into C:/...; harmless elsewhere.
 export MSYS_NO_PATHCONV := 1
@@ -29,6 +29,12 @@ logs:
 
 fetch-data:
 	$(PY_RUN) clps-fetch-kernels
+
+fetch-terrain:
+	$(PY_RUN) clps-fetch-terrain
+
+spike-terrain: fetch-data
+	$(PY_RUN) clps-spike-terrain
 
 golden:
 	$(PY_RUN) clps-fetch-horizons-golden libs/lunar_core/tests/golden/horizons_2026.json

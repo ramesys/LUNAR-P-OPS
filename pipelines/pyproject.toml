@@ -3,11 +3,17 @@ name = "clps-pipelines"
 version = "0.1.0"
 description = "One-off data tasks: download SPICE kernels, fetch JPL Horizons golden data."
 requires-python = ">=3.12,<3.13"
-dependencies = ["lunar-core"]
+dependencies = [
+    "lunar-core",
+    "pyproj>=3.8.0",
+    "rasterio>=1.5.1",
+]
 
 [project.scripts]
 clps-fetch-kernels = "clps_pipelines.fetch_kernels:main"
 clps-fetch-horizons-golden = "clps_pipelines.fetch_horizons_golden:main"
+clps-fetch-terrain = "clps_pipelines.fetch_terrain:main"
+clps-spike-terrain = "clps_pipelines.spike_terrain:main"
 
 [tool.uv.sources]
 lunar-core = { workspace = true }

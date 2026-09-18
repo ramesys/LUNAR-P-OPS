@@ -38,9 +38,9 @@ strict = true
 packages = ["lunar_core", "clps_api", "clps_pipelines"]
 
 [[tool.mypy.overrides]]
-module = "spiceypy"
+module = ["spiceypy", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["libs/lunar_core/tests", "services/api/tests"]
+testpaths = ["libs/lunar_core/tests", "services/api/tests", "pipelines/tests"]
 addopts = "--import-mode=importlib"
