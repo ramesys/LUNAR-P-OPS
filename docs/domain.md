@@ -19,4 +19,4 @@
 | **Ranking** | Orden de los Sites de un Scenario por % de tiempo con Sol, de mayor a menor | Los empates conservan el orden del catálogo |
 | **Assumption / DataSource** | Supuestos de cálculo y fuentes citadas en la UI (RF-09) | Todo cálculo referencia los suyos |
 
-En el código (Sprint 1) ya existen `Body`, `SurfacePoint` (la parte geométrica de Observer) y `HorizontalPosition`. La distancia se agrega en el Sprint 2.
+En el código (`libs/lunar_core`): `Site` (`sites.py`), `SurfacePoint` (la parte geométrica de Observer), `Body` y `HorizontalPosition` (`geometry.py`), las reglas de visibilidad (`visibility.py`), `VisibilityWindow` (`windows.py`), `Scenario`, `SiteMetrics` y el ranking (`analysis.py`), y `Assumption` y `DataSource` (`assumptions.py`). `HorizonModel` y `HorizonMask` llegan con la Capa 2.

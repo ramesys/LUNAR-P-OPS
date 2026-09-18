@@ -2,7 +2,7 @@
 
 Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a partir de la posición del Sol y la Tierra sobre el horizonte, con foco en el potencial de energía solar y las ventanas de comunicación directa con la Tierra (DTE). Proyecto para el **NASA Space Apps Challenge 2026** (desafío #2).
 
-> Estado: **Sprint 1 completado**. `lunar_core` calcula el azimut y la elevación del Sol y la Tierra con SPICE, validados contra JPL Horizons con un error máximo de 0,05″. Todavía no hay endpoint ni interfaz para ese cálculo (Sprints 2 y 3). Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [borrador de dominio](docs/domain.md) y los [ADR](docs/adr/).
+> Estado: **Sprint 2 completado**. La API compara de 2 a 4 sitios de ejemplo en un rango de hasta un año: posiciones del Sol y la Tierra (validadas contra JPL Horizons, error máximo de 0,05″), ventanas de luz y comunicación directa, métricas y ranking. La interfaz llega en el Sprint 3. Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
 
 ## Requisitos
 
@@ -13,16 +13,15 @@ Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a p
 ## Cómo correrlo
 
 ```sh
-make fetch-data            # una vez: descarga los kernels SPICE de NAIF (~35 MB) a data/kernels
 docker compose up --build
 ```
 
-Sin `make`: `docker compose run --rm --no-deps api clps-fetch-kernels`.
+La primera vez, el servicio `kernels` descarga los kernels SPICE de NAIF (~35 MB) a `data/kernels` antes de levantar la API.
 
 | Servicio | URL |
 |---|---|
 | Web | http://localhost:5180 |
-| API | http://localhost:8000/api/health |
+| API | http://localhost:8000/api/health, `GET /api/sites`, `POST /api/analysis` |
 | Docs de la API (Swagger) | http://localhost:8000/docs |
 
 Para la recarga en caliente (sincroniza el código al editar), usa `docker compose up --build --watch` o `make dev`.
