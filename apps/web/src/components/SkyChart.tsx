@@ -3,7 +3,6 @@ import { useMemo, type JSX, type MouseEvent } from "react";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "../lib/scale.ts";
 import { splitAtAzimuthWrap, type SkyPoint } from "../lib/sky.ts";
 
-const WIDTH: number = 960;
 const HEIGHT: number = 300;
 const MARGIN: { top: number; right: number; bottom: number; left: number } = {
   top: 12,
@@ -26,6 +25,8 @@ const HOVER_RADIUS_PX: number = 24;
 
 interface SkyChartProps {
   result: SiteResult;
+  /** Drawing width in CSS pixels (the measured container width), so text keeps its real size. */
+  width: number;
   index: number;
   trailSamples: number;
   onHover: (index: number | null) => void;
@@ -61,10 +62,17 @@ function trailPath(
   );
 }
 
-export function SkyChart({ result, index, trailSamples, onHover, onSelect }: SkyChartProps): JSX.Element {
+export function SkyChart({
+  result,
+  width,
+  index,
+  trailSamples,
+  onHover,
+  onSelect,
+}: SkyChartProps): JSX.Element {
   const x: Scale = useMemo(
-    (): Scale => linearScale([0, 360], [MARGIN.left, WIDTH - MARGIN.right]),
-    [],
+    (): Scale => linearScale([0, 360], [MARGIN.left, width - MARGIN.right]),
+    [width],
   );
   const [yMin, yMax] = useMemo(
     (): [number, number] =>
@@ -108,7 +116,7 @@ export function SkyChart({ result, index, trailSamples, onHover, onSelect }: Sky
 
   function nearestIndex(event: MouseEvent<SVGSVGElement>): number | null {
     const rect: DOMRect = event.currentTarget.getBoundingClientRect();
-    const px: number = ((event.clientX - rect.left) / rect.width) * WIDTH;
+    const px: number = ((event.clientX - rect.left) / rect.width) * width;
     const py: number = ((event.clientY - rect.top) / rect.height) * HEIGHT;
     let best: number | null = null;
     let bestDistance: number = HOVER_RADIUS_PX * HOVER_RADIUS_PX;
@@ -148,7 +156,7 @@ export function SkyChart({ result, index, trailSamples, onHover, onSelect }: Sky
   return (
     <svg
       className="chart"
-      viewBox={`0 0 ${WIDTH.toString()} ${HEIGHT.toString()}`}
+      viewBox={`0 0 ${width.toString()} ${HEIGHT.toString()}`}
       role="img"
       aria-label={`Sky diagram for ${result.site.name}: azimuth and elevation of the Sun and the Earth over the ${result.horizon_model === "terrain" ? "terrain" : "flat"} horizon`}
       onMouseMove={(event: MouseEvent<SVGSVGElement>): void => {
@@ -169,14 +177,14 @@ export function SkyChart({ result, index, trailSamples, onHover, onSelect }: Sky
           className="below-horizon"
           x={MARGIN.left}
           y={y(0)}
-          width={WIDTH - MARGIN.left - MARGIN.right}
+          width={width - MARGIN.left - MARGIN.right}
           height={HEIGHT - MARGIN.bottom - y(0)}
         />
       )}
       {yTicks.map(
         (tick: number): JSX.Element => (
           <g key={`y${tick.toString()}`}>
-            <line className="grid" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(tick)} y2={y(tick)} />
+            <line className="grid" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(tick)} y2={y(tick)} />
             <text className="tick" x={MARGIN.left - 6} y={y(tick)} dy="0.32em" textAnchor="end">
               {`${tick.toString()}°`}
             </text>
@@ -195,15 +203,15 @@ export function SkyChart({ result, index, trailSamples, onHover, onSelect }: Sky
       )}
       {terrainPath === null ? (
         <>
-          <line className="horizon" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(0)} y2={y(0)} />
+          <line className="horizon" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(0)} y2={y(0)} />
           <text className="horizon-label" x={x(112.5)} y={y(0) + 14} textAnchor="middle">
             Horizon (flat) · below it: not visible
           </text>
         </>
       ) : (
         <>
-          <line className="grid zero" x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={y(0)} y2={y(0)} />
-          <text className="horizon-label" x={WIDTH - MARGIN.right - 4} y={y(0) - 4} textAnchor="end">
+          <line className="grid zero" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(0)} y2={y(0)} />
+          <text className="horizon-label" x={width - MARGIN.right - 4} y={y(0) - 4} textAnchor="end">
             0°
           </text>
         </>

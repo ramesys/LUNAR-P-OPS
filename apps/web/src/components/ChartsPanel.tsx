@@ -1,11 +1,15 @@
 import type { AnalysisResponse, SiteResult } from "@clps/api-client";
 import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
+import { useElementWidth } from "../lib/useElementWidth.ts";
 import { HoverReadout } from "./HoverReadout.tsx";
 import { SkyChart } from "./SkyChart.tsx";
 import { TimeControl } from "./TimeControl.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { WindowsTable } from "./WindowsTable.tsx";
+
+const DEFAULT_CHART_WIDTH: number = 960;
+const MIN_CHART_WIDTH: number = 320;
 
 interface ChartsPanelProps {
   result: AnalysisResponse;
@@ -23,6 +27,9 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
   const [playing, setPlaying] = useState<boolean>(false);
   const [hoursPerSecond, setHoursPerSecond] = useState<number>(DEFAULT_SPEED);
   const position: RefObject<number> = useRef<number>(0);
+  const chartsRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
+  const measuredWidth: number = useElementWidth(chartsRef, DEFAULT_CHART_WIDTH);
+  const chartWidth: number = Math.max(MIN_CHART_WIDTH, measuredWidth);
   const count: number = result.times.length;
   const stepMinutes: number = result.request.step_minutes;
 
@@ -108,24 +115,28 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
         onSpeed={setHoursPerSecond}
       />
       <HoverReadout times={result.times} focused={focused} index={shown} previewing={hoverIndex !== null} />
-      <h3 className="chart-title">Sky diagram · {focused.site.name}</h3>
-      <SkyChart
-        result={focused}
-        index={shown}
-        trailSamples={trailSamples(stepMinutes)}
-        onHover={setHoverIndex}
-        onSelect={select}
-      />
-      <h3 className="chart-title">Timeline</h3>
-      <Timeline
-        times={result.times}
-        sites={result.sites}
-        focused={focused}
-        rangeEnd={result.request.end}
-        index={shown}
-        onHover={setHoverIndex}
-        onSelect={select}
-      />
+      <div ref={chartsRef}>
+        <h3 className="chart-title">Sky diagram · {focused.site.name}</h3>
+        <SkyChart
+          result={focused}
+          width={chartWidth}
+          index={shown}
+          trailSamples={trailSamples(stepMinutes)}
+          onHover={setHoverIndex}
+          onSelect={select}
+        />
+        <h3 className="chart-title">Timeline</h3>
+        <Timeline
+          times={result.times}
+          width={chartWidth}
+          sites={result.sites}
+          focused={focused}
+          rangeEnd={result.request.end}
+          index={shown}
+          onHover={setHoverIndex}
+          onSelect={select}
+        />
+      </div>
       <WindowsTable result={focused} />
     </section>
   );

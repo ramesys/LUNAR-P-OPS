@@ -673,6 +673,10 @@ a {
   outline: none;
 }
 
+.map-background {
+  pointer-events: none;
+}
+
 .map-site .hit {
   fill: transparent;
 }

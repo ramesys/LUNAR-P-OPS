@@ -3,8 +3,9 @@ import { useMemo, type JSX, type MouseEvent } from "react";
 import { formatUtcDate } from "../lib/format.ts";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "../lib/scale.ts";
 
-const WIDTH: number = 960;
-const LEFT: number = 132;
+const WIDE_LEFT: number = 132;
+const NARROW_LEFT: number = 88;
+const NARROW_BREAKPOINT: number = 600;
 const RIGHT: number = 16;
 const TOP: number = 12;
 const PLOT_HEIGHT: number = 200;
@@ -13,10 +14,11 @@ const BAND_GAP: number = 3;
 const GROUP_GAP: number = 12;
 const SECTION_GAP: number = 28;
 const AXIS_HEIGHT: number = 28;
-const TIME_TICKS: number = 6;
 
 interface TimelineProps {
   times: readonly string[];
+  /** Drawing width in CSS pixels (the measured container width), so text keeps its real size. */
+  width: number;
   sites: readonly SiteResult[];
   focused: SiteResult;
   rangeEnd: string;
@@ -63,6 +65,7 @@ function bandRects(
 
 export function Timeline({
   times,
+  width,
   sites,
   focused,
   rangeEnd,
@@ -70,10 +73,13 @@ export function Timeline({
   onHover,
   onSelect,
 }: TimelineProps): JSX.Element {
+  const narrow: boolean = width < NARROW_BREAKPOINT;
+  const left: number = narrow ? NARROW_LEFT : WIDE_LEFT;
+  const timeTickCount: number = narrow ? 3 : 6;
   const timeMs: number[] = useMemo((): number[] => times.map((t: string): number => Date.parse(t)), [times]);
   const t0: number = timeMs[0] ?? 0;
   const tEnd: number = Date.parse(rangeEnd);
-  const x: Scale = useMemo((): Scale => linearScale([t0, tEnd], [LEFT, WIDTH - RIGHT]), [t0, tEnd]);
+  const x: Scale = useMemo((): Scale => linearScale([t0, tEnd], [left, width - RIGHT]), [t0, tEnd, left, width]);
   const sunClearance: number[] = useMemo((): number[] => clearance(focused.sun), [focused]);
   const earthClearance: number[] = useMemo((): number[] => clearance(focused.earth), [focused]);
   const [yMin, yMax] = useMemo(
@@ -99,17 +105,17 @@ export function Timeline({
   const height: number = axisTop + AXIS_HEIGHT;
   const step: number = timeMs.length > 1 ? (timeMs[1] ?? t0) - t0 : 1;
   const timeTicks: number[] = Array.from(
-    { length: TIME_TICKS },
-    (_unused: unknown, i: number): number => t0 + ((tEnd - t0) * i) / (TIME_TICKS - 1),
+    { length: timeTickCount },
+    (_unused: unknown, i: number): number => t0 + ((tEnd - t0) * i) / (timeTickCount - 1),
   );
 
   function indexAt(event: MouseEvent<SVGSVGElement>): number | null {
     const rect: DOMRect = event.currentTarget.getBoundingClientRect();
-    const px: number = ((event.clientX - rect.left) / rect.width) * WIDTH;
-    if (px < LEFT || px > WIDTH - RIGHT || timeMs.length === 0) {
+    const px: number = ((event.clientX - rect.left) / rect.width) * width;
+    if (px < left || px > width - RIGHT || timeMs.length === 0) {
       return null;
     }
-    const t: number = t0 + ((px - LEFT) / (WIDTH - RIGHT - LEFT)) * (tEnd - t0);
+    const t: number = t0 + ((px - left) / (width - RIGHT - left)) * (tEnd - t0);
     return Math.min(timeMs.length - 1, Math.max(0, Math.round((t - t0) / step)));
   }
 
@@ -118,7 +124,7 @@ export function Timeline({
   return (
     <svg
       className="chart"
-      viewBox={`0 0 ${WIDTH.toString()} ${height.toString()}`}
+      viewBox={`0 0 ${width.toString()} ${height.toString()}`}
       role="img"
       aria-label={`Timeline: height of the Sun and the Earth above the ${focused.horizon_model} horizon at ${focused.site.name}, and sunlight and direct-to-Earth periods for every site`}
       onMouseMove={(event: MouseEvent<SVGSVGElement>): void => {
@@ -134,12 +140,12 @@ export function Timeline({
         onHover(null);
       }}
     >
-      <rect className="below-horizon" x={LEFT} y={y(0)} width={WIDTH - LEFT - RIGHT} height={TOP + PLOT_HEIGHT - y(0)} />
+      <rect className="below-horizon" x={left} y={y(0)} width={width - left - RIGHT} height={TOP + PLOT_HEIGHT - y(0)} />
       {niceTicks(yMin, yMax, 5).map(
         (tick: number): JSX.Element => (
           <g key={`y${tick.toString()}`}>
-            <line className="grid" x1={LEFT} x2={WIDTH - RIGHT} y1={y(tick)} y2={y(tick)} />
-            <text className="tick" x={LEFT - 6} y={y(tick)} dy="0.32em" textAnchor="end">
+            <line className="grid" x1={left} x2={width - RIGHT} y1={y(tick)} y2={y(tick)} />
+            <text className="tick" x={left - 6} y={y(tick)} dy="0.32em" textAnchor="end">
               {`${tick.toString()}°`}
             </text>
           </g>
@@ -151,7 +157,7 @@ export function Timeline({
       <text className="axis-title muted" x={0} y={TOP + 24}>
         {focused.site.name}
       </text>
-      <line className="horizon" x1={LEFT} x2={WIDTH - RIGHT} y1={y(0)} y2={y(0)} />
+      <line className="horizon" x1={left} x2={width - RIGHT} y1={y(0)} y2={y(0)} />
       <path className="track sun" d={sunPath} />
       <path className="track earth" d={earthPath} />
 
@@ -165,14 +171,14 @@ export function Timeline({
             <text className="band-label" x={0} y={top + BAND_HEIGHT - 2}>
               {site.site.name}
             </text>
-            <text className="band-kind" x={LEFT - 6} y={top + BAND_HEIGHT - 2} textAnchor="end">
+            <text className="band-kind" x={left - 6} y={top + BAND_HEIGHT - 2} textAnchor="end">
               Sun
             </text>
-            <rect className="band-track" x={LEFT} y={top} width={WIDTH - LEFT - RIGHT} height={BAND_HEIGHT} />
+            <rect className="band-track" x={left} y={top} width={width - left - RIGHT} height={BAND_HEIGHT} />
             {bandRects(site.sun_windows, x, top, "sun")}
             <text
               className="band-kind"
-              x={LEFT - 6}
+              x={left - 6}
               y={top + 2 * BAND_HEIGHT + BAND_GAP - 2}
               textAnchor="end"
             >
@@ -180,9 +186,9 @@ export function Timeline({
             </text>
             <rect
               className="band-track"
-              x={LEFT}
+              x={left}
               y={top + BAND_HEIGHT + BAND_GAP}
-              width={WIDTH - LEFT - RIGHT}
+              width={width - left - RIGHT}
               height={BAND_HEIGHT}
             />
             {bandRects(site.earth_windows, x, top + BAND_HEIGHT + BAND_GAP, "earth")}
@@ -197,7 +203,7 @@ export function Timeline({
             className="tick"
             x={x(tick)}
             y={axisTop + 16}
-            textAnchor={i === 0 ? "start" : i === TIME_TICKS - 1 ? "end" : "middle"}
+            textAnchor={i === 0 ? "start" : i === timeTickCount - 1 ? "end" : "middle"}
           >
             {formatUtcDate(new Date(tick).toISOString())}
           </text>

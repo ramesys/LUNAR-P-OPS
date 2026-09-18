@@ -5,6 +5,8 @@ import { linearScale, type Scale } from "../lib/scale.ts";
 
 const SIZE: number = 600;
 const SCALE_BAR_KM: number = 50;
+/** Approximate label glyph width (map-label font, SVG units) to size the click target. */
+const LABEL_CHAR_WIDTH: number = 12;
 /** Parallel labels sit between the 0°E and 30°E meridians, away from meridian lines. */
 const PARALLEL_LABEL_ANGLE_RAD: number = (15 * Math.PI) / 180;
 
@@ -45,7 +47,7 @@ export function PoleMap({ map, sites, selectedIds, ranks, maxSelected, onToggle 
             <rect width={SIZE} height={SIZE} />
           </clipPath>
         </defs>
-        <g clipPath="url(#map-clip)">
+        <g clipPath="url(#map-clip)" className="map-background">
           {map.image_url === null ? (
             <rect className="map-empty" width={SIZE} height={SIZE} />
           ) : (
@@ -103,6 +105,7 @@ export function PoleMap({ map, sites, selectedIds, ranks, maxSelected, onToggle 
               onToggle(site.id);
             }
           };
+          const label: string = rank === undefined ? site.name : `#${rank.toString()} ${site.name}`;
           const description: string = `${site.name}, ${formatLatLon(site.latitude_deg, site.longitude_deg)}${
             rank === undefined ? "" : `, rank ${rank.toString()}`
           }${disabled ? " (limit reached)" : ""}`;
@@ -124,10 +127,18 @@ export function PoleMap({ map, sites, selectedIds, ranks, maxSelected, onToggle 
               }}
             >
               <title>{description}</title>
-              <circle className="hit" cx={cx} cy={cy} r={22} />
+              {/* One target for dot and name, so clicking the label also toggles the site. */}
+              <rect
+                className="hit"
+                x={cx - 22}
+                y={cy - 22}
+                width={44 + label.length * LABEL_CHAR_WIDTH}
+                height={44}
+                rx={22}
+              />
               <circle className="dot" cx={cx} cy={cy} r={10} />
               <text className="map-label" x={cx + 15} y={cy + 6}>
-                {rank === undefined ? site.name : `#${rank.toString()} ${site.name}`}
+                {label}
               </text>
             </g>
           );
