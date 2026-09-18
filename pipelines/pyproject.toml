@@ -13,6 +13,7 @@ dependencies = [
 clps-fetch-kernels = "clps_pipelines.fetch_kernels:main"
 clps-fetch-horizons-golden = "clps_pipelines.fetch_horizons_golden:main"
 clps-fetch-terrain = "clps_pipelines.fetch_terrain:main"
+clps-fetch-basemap = "clps_pipelines.fetch_basemap:main"
 clps-spike-terrain = "clps_pipelines.spike_terrain:main"
 
 [tool.uv.sources]
