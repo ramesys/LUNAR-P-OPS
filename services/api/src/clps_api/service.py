@@ -5,6 +5,7 @@ from lunar_core.analysis import Scenario, ScenarioResult, SiteAnalysis, analyze
 from lunar_core.assumptions import assumptions_for, data_sources
 from lunar_core.geometry import HorizontalPosition
 from lunar_core.horizon import HorizonMask
+from lunar_core.pole_map import site_map_xy
 from lunar_core.sites import Site, load_catalog
 from lunar_core.windows import VisibilityWindow
 
@@ -28,7 +29,10 @@ _SITES_BY_ID: dict[str, Site] = {site.id: site for site in CATALOG}
 
 
 def site_out(site: Site) -> SiteOut:
+    map_x, map_y = site_map_xy(site)
     return SiteOut(
+        map_x_m=round(map_x, 1),
+        map_y_m=round(map_y, 1),
         id=site.id,
         name=site.name,
         latitude_deg=site.latitude_deg,

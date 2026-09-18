@@ -38,6 +38,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pole Map */
+        get: operations["getPoleMap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/map/hillshade.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pole Map Image */
+        get: operations["getPoleMapImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analysis": {
         parameters: {
             query?: never;
@@ -156,6 +190,15 @@ export interface components {
             /** Elevation Deg */
             elevation_deg: number[];
         };
+        /** MeridianOut */
+        MeridianOut: {
+            /** Longitude Deg */
+            longitude_deg: number;
+            /** X M */
+            x_m: number;
+            /** Y M */
+            y_m: number;
+        };
         /** MetricsOut */
         MetricsOut: {
             /** Sun Fraction */
@@ -164,6 +207,31 @@ export interface components {
             earth_fraction: number;
             longest_darkness: components["schemas"]["WindowOut"] | null;
             longest_earth_outage: components["schemas"]["WindowOut"] | null;
+        };
+        /** ParallelOut */
+        ParallelOut: {
+            /** Latitude Deg */
+            latitude_deg: number;
+            /** Radius M */
+            radius_m: number;
+        };
+        /**
+         * PoleMapOut
+         * @description Square map centered on the pole, spanning ±half_width_m on both axes.
+         */
+        PoleMapOut: {
+            /** Half Width M */
+            half_width_m: number;
+            /** Image Url */
+            image_url: string | null;
+            /** Parallels */
+            parallels: components["schemas"]["ParallelOut"][];
+            /** Meridians */
+            meridians: components["schemas"]["MeridianOut"][];
+            /** Source Name */
+            source_name: string;
+            /** Source Url */
+            source_url: string;
         };
         /** SiteOut */
         SiteOut: {
@@ -184,6 +252,10 @@ export interface components {
             note: string;
             /** Terrain Available */
             terrain_available: boolean;
+            /** Map X M */
+            map_x_m: number;
+            /** Map Y M */
+            map_y_m: number;
         };
         /** SiteResult */
         SiteResult: {
@@ -269,6 +341,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SiteOut"][];
                 };
+            };
+        };
+    };
+    getPoleMap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoleMapOut"];
+                };
+            };
+        };
+    };
+    getPoleMapImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Basemap not downloaded (run make fetch-basemap) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

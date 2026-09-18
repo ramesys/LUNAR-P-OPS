@@ -45,6 +45,38 @@
         }
       }
     },
+    "/api/map": {
+      "get": {
+        "summary": "Get Pole Map",
+        "operationId": "getPoleMap",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoleMapOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/map/hillshade.png": {
+      "get": {
+        "summary": "Get Pole Map Image",
+        "operationId": "getPoleMapImage",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Basemap not downloaded (run make fetch-basemap)"
+          }
+        }
+      }
+    },
     "/api/analysis": {
       "post": {
         "summary": "Analyze Scenario",
@@ -310,6 +342,29 @@
         ],
         "title": "HorizonMaskOut"
       },
+      "MeridianOut": {
+        "properties": {
+          "longitude_deg": {
+            "type": "number",
+            "title": "Longitude Deg"
+          },
+          "x_m": {
+            "type": "number",
+            "title": "X M"
+          },
+          "y_m": {
+            "type": "number",
+            "title": "Y M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "longitude_deg",
+          "x_m",
+          "y_m"
+        ],
+        "title": "MeridianOut"
+      },
       "MetricsOut": {
         "properties": {
           "sun_fraction": {
@@ -350,6 +405,76 @@
         ],
         "title": "MetricsOut"
       },
+      "ParallelOut": {
+        "properties": {
+          "latitude_deg": {
+            "type": "number",
+            "title": "Latitude Deg"
+          },
+          "radius_m": {
+            "type": "number",
+            "title": "Radius M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "latitude_deg",
+          "radius_m"
+        ],
+        "title": "ParallelOut"
+      },
+      "PoleMapOut": {
+        "properties": {
+          "half_width_m": {
+            "type": "number",
+            "title": "Half Width M"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "parallels": {
+            "items": {
+              "$ref": "#/components/schemas/ParallelOut"
+            },
+            "type": "array",
+            "title": "Parallels"
+          },
+          "meridians": {
+            "items": {
+              "$ref": "#/components/schemas/MeridianOut"
+            },
+            "type": "array",
+            "title": "Meridians"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "half_width_m",
+          "image_url",
+          "parallels",
+          "meridians",
+          "source_name",
+          "source_url"
+        ],
+        "title": "PoleMapOut",
+        "description": "Square map centered on the pole, spanning \u00b1half_width_m on both axes."
+      },
       "SiteOut": {
         "properties": {
           "id": {
@@ -383,6 +508,14 @@
           "terrain_available": {
             "type": "boolean",
             "title": "Terrain Available"
+          },
+          "map_x_m": {
+            "type": "number",
+            "title": "Map X M"
+          },
+          "map_y_m": {
+            "type": "number",
+            "title": "Map Y M"
           }
         },
         "type": "object",
@@ -393,7 +526,9 @@
           "longitude_deg",
           "origin",
           "note",
-          "terrain_available"
+          "terrain_available",
+          "map_x_m",
+          "map_y_m"
         ],
         "title": "SiteOut"
       },

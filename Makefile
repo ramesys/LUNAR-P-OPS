@@ -1,4 +1,4 @@
-.PHONY: up dev down logs fetch-data fetch-terrain spike-terrain golden test test-py test-web lint lint-py lint-web fmt openapi check-openapi
+.PHONY: up dev down logs fetch-data fetch-terrain fetch-basemap spike-terrain golden test test-py test-web lint lint-py lint-web fmt openapi check-openapi
 
 # Git Bash on Windows rewrites /container/paths into C:/...; harmless elsewhere.
 export MSYS_NO_PATHCONV := 1
@@ -32,6 +32,9 @@ fetch-data:
 
 fetch-terrain:
 	$(PY_RUN) clps-fetch-terrain
+
+fetch-basemap:
+	$(PY_RUN) clps-fetch-basemap
 
 spike-terrain: fetch-data
 	$(PY_RUN) clps-spike-terrain

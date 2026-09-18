@@ -23,6 +23,31 @@ class SiteOut(BaseModel):
     origin: Literal["sample", "official"]
     note: str
     terrain_available: bool
+    map_x_m: float
+    map_y_m: float
+    """Polar stereographic position (m) on the pole map: +y toward 0°E, +x toward 90°E."""
+
+
+class ParallelOut(BaseModel):
+    latitude_deg: float
+    radius_m: float
+
+
+class MeridianOut(BaseModel):
+    longitude_deg: float
+    x_m: float
+    y_m: float
+
+
+class PoleMapOut(BaseModel):
+    """Square map centered on the pole, spanning ±half_width_m on both axes."""
+
+    half_width_m: float
+    image_url: str | None
+    parallels: list[ParallelOut]
+    meridians: list[MeridianOut]
+    source_name: str
+    source_url: str
 
 
 class AnalysisRequest(BaseModel):

@@ -6,11 +6,14 @@ services:
     build:
       context: .
       dockerfile: services/api/Dockerfile
-    # Kernels are required; terrain is optional (the API falls back to a flat horizon).
+    # Kernels are required; terrain and the map background are optional (graceful fallbacks).
     command:
       - sh
       - -c
-      - clps-fetch-kernels && (clps-fetch-terrain || echo "WARNING - terrain download failed; flat horizon will be used")
+      - >-
+        clps-fetch-kernels
+        && (clps-fetch-terrain || echo "WARNING - terrain download failed; flat horizon will be used")
+        && (clps-fetch-basemap || echo "WARNING - basemap download failed; map shown without relief")
     volumes:
       - ./data:/data
     restart: "no"
