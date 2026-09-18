@@ -23,17 +23,17 @@ def test_naive_datetime_is_rejected():
 
 
 def test_angular_separation_is_zero_for_same_direction():
-    a = HorizontalPosition(azimuth_deg=10.0, elevation_deg=5.0)
+    a = HorizontalPosition(azimuth_deg=10.0, elevation_deg=5.0, distance_km=1.0)
     assert angular_separation_deg(a, a) == pytest.approx(0.0, abs=1e-9)
 
 
 def test_angular_separation_ignores_azimuth_at_zenith():
-    a = HorizontalPosition(azimuth_deg=0.0, elevation_deg=90.0)
-    b = HorizontalPosition(azimuth_deg=180.0, elevation_deg=90.0)
+    a = HorizontalPosition(azimuth_deg=0.0, elevation_deg=90.0, distance_km=1.0)
+    b = HorizontalPosition(azimuth_deg=180.0, elevation_deg=90.0, distance_km=1.0)
     assert angular_separation_deg(a, b) == pytest.approx(0.0, abs=1e-6)
 
 
 def test_angular_separation_across_north():
-    a = HorizontalPosition(azimuth_deg=359.0, elevation_deg=0.0)
-    b = HorizontalPosition(azimuth_deg=1.0, elevation_deg=0.0)
+    a = HorizontalPosition(azimuth_deg=359.0, elevation_deg=0.0, distance_km=1.0)
+    b = HorizontalPosition(azimuth_deg=1.0, elevation_deg=0.0, distance_km=1.0)
     assert angular_separation_deg(a, b) == pytest.approx(2.0)

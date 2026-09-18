@@ -1,0 +1,53 @@
+{
+  "_comment": "Placeholder catalog. Replace with the official sites from the full challenge statement (2026-10-28). Sample coordinates are arbitrary and are NOT CLPS landing sites.",
+  "sites": [
+    {
+      "id": "sample-a",
+      "name": "Sample A",
+      "latitude_deg": -89.5,
+      "longitude_deg": 0.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate near the pole; not a CLPS site."
+    },
+    {
+      "id": "sample-b",
+      "name": "Sample B",
+      "latitude_deg": -89.0,
+      "longitude_deg": 120.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate; not a CLPS site."
+    },
+    {
+      "id": "sample-c",
+      "name": "Sample C",
+      "latitude_deg": -88.5,
+      "longitude_deg": 240.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate; not a CLPS site."
+    },
+    {
+      "id": "sample-d",
+      "name": "Sample D",
+      "latitude_deg": -87.0,
+      "longitude_deg": 60.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate; not a CLPS site."
+    },
+    {
+      "id": "sample-e",
+      "name": "Sample E",
+      "latitude_deg": -86.0,
+      "longitude_deg": 300.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate; not a CLPS site."
+    },
+    {
+      "id": "sample-f",
+      "name": "Sample F",
+      "latitude_deg": -85.0,
+      "longitude_deg": 180.0,
+      "origin": "sample",
+      "note": "Arbitrary test coordinate; not a CLPS site."
+    }
+  ]
+}

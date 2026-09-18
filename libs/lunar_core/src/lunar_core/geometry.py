@@ -1,4 +1,5 @@
 import math
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -8,6 +9,9 @@ import spiceypy as spice
 
 MOON_FIXED_FRAME: str = "MOON_ME"
 ABERRATION_CORRECTION: str = "LT+S"
+
+# CSPICE keeps global state and is not thread-safe (FastAPI runs sync endpoints in a threadpool).
+SPICE_LOCK: threading.Lock = threading.Lock()
 
 
 class Body(StrEnum):
@@ -36,6 +40,7 @@ class HorizontalPosition:
 
     azimuth_deg: float
     elevation_deg: float
+    distance_km: float
 
 
 def _to_et(time: datetime) -> float:
@@ -67,26 +72,28 @@ def horizontal_positions(
 
     Requires kernels loaded with `lunar_core.kernels.load_kernels`. No refraction (airless).
     """
-    observer: list[float] = _observer_position_km(point)
     results: list[HorizontalPosition] = []
-    for time in times:
-        state, _light_time = spice.azlcpo(
-            "ELLIPSOID",
-            body.value,
-            _to_et(time),
-            ABERRATION_CORRECTION,
-            False,
-            True,
-            observer,
-            "MOON",
-            MOON_FIXED_FRAME,
-        )
-        results.append(
-            HorizontalPosition(
-                azimuth_deg=math.degrees(float(state[1])) % 360.0,
-                elevation_deg=math.degrees(float(state[2])),
+    with SPICE_LOCK:
+        observer: list[float] = _observer_position_km(point)
+        for time in times:
+            state, _light_time = spice.azlcpo(
+                "ELLIPSOID",
+                body.value,
+                _to_et(time),
+                ABERRATION_CORRECTION,
+                False,
+                True,
+                observer,
+                "MOON",
+                MOON_FIXED_FRAME,
             )
-        )
+            results.append(
+                HorizontalPosition(
+                    azimuth_deg=math.degrees(float(state[1])) % 360.0,
+                    elevation_deg=math.degrees(float(state[2])),
+                    distance_km=float(state[0]),
+                )
+            )
     return results
 
 

@@ -28,6 +28,7 @@ class GoldenRow(TypedDict):
     utc: str
     azimuth_deg: float
     elevation_deg: float
+    daylight: bool
 
 
 class GoldenCase(TypedDict):
@@ -83,6 +84,8 @@ def _parse(text: str) -> tuple[list[str], list[GoldenRow]]:
                 utc=timestamp.isoformat(),
                 azimuth_deg=float(fields[3]),
                 elevation_deg=float(fields[4]),
+                # Horizons solar-presence flag: '*' = Sun's upper limb on/above the horizon.
+                daylight=fields[1] == "*",
             )
         )
     return header, rows
