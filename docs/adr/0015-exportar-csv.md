@@ -1,11 +1,11 @@
-# ADR 0015: Exportar la comparación a CSV (RF-18)
+# ADR 0015: Exportar la comparación a CSV e imagen (RF-18)
 
 - Estado: aceptada
 - Fecha: 2026-09-18
 
 ## Contexto
 
-RF-18 (Capa 3) pide exportar los resultados como CSV o como imagen. Los planificadores quieren llevarse los números a su propia planilla o herramienta. Esta decisión cubre el CSV; la imagen queda pendiente.
+RF-18 (Capa 3) pide exportar los resultados como CSV o como imagen. Los planificadores quieren llevarse los números a su propia planilla o herramienta, y las figuras a informes o presentaciones.
 
 ## Decisión
 
@@ -24,4 +24,12 @@ RF-18 (Capa 3) pide exportar los resultados como CSV o como imagen. Los planific
 
 - **Tests:** unitarios de comillas, BOM, filas, visibilidad por muestra y nombres de archivo. El e2e descarga los tres archivos en Edge y verifica el encabezado y la cantidad de filas con datos reales (3 sitios × 744 muestras).
 - **Tamaño:** el peor caso (4 sitios, 1 año, paso de 1 h) genera una serie temporal de ~35.000 filas, unos 3 MB, dentro del navegador.
-- **Pendiente de RF-18:** exportar imagen (PNG del diagrama de cielo o de la línea de tiempo). El SVG ya está en el DOM, así que bastaría con serializarlo e inyectar los colores de CSS.
+
+## Imagen (PNG)
+
+- **Qué se exporta:** el diagrama de cielo y la línea de tiempo, tal como se ven. Incluye el instante mostrado, el tema claro u oscuro y el ancho actual. Cada gráfico tiene un botón **PNG** junto a su título.
+- **Cómo:** el SVG usa clases y variables de CSS que no existen fuera de la página. Por eso se clona y a cada elemento se le copian sus estilos computados (relleno, trazo, opacidad, fuente, `paint-order`). Luego se serializa, se dibuja en un `<canvas>` a **2×** y se codifica como PNG (`apps/web/src/lib/chartImage.ts`).
+- **Autocontenida:** el canvas agrega un título, un subtítulo (rango de fechas, modelo de horizonte e instante), una leyenda con los colores reales y el crédito de datos (NAIF SPICE, LOLA si hubo terreno, y el aviso de sitios de ejemplo si corresponde). La figura se entiende sin la app.
+- **Nombre:** `clps-sky_{sitio}_{inicio}_{fin}.png` y `clps-timeline_{inicio}_{fin}.png`, con el rango inclusivo. `downloadBlob` e `inclusiveDateRange` se comparten con el CSV.
+- **Prueba:** jsdom no tiene canvas, así que la verificación es e2e. Se descarga cada PNG en Edge y se comprueba la firma, el tamaño, y que la imagen contenga píxeles del naranja del Sol y del azul de la Tierra. Esto demuestra que los estilos quedaron copiados y que no se exportó una silueta negra.
+- **Fuera de alcance:** el mapa del polo no se exporta. Su relieve es una imagen externa que habría que incrustar como data URL, y el mapa es de selección, no un resultado.
