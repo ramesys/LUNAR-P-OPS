@@ -16,7 +16,7 @@ RF-18 (Capa 3) pide exportar los resultados como CSV o como imagen. Los planific
   - **Windows:** cada período de `sunlight`, `darkness`, `dte` o `no_dte`, con inicio, fin, duración en horas y `truncated`.
 - **Formato:**
   - RFC 4180: comas, comillas duplicadas y fin de línea CRLF.
-  - Codificación UTF-8 **con BOM**, para que Excel lea bien el "°" de los nombres. El BOM se construye con `String.fromCharCode(0xfeff)`, porque un escape `﻿` en el código fuente terminaba convertido en un carácter invisible por las herramientas de edición.
+  - Codificación UTF-8 **con BOM**, para que Excel lea bien el "°" de los nombres. El BOM se construye con `String.fromCharCode(0xfeff)`, porque una secuencia de escape Unicode para U+FEFF en el código fuente terminaba convertida en un carácter invisible por las herramientas de edición.
   - Horas en UTC ISO 8601, ángulos en grados y duraciones en horas.
   - Nombre de archivo con el rango **inclusivo**, por ejemplo `clps-summary_2026-01-01_2026-12-31.csv`.
 
