@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } fr
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
+import { ExportPanel } from "./components/ExportPanel.tsx";
 import { Glossary } from "./components/Glossary.tsx";
 import { ScenarioForm } from "./components/ScenarioForm.tsx";
 import { PoleMap } from "./components/PoleMap.tsx";
@@ -228,6 +229,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           <section className="card" aria-labelledby="comparison-title">
             <h2 id="comparison-title">Comparison</h2>
             <ComparisonTable sites={result.sites} focusedId={focused.site.id} onFocus={setFocusedId} />
+            <ExportPanel result={result} />
           </section>
 
           <ChartsPanel

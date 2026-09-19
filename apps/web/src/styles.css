@@ -723,3 +723,12 @@ a {
   stroke: #ffffff;
   stroke-width: 4;
 }
+
+.export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}

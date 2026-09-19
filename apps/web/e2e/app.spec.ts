@@ -1,4 +1,7 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { expect, test, type Download, type Locator, type Page } from "@playwright/test";
+
+const CRLF: string = String.fromCharCode(13, 10);
 
 const YEAR_TERRAIN: string =
   "/?sites=sample-a,sample-b,sample-d&from=2026-01-01&to=2026-01-31&step=60&height=2&horizon=terrain&dte=0";
@@ -78,6 +81,31 @@ test.describe("desktop", (): void => {
 
     await page.reload();
     await expect(page.getByRole("checkbox", { name: /Custom 87.25°S 330.00°E/ })).toBeChecked();
+  });
+
+  test("exports summary, time series and windows as CSV", async ({ page }): Promise<void> => {
+    await openScenario(page, YEAR_TERRAIN);
+    const exported: Record<string, string[]> = {};
+    for (const label of ["Summary", "Time series", "Windows"]) {
+      const downloadPromise: Promise<Download> = page.waitForEvent("download");
+      await page.getByRole("group", { name: "Export" }).getByRole("button", { name: label }).click();
+      const download: Download = await downloadPromise;
+      const text: string = await readFile(await download.path(), "utf-8");
+      expect(text.charCodeAt(0)).toBe(0xfeff);
+      exported[download.suggestedFilename()] = text.slice(1).trim().split(CRLF);
+    }
+
+    const summary: string[] = exported["clps-summary_2026-01-01_2026-01-31.csv"] ?? [];
+    expect(summary).toHaveLength(4);
+    expect(summary[1]).toMatch(/^1,sample-b,Sample B,sample,-89,120,terrain,/);
+    const series: string[] = exported["clps-timeseries_2026-01-01_2026-01-31.csv"] ?? [];
+    expect(series).toHaveLength(1 + 3 * 31 * 24);
+    expect(series[0]).toBe(
+      "time_utc,site_id,sun_azimuth_deg,sun_elevation_deg,sun_horizon_deg,sun_visible," +
+        "earth_azimuth_deg,earth_elevation_deg,earth_horizon_deg,dte_available",
+    );
+    const windows: string[] = exported["clps-windows_2026-01-01_2026-01-31.csv"] ?? [];
+    expect(windows.length).toBeGreaterThan(3);
   });
 
   test("opens a shared link with a flat horizon", async ({ page }): Promise<void> => {
