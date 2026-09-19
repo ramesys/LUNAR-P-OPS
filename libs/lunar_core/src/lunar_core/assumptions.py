@@ -50,8 +50,21 @@ def assumptions_for(result: ScenarioResult) -> list[Assumption]:
         if clearance == 0.0
         else f"Earth center at least {clearance:g}° above the horizon"
     )
+    custom: list[Assumption] = (
+        [
+            Assumption(
+                "custom_sites",
+                "Custom sites",
+                "Your coordinates, always with a flat horizon: terrain is only downloaded for "
+                "catalog sites",
+            )
+        ]
+        if any(a.site.origin == "custom" for a in result.ranked)
+        else []
+    )
     return [
         Assumption("horizon", "Horizon model", _horizon_text(result)),
+        *custom,
         Assumption(
             "sun_rule",
             "Sunlight",
