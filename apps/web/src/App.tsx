@@ -270,6 +270,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             focused={focused}
             onFocus={setFocusedId}
             mode={mode}
+            apiClient={apiClient}
           />
 
           <section className="card" aria-labelledby="learn-title">

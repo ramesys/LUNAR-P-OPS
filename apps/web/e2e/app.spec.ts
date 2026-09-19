@@ -158,6 +158,44 @@ test.describe("desktop", (): void => {
     }
   });
 
+  test("shows the local terrain in 3D, lit by the Sun at the time shown", async ({ page }): Promise<void> => {
+    await openScenario(page, YEAR_TERRAIN);
+    await page.getByText("3D view · Sample B").click();
+    const canvas: Locator = page.getByRole("img", { name: /3D terrain around Sample B/ }).locator("canvas");
+    await expect(canvas).toBeVisible();
+    await expect(page.getByText(/At the site now:/)).toBeVisible();
+
+    const snapshot: () => Promise<{ url: string; tones: number }> = async (): Promise<{
+      url: string;
+      tones: number;
+    }> =>
+      canvas.evaluate((element: HTMLCanvasElement): { url: string; tones: number } => {
+        const copy: HTMLCanvasElement = document.createElement("canvas");
+        copy.width = 160;
+        copy.height = 96;
+        const context: CanvasRenderingContext2D | null = copy.getContext("2d");
+        if (context === null) return { url: "", tones: 0 };
+        context.drawImage(element, 0, 0, copy.width, copy.height);
+        const data: Uint8ClampedArray = context.getImageData(0, 0, copy.width, copy.height).data;
+        const tones: Set<number> = new Set<number>();
+        for (let i: number = 0; i < data.length; i += 4) {
+          tones.add(((data[i] ?? 0) >> 3) * 1024 + ((data[i + 1] ?? 0) >> 3) * 32 + ((data[i + 2] ?? 0) >> 3));
+        }
+        return { url: element.toDataURL("image/png"), tones: tones.size };
+      });
+
+    await page.waitForTimeout(500);
+    const before: { url: string; tones: number } = await snapshot();
+    expect(before.tones).toBeGreaterThan(40);
+    await canvas.screenshot({ path: "test-results/terrain3d-before.png" });
+
+    await page.getByRole("slider", { name: "Time" }).fill("300");
+    await page.waitForTimeout(500);
+    const after: { url: string; tones: number } = await snapshot();
+    await canvas.screenshot({ path: "test-results/terrain3d-after.png" });
+    expect(after.url).not.toBe(before.url);
+  });
+
   test("opens a shared link with a flat horizon", async ({ page }): Promise<void> => {
     const table: Locator = await openScenario(
       page,

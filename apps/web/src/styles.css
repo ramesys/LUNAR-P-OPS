@@ -834,3 +834,30 @@ button.small {
   font-size: 0.9rem;
   color: var(--text-secondary);
 }
+
+/* RF-19: 3D view */
+.view-3d {
+  margin-top: 16px;
+}
+
+.view-3d summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.terrain-3d {
+  margin-top: 8px;
+}
+
+.terrain-canvas canvas {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  cursor: grab;
+}
+
+.terrain-caption p {
+  margin: 6px 0;
+  font-size: 0.85rem;
+}

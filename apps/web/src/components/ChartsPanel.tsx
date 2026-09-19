@@ -1,9 +1,27 @@
-import type { AnalysisResponse, SiteResult } from "@clps/api-client";
-import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import type { AnalysisResponse, ApiClient, SiteResult } from "@clps/api-client";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type JSX,
+  type LazyExoticComponent,
+  type RefObject,
+  type SyntheticEvent,
+} from "react";
 import { chartToPng, type LegendEntry } from "../lib/chartImage.ts";
 import { downloadBlob, inclusiveDateRange, slug } from "../lib/download.ts";
 import { formatUtc } from "../lib/format.ts";
-import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
+import {
+  clampIndex,
+  DEFAULT_SPEED,
+  samplesPerTick,
+  TICK_MS,
+  trailSamples,
+  visibleAt,
+} from "../lib/playback.ts";
 import type { Mode } from "../lib/mode.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 import { HoverReadout } from "./HoverReadout.tsx";
@@ -11,7 +29,15 @@ import { HowToReadSky, HowToReadTimeline } from "./Learn.tsx";
 import { SkyChart } from "./SkyChart.tsx";
 import { TimeControl } from "./TimeControl.tsx";
 import { Timeline } from "./Timeline.tsx";
+import type { Terrain3DProps } from "./Terrain3D.tsx";
 import { WindowsTable } from "./WindowsTable.tsx";
+
+/** three.js is only downloaded when the 3D view is opened (RF-19). */
+const Terrain3D: LazyExoticComponent<ComponentType<Terrain3DProps>> = lazy(
+  async (): Promise<{ default: ComponentType<Terrain3DProps> }> => ({
+    default: (await import("./Terrain3D.tsx")).Terrain3D,
+  }),
+);
 
 const DEFAULT_CHART_WIDTH: number = 960;
 const MIN_CHART_WIDTH: number = 320;
@@ -27,13 +53,14 @@ interface ChartsPanelProps {
   focused: SiteResult;
   onFocus: (siteId: string) => void;
   mode: Mode;
+  apiClient: ApiClient;
 }
 
 /**
  * Sky diagram + timeline sharing one instant (RF-12). Time state lives here, not in App, so
  * playback re-renders only the charts. Mount with a new `key` per result to reset it.
  */
-export function ChartsPanel({ result, focused, onFocus, mode }: ChartsPanelProps): JSX.Element {
+export function ChartsPanel({ result, focused, onFocus, mode, apiClient }: ChartsPanelProps): JSX.Element {
   const expert: boolean = mode === "expert";
   const [index, setIndex] = useState<number>(0);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -44,6 +71,7 @@ export function ChartsPanel({ result, focused, onFocus, mode }: ChartsPanelProps
   const skyRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const timelineRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [show3d, setShow3d] = useState<boolean>(false);
   const measuredWidth: number = useElementWidth(chartsRef, DEFAULT_CHART_WIDTH);
   const chartWidth: number = Math.max(MIN_CHART_WIDTH, measuredWidth);
   const count: number = result.times.length;
@@ -227,6 +255,35 @@ export function ChartsPanel({ result, focused, onFocus, mode }: ChartsPanelProps
           />
         </div>
       </div>
+      <details
+        className="view-3d"
+        onToggle={(event: SyntheticEvent<HTMLDetailsElement>): void => {
+          setShow3d(event.currentTarget.open);
+        }}
+      >
+        <summary>3D view · {focused.site.name}</summary>
+        {show3d &&
+          (focused.horizon_model === "terrain" ? (
+            <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
+              <Terrain3D
+                key={focused.site.id}
+                apiClient={apiClient}
+                site={focused}
+                sunAzimuthDeg={focused.sun.azimuth_deg[shown] ?? 0}
+                sunElevationDeg={focused.sun.elevation_deg[shown] ?? 0}
+                earthAzimuthDeg={focused.earth.azimuth_deg[shown] ?? 0}
+                earthElevationDeg={focused.earth.elevation_deg[shown] ?? 0}
+                sunVisible={visibleAt(focused.sun_windows, result.times[shown] ?? "")}
+                earthVisible={visibleAt(focused.earth_windows, result.times[shown] ?? "")}
+              />
+            </Suspense>
+          ) : (
+            <p className="muted">
+              The 3D view needs terrain data. This site uses a flat horizon (custom site, or terrain not
+              downloaded).
+            </p>
+          ))}
+      </details>
       {exportError !== null && (
         <p className="form-errors" role="alert">
           {exportError}

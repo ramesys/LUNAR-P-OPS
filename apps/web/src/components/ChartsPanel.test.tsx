@@ -1,4 +1,4 @@
-import type { AnalysisResponse, Site, SiteResult } from "@clps/api-client";
+import { createApiClient, type AnalysisResponse, type Site, type SiteResult } from "@clps/api-client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartsPanel } from "./ChartsPanel.tsx";
@@ -66,6 +66,7 @@ function renderPanel(): void {
       result={RESULT}
       focused={FOCUSED}
       mode="expert"
+      apiClient={createApiClient({ baseUrl: "http://api.test" })}
       onFocus={(): void => {
         /* no-op */
       }}
