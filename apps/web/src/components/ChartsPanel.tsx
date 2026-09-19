@@ -4,33 +4,37 @@ import { chartToPng, type LegendEntry } from "../lib/chartImage.ts";
 import { downloadBlob, inclusiveDateRange, slug } from "../lib/download.ts";
 import { formatUtc } from "../lib/format.ts";
 import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
+import type { Mode } from "../lib/mode.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 import { HoverReadout } from "./HoverReadout.tsx";
+import { HowToReadSky, HowToReadTimeline } from "./Learn.tsx";
 import { SkyChart } from "./SkyChart.tsx";
 import { TimeControl } from "./TimeControl.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { WindowsTable } from "./WindowsTable.tsx";
 
 const DEFAULT_CHART_WIDTH: number = 960;
+const MIN_CHART_WIDTH: number = 320;
 
 type ChartKind = "sky" | "timeline";
 
 function cssColor(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
-const MIN_CHART_WIDTH: number = 320;
 
 interface ChartsPanelProps {
   result: AnalysisResponse;
   focused: SiteResult;
   onFocus: (siteId: string) => void;
+  mode: Mode;
 }
 
 /**
  * Sky diagram + timeline sharing one instant (RF-12). Time state lives here, not in App, so
  * playback re-renders only the charts. Mount with a new `key` per result to reset it.
  */
-export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX.Element {
+export function ChartsPanel({ result, focused, onFocus, mode }: ChartsPanelProps): JSX.Element {
+  const expert: boolean = mode === "expert";
   const [index, setIndex] = useState<number>(0);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [playing, setPlaying] = useState<boolean>(false);
@@ -115,7 +119,10 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
     }
   }
 
-  function pngButton(kind: ChartKind, label: string): JSX.Element {
+  function pngButton(kind: ChartKind, label: string): JSX.Element | null {
+    if (!expert) {
+      return null;
+    }
     return (
       <button
         type="button"
@@ -129,6 +136,7 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
       </button>
     );
   }
+
   const select: (i: number) => void = (i: number): void => {
     setPlaying(false);
     const next: number = clampIndex(i, count);
@@ -193,6 +201,7 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
         <h3 className="chart-title">
           Sky diagram · {focused.site.name} {pngButton("sky", "sky diagram")}
         </h3>
+        <HowToReadSky open={!expert} />
         <div ref={skyRef}>
           <SkyChart
           result={focused}
@@ -204,6 +213,7 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
           />
         </div>
         <h3 className="chart-title">Timeline {pngButton("timeline", "timeline")}</h3>
+        <HowToReadTimeline open={!expert} />
         <div ref={timelineRef}>
           <Timeline
           times={result.times}
@@ -222,7 +232,7 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
           {exportError}
         </p>
       )}
-      <WindowsTable result={focused} />
+      {expert && <WindowsTable result={focused} />}
     </section>
   );
 }

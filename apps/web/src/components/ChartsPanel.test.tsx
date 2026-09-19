@@ -65,6 +65,7 @@ function renderPanel(): void {
     <ChartsPanel
       result={RESULT}
       focused={FOCUSED}
+      mode="expert"
       onFocus={(): void => {
         /* no-op */
       }}

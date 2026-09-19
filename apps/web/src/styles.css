@@ -739,3 +739,98 @@ button.small {
   margin-left: 8px;
   vertical-align: middle;
 }
+
+/* RF-16: modes and didactic content */
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.mode-toggle button {
+  border-color: transparent;
+}
+
+.expert-note {
+  margin-top: 12px;
+}
+
+.verdict {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.site-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.site-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.site-card h3 {
+  margin: 0 0 8px;
+}
+
+.site-card .rank {
+  color: var(--text-muted);
+}
+
+.site-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.swatch.night {
+  background: var(--text-muted);
+}
+
+.small-note {
+  font-size: 0.8rem;
+  margin: 8px 0 0;
+}
+
+.learn {
+  margin: 8px 0;
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+.learn summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.learn-body p {
+  margin: 8px 0;
+  max-width: 75ch;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}

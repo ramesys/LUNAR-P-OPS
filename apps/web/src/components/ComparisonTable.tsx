@@ -8,9 +8,11 @@ interface ComparisonTableProps {
   sites: readonly SiteResult[];
   focusedId: string | null;
   onFocus: (siteId: string) => void;
+  /** Simple mode shows only the headline columns. */
+  expert: boolean;
 }
 
-export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTableProps): JSX.Element {
+export function ComparisonTable({ sites, focusedId, onFocus, expert }: ComparisonTableProps): JSX.Element {
   return (
     <div className="table-scroll">
       <table className="comparison">
@@ -30,15 +32,19 @@ export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTablePr
               Longest darkness{" "}
               <InfoTip text="Longest continuous period without sunlight: key for sizing batteries. '≥' means it is cut by the edge of the date range." />
             </th>
+            {expert && (
             <th scope="col" className="num">
               Longest DTE gap{" "}
               <InfoTip text="Longest continuous period with the Earth below the horizon (no direct communication)." />
             </th>
+            )}
+            {expert && (
             <th scope="col">
               Horizon{" "}
               <InfoTip text="Terrain: NASA LOLA elevation data. Flat: no terrain (requested, or no terrain data for this site)." />
             </th>
-            <th scope="col">Location</th>
+            )}
+            {expert && <th scope="col">Location</th>}
           </tr>
         </thead>
         <tbody>
@@ -63,13 +69,15 @@ export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTablePr
                 <td className="num">{formatPercent(result.metrics.sun_fraction)}</td>
                 <td className="num">{formatPercent(result.metrics.earth_fraction)}</td>
                 <td className="num">{formatWindowDuration(result.metrics.longest_darkness)}</td>
-                <td className="num">
-                  {formatWindowDuration(result.metrics.longest_earth_outage)}
-                </td>
-                <td>{result.horizon_model === "terrain" ? "Terrain" : "Flat"}</td>
-                <td className="muted">
-                  {formatLatLon(result.site.latitude_deg, result.site.longitude_deg)}
-                </td>
+                {expert && (
+                  <>
+                    <td className="num">{formatWindowDuration(result.metrics.longest_earth_outage)}</td>
+                    <td>{result.horizon_model === "terrain" ? "Terrain" : "Flat"}</td>
+                    <td className="muted">
+                      {formatLatLon(result.site.latitude_deg, result.site.longitude_deg)}
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}

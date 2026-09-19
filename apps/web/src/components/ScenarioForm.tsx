@@ -1,6 +1,7 @@
 import type { Site } from "@clps/api-client";
 import { useState, type ChangeEvent, type JSX, type KeyboardEvent, type SyntheticEvent } from "react";
 import { validateCustomCoordinates } from "../lib/customSite.ts";
+import type { Mode } from "../lib/mode.ts";
 import { formatLatLon } from "../lib/format.ts";
 import {
   MAX_EARTH_CLEARANCE_DEG,
@@ -21,6 +22,11 @@ interface ScenarioFormProps {
   onSubmit: () => void;
   /** Resolves a custom site (RF-17); returns an error message, or null on success. */
   onAddCustomSite: (latitude: number, longitude: number) => Promise<string | null>;
+  /** RF-16: Simple mode hides the expert-only settings. */
+  mode: Mode;
+  /** Expert-only settings that differ from their defaults (shown in Simple mode). */
+  expertNotes: readonly string[];
+  onResetExpert: () => void;
 }
 
 export function ScenarioForm({
@@ -31,7 +37,11 @@ export function ScenarioForm({
   onChange,
   onSubmit,
   onAddCustomSite,
+  mode,
+  expertNotes,
+  onResetExpert,
 }: ScenarioFormProps): JSX.Element {
+  const expert: boolean = mode === "expert";
   const [customLatitude, setCustomLatitude] = useState<string>("");
   const [customLongitude, setCustomLongitude] = useState<string>("");
   const [customError, setCustomError] = useState<string | null>(null);
@@ -101,6 +111,7 @@ export function ScenarioForm({
         })}
       </fieldset>
 
+      {expert && (
       <fieldset className="custom-site">
         <legend>
           Add a site by coordinates{" "}
@@ -151,6 +162,7 @@ export function ScenarioForm({
           </p>
         )}
       </fieldset>
+      )}
 
       <div className="form-row">
         <label>
@@ -175,6 +187,8 @@ export function ScenarioForm({
             }}
           />
         </label>
+        {expert && (
+          <>
         <label>
           <span>
             Step <InfoTip text="Time between samples. Window start and end times are accurate to ± one step." />
@@ -240,10 +254,21 @@ export function ScenarioForm({
             }}
           />
         </label>
+          </>
+        )}
         <button type="submit" disabled={busy || errors.length > 0}>
           {busy ? "Computing…" : "Compare sites"}
         </button>
       </div>
+
+      {!expert && expertNotes.length > 0 && (
+        <p className="notice expert-note" role="note">
+          Expert settings in use: {expertNotes.join("; ")}.{" "}
+          <button type="button" className="link-button" onClick={onResetExpert}>
+            Reset to defaults
+          </button>
+        </p>
+      )}
 
       {errors.length > 0 && (
         <ul className="form-errors" role="alert">

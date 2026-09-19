@@ -4,7 +4,7 @@ import { expect, test, type Download, type Locator, type Page } from "@playwrigh
 const CRLF: string = String.fromCharCode(13, 10);
 
 const YEAR_TERRAIN: string =
-  "/?sites=sample-a,sample-b,sample-d&from=2026-01-01&to=2026-01-31&step=60&height=2&horizon=terrain&dte=0";
+  "/?sites=sample-a,sample-b,sample-d&from=2026-01-01&to=2026-01-31&step=60&height=2&horizon=terrain&dte=0&mode=expert";
 
 async function openScenario(page: Page, path: string): Promise<Locator> {
   await page.goto(path);
@@ -61,7 +61,7 @@ test.describe("desktop", (): void => {
 
     const table: Locator = page.getByRole("table", { name: /ranked by sunlit time/i });
     await expect(table.getByRole("row")).toHaveCount(5);
-    await expect(page).toHaveURL(/sites=sample-a%2Csample-b%2Csample-d%2Csample-c/);
+    await expect(page).toHaveURL(/sites=sample-a%2Csample-b%2Csample-d%2Csample-c.*mode=expert/);
   });
 
   test("adds a custom site by coordinates and shares it in the URL", async ({ page }): Promise<void> => {
@@ -161,12 +161,30 @@ test.describe("desktop", (): void => {
   test("opens a shared link with a flat horizon", async ({ page }): Promise<void> => {
     const table: Locator = await openScenario(
       page,
-      "/?sites=sample-b,sample-c,sample-f&from=2026-02-01&to=2026-02-10&step=120&height=2&horizon=flat&dte=2",
+      "/?sites=sample-b,sample-c,sample-f&from=2026-02-01&to=2026-02-10&step=120&height=2&horizon=flat&dte=2&mode=expert",
     );
 
     await expect(table.getByRole("cell", { name: "Flat" })).toHaveCount(3);
     await expect(page.getByText("Earth center at least 2° above the horizon")).toBeVisible();
   });
+});
+
+test("a first-time visitor gets Simple mode with plain-language results", async ({ page }): Promise<void> => {
+  await page.goto("/");
+  await expect(page.getByRole("table", { name: /ranked by sunlit time/i }).getByRole("row")).toHaveCount(4);
+
+  await expect(page.getByRole("button", { name: "Simple" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".verdict")).toContainText(/Most sunlight|leads on both/);
+  await expect(page.locator(".site-card")).toHaveCount(3);
+  await expect(page.getByText(/days of sunlight per month/).first()).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /Horizon/ })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Export" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Expert" }).click();
+  await expect(page).toHaveURL(/mode=expert/);
+  await expect(page.getByRole("group", { name: "Export" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Expert" })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("fits a phone screen with readable charts @phone", async ({ page }): Promise<void> => {

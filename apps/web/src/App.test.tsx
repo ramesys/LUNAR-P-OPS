@@ -181,7 +181,7 @@ describe("App", (): void => {
     window.history.replaceState(
       null,
       "",
-      "/?sites=sample-b,sample-a,unknown&from=2026-06-01&to=2026-06-07&step=120&height=5&horizon=flat&dte=3",
+      "/?sites=sample-b,sample-a,unknown&from=2026-06-01&to=2026-06-07&step=120&height=5&horizon=flat&dte=3&mode=expert",
     );
     const requests: AnalysisRequest[] = [];
     render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
@@ -210,6 +210,7 @@ describe("App", (): void => {
   });
 
   it("adds a custom site by coordinates and marks it as flat-only", async (): Promise<void> => {
+    window.history.replaceState(null, "", "/?mode=expert");
     const requests: AnalysisRequest[] = [];
     render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
     await screen.findByRole("table", { name: /ranked by sunlit time/i });
@@ -240,5 +241,38 @@ describe("App", (): void => {
 
     expect(requests[0]?.site_ids).toEqual(["sample-a", "custom:-86:200"]);
     expect(screen.getByRole("checkbox", { name: /Custom 86.00°S 200.00°E/ })).toHaveProperty("checked", true);
+  });
+
+  it("starts in Simple mode with plain-language results and hidden expert settings", async (): Promise<void> => {
+    render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+
+    expect(screen.getByRole("button", { name: "Simple" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText(/leads on both counts|Most sunlight:/)).toBeDefined();
+    expect(screen.getAllByText(/days of sunlight per month/).length).toBe(3);
+    expect(screen.queryByRole("combobox", { name: /Horizon/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add site" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+    expect(screen.getByText("How to read the sky diagram").closest("details")?.open).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Expert" }));
+    expect(window.location.search).toContain("mode=expert");
+    expect(screen.getByRole("combobox", { name: /Horizon/ })).toBeDefined();
+    expect(screen.getByRole("group", { name: "Export" })).toBeDefined();
+    expect(screen.queryByText(/days of sunlight per month/)).toBeNull();
+  });
+
+  it("warns in Simple mode about expert settings from a link and resets them", async (): Promise<void> => {
+    window.history.replaceState(null, "", "/?sites=sample-a,sample-b&horizon=flat&dte=2&mode=simple");
+    const requests: AnalysisRequest[] = [];
+    render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+
+    expect(screen.getByText(/Expert settings in use: flat horizon \(terrain ignored\); Earth at least 2°/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+    expect(screen.queryByText(/Expert settings in use/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Compare sites" }));
+    await screen.findAllByRole("button", { name: "Sample B" });
+    expect(requests.at(-1)).toMatchObject({ horizon: "terrain", earth_min_clearance_deg: 0 });
   });
 });

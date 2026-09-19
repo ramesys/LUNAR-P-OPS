@@ -4,12 +4,22 @@ import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
+import { WhySouthPole, WhyTerrainMatters } from "./components/Learn.tsx";
+import { ModeToggle } from "./components/ModeToggle.tsx";
+import { SimpleSummary } from "./components/SimpleSummary.tsx";
 import { Glossary } from "./components/Glossary.tsx";
 import { ScenarioForm } from "./components/ScenarioForm.tsx";
 import { PoleMap } from "./components/PoleMap.tsx";
 import { HealthStatus } from "./HealthStatus.tsx";
 import { describeApiError } from "./lib/apiError.ts";
 import { siteIdsInSearch } from "./lib/customSite.ts";
+import {
+  modeFromSearch,
+  nonDefaultExpertSettings,
+  withExpertDefaults,
+  withMode,
+  type Mode,
+} from "./lib/mode.ts";
 import {
   formFromSearch,
   formToSearch,
@@ -56,14 +66,22 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [resultVersion, setResultVersion] = useState<number>(0);
+  const [mode, setMode] = useState<Mode>((): Mode => modeFromSearch(window.location.search));
+  const modeRef: RefObject<Mode> = useRef<Mode>(mode);
   const latestRequest: RefObject<number> = useRef<number>(0);
+
+  function changeMode(next: Mode): void {
+    modeRef.current = next;
+    setMode(next);
+    window.history.replaceState(null, "", withMode(window.location.search, next));
+  }
 
   const runAnalysis: (current: Form) => Promise<void> = useCallback(
     async (current: Form): Promise<void> => {
       const requestId: number = latestRequest.current + 1;
       latestRequest.current = requestId;
       setStatus({ kind: "loading" });
-      window.history.replaceState(null, "", formToSearch(current));
+      window.history.replaceState(null, "", withMode(formToSearch(current), modeRef.current));
       try {
         const { data, error, response } = await apiClient.POST("/api/analysis", {
           body: toRequest(current),
@@ -177,7 +195,10 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   return (
     <div className="page">
       <header className="page-header">
-        <h1>CLPS Lunar Mission Browser</h1>
+        <div className="title-row">
+          <h1>CLPS Lunar Mission Browser</h1>
+          <ModeToggle mode={mode} onChange={changeMode} />
+        </div>
         <p className="lede">
           Compare candidate landing sites near the lunar south pole: when is the Sun up for solar power, and
           when is the Earth in view for direct-to-Earth communication?
@@ -200,6 +221,11 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             void runAnalysis(form);
           }}
           onAddCustomSite={addCustomSite}
+          mode={mode}
+          expertNotes={nonDefaultExpertSettings(form)}
+          onResetExpert={(): void => {
+            setForm(withExpertDefaults(form));
+          }}
         />
         {poleMap !== null && (
           <section className="card" aria-labelledby="map-title">
@@ -228,8 +254,14 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         <main className={status.kind === "loading" ? "results stale" : "results"} aria-busy={status.kind === "loading"}>
           <section className="card" aria-labelledby="comparison-title">
             <h2 id="comparison-title">Comparison</h2>
-            <ComparisonTable sites={result.sites} focusedId={focused.site.id} onFocus={setFocusedId} />
-            <ExportPanel result={result} />
+            {mode === "simple" && <SimpleSummary sites={result.sites} />}
+            <ComparisonTable
+              sites={result.sites}
+              focusedId={focused.site.id}
+              onFocus={setFocusedId}
+              expert={mode === "expert"}
+            />
+            {mode === "expert" && <ExportPanel result={result} />}
           </section>
 
           <ChartsPanel
@@ -237,7 +269,14 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             result={result}
             focused={focused}
             onFocus={setFocusedId}
+            mode={mode}
           />
+
+          <section className="card" aria-labelledby="learn-title">
+            <h2 id="learn-title">Learn more</h2>
+            <WhySouthPole open={mode === "simple"} />
+            <WhyTerrainMatters open={mode === "simple"} />
+          </section>
 
           <div className="two-col">
             <AssumptionsPanel assumptions={result.assumptions} dataSources={result.data_sources} />
