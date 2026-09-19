@@ -1,12 +1,17 @@
+# Development stack: `docker compose up --build` from the repository root (see ../compose.yaml).
+# Paths are relative to this file.
 name: clps-lunar-mission-browser
 
+x-api-build: &api-build
+  context: ../backend
+  dockerfile: ../infrastructure/docker/api.Dockerfile
+  target: dev
+
 services:
+  # One-shot: downloads SPICE kernels (required), LOLA terrain and the pole map relief (optional).
   data:
-    image: clps-lunar-mission-browser-api
-    build:
-      context: .
-      dockerfile: services/api/Dockerfile
-    # Kernels are required; terrain and the map background are optional (graceful fallbacks).
+    image: clps-lunar-mission-browser-api:dev
+    build: *api-build
     command:
       - sh
       - -c
@@ -15,18 +20,16 @@ services:
         && (clps-fetch-terrain || echo "WARNING - terrain download failed; flat horizon will be used")
         && (clps-fetch-basemap || echo "WARNING - basemap download failed; map shown without relief")
     volumes:
-      - ./data:/data
+      - ../data:/data
     restart: "no"
 
   api:
-    image: clps-lunar-mission-browser-api
-    build:
-      context: .
-      dockerfile: services/api/Dockerfile
+    image: clps-lunar-mission-browser-api:dev
+    build: *api-build
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/data
+      - ../data:/data
     depends_on:
       data:
         condition: service_completed_successfully
@@ -43,24 +46,20 @@ services:
     develop:
       watch:
         - action: sync
-          path: ./services/api/src
-          target: /workspace/services/api/src
+          path: ../backend/api/src
+          target: /workspace/api/src
         - action: sync
-          path: ./services/api/tests
-          target: /workspace/services/api/tests
-        - action: sync
-          path: ./libs/lunar_core/src
-          target: /workspace/libs/lunar_core/src
-        - action: sync
-          path: ./libs/lunar_core/tests
-          target: /workspace/libs/lunar_core/tests
+          path: ../backend/lunar-core/src
+          target: /workspace/lunar-core/src
         - action: rebuild
-          path: ./uv.lock
+          path: ../backend/uv.lock
 
   web:
+    image: clps-lunar-mission-browser-web:dev
     build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+      context: ../frontend
+      dockerfile: ../infrastructure/docker/web.Dockerfile
+      target: dev
     ports:
       - "5180:5173"
     environment:
@@ -81,10 +80,10 @@ services:
     develop:
       watch:
         - action: sync
-          path: ./apps/web/src
-          target: /workspace/apps/web/src
+          path: ../frontend/web/src
+          target: /workspace/web/src
         - action: sync
-          path: ./packages/api-client/src
-          target: /workspace/packages/api-client/src
+          path: ../frontend/api-client/src
+          target: /workspace/api-client/src
         - action: rebuild
-          path: ./pnpm-lock.yaml
+          path: ../frontend/pnpm-lock.yaml

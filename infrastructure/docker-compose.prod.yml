@@ -1,0 +1,71 @@
+# Production stack: nginx (static web + /api proxy) in front of the API, one public port.
+#   docker compose -f infrastructure/docker-compose.prod.yml up -d --build
+# Paths are relative to this file. WEB_PORT (default 8080) sets the published port.
+name: clps-lunar-mission-browser-prod
+
+x-api-build: &api-build
+  context: ../backend
+  dockerfile: ../infrastructure/docker/api.Dockerfile
+  target: prod
+
+services:
+  data:
+    image: clps-lunar-mission-browser-api:prod
+    build: *api-build
+    command:
+      - sh
+      - -c
+      - >-
+        clps-fetch-kernels
+        && (clps-fetch-terrain || echo "WARNING - terrain download failed; flat horizon will be used")
+        && (clps-fetch-basemap || echo "WARNING - basemap download failed; map shown without relief")
+    volumes:
+      - clps-data:/data
+    restart: "no"
+
+  api:
+    image: clps-lunar-mission-browser-api:prod
+    build: *api-build
+    expose:
+      - "8000"
+    volumes:
+      - clps-data:/data
+    depends_on:
+      data:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    image: clps-lunar-mission-browser-web:prod
+    build:
+      context: ../frontend
+      dockerfile: ../infrastructure/docker/web.Dockerfile
+      target: prod
+      additional_contexts:
+        infra: ./docker
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: in Alpine localhost resolves to ::1 and nginx listens on IPv4.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  clps-data:

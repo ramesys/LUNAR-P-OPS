@@ -31,7 +31,7 @@ Los datos de referencia son un año (2026) a paso diario, Sol y Tierra, en 4 pun
 
 - **Error máximo medido: 0,05″ (≈ 0,000014°)** en los 8 casos (2.928 muestras).
 - La tolerancia del test queda en **1″**, con 20× de margen. Un error de marco o de escala de tiempo produciría desviaciones de minutos de arco o más, así que el test lo detectaría.
-- El archivo de referencia (`libs/lunar_core/tests/golden/horizons_2026.json`) se versiona para que el test corra sin red. Se regenera con `make golden`.
+- El archivo de referencia (`backend/lunar-core/tests/golden/horizons_2026.json`) se versiona para que el test corra sin red. Se regenera con `make golden`.
 
 ### Dónde se calcula (§7.4)
 

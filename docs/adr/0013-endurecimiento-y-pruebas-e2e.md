@@ -16,7 +16,7 @@ Tras cerrar las Capas 1 y 2 quedaban tres cosas:
 - **Gráficos al ancho real:** el diagrama de cielo y la línea de tiempo miden su contenedor (`useElementWidth`, con `ResizeObserver`) y lo usan como ancho de dibujo. Así, una unidad SVG equivale a un píxel CSS y el texto conserva su tamaño real.
   - En anchos menores a 600 px, la línea de tiempo usa un margen izquierdo más angosto y 3 fechas en lugar de 6.
   - Cuando no hay `ResizeObserver`, como en jsdom, se usa un ancho fijo de 960.
-- **Pruebas end-to-end con Playwright** (`apps/web/e2e`, `make e2e`) contra el stack en ejecución y con datos reales:
+- **Pruebas end-to-end con Playwright** (`frontend/web/e2e`, `make e2e`) contra el stack en ejecución y con datos reales:
   - usan el **Microsoft Edge instalado** (`channel: "msedge"`), sin descargar navegadores;
   - no corren en Docker: se ejecutan en el host;
   - cubren:
@@ -38,5 +38,5 @@ Tras cerrar las Capas 1 y 2 quedaban tres cosas:
 
 ## Consecuencias
 
-- **Material de entrega:** se agregaron `docs/demo-script.md` y `docs/submission-draft.md`, en inglés y con números reales de los sitios de ejemplo. Hay que actualizarlos con los sitios oficiales (28 de octubre) y ajustarlos a las guías de envío (13 de noviembre).
-- **Nombre de imagen compartido:** el nombre de la imagen de la API está fijo en `docker-compose.yml`. Dos proyectos Compose en la misma máquina (por ejemplo, un clon de prueba) comparten esa imagen, así que conviene no usar `--rmi` al limpiar un clon.
+- **Material de entrega:** se prepararon borradores del guion de demo y del texto de envío (fuera del repositorio), en inglés y con números reales de los sitios de ejemplo. Hay que actualizarlos con los sitios oficiales (28 de octubre) y ajustarlos a las guías de envío (13 de noviembre).
+- **Nombre de imagen compartido:** el nombre de la imagen de la API está fijo en `infrastructure/docker-compose.yml`. Dos proyectos Compose en la misma máquina (por ejemplo, un clon de prueba) comparten esa imagen, así que conviene no usar `--rmi` al limpiar un clon.

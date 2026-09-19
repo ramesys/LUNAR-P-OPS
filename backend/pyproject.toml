@@ -16,7 +16,7 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["libs/lunar_core", "services/api", "pipelines"]
+members = ["lunar-core", "api", "pipelines"]
 
 [tool.uv.sources]
 lunar-core = { workspace = true }
@@ -42,5 +42,5 @@ module = ["spiceypy", "rasterio", "rasterio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["libs/lunar_core/tests", "services/api/tests", "pipelines/tests"]
+testpaths = ["lunar-core/tests", "api/tests", "pipelines/tests"]
 addopts = "--import-mode=importlib"

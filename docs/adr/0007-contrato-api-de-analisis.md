@@ -10,7 +10,7 @@ El Sprint 2 expone por HTTP el cálculo de `lunar_core` (ADR 0005, ADR 0006) par
 ## Decisión
 
 - **Endpoints:**
-  - `GET /api/sites`: catálogo. Por ahora solo hay sitios `sample` con coordenadas arbitrarias, en `libs/lunar_core/src/lunar_core/catalog/sites.json`, un archivo que se reemplaza cuando se publique el enunciado del 28 de octubre.
+  - `GET /api/sites`: catálogo. Por ahora solo hay sitios `sample` con coordenadas arbitrarias, en `backend/lunar-core/src/lunar_core/catalog/sites.json`, un archivo que se reemplaza cuando se publique el enunciado del 28 de octubre.
   - `POST /api/analysis`: recibe `site_ids` (2-4), `start`/`end` (UTC con zona horaria, rango semiabierto [start, end)), `step_minutes` (por defecto 60) y `observer_height_m` (por defecto 2).
 - **Respuesta:**
   - `times` se envía una sola vez y las series de azimut y elevación de cada cuerpo van **en columnas**, alineadas con `times`. Esto evita repetir claves en 8.760 muestras por sitio.

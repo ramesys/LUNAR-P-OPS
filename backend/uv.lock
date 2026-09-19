@@ -127,7 +127,7 @@ wheels = [
 [[package]]
 name = "clps-api"
 version = "0.1.0"
-source = { editable = "services/api" }
+source = { editable = "api" }
 dependencies = [
     { name = "fastapi" },
     { name = "lunar-core" },
@@ -137,7 +137,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "lunar-core", editable = "libs/lunar_core" },
+    { name = "lunar-core", editable = "lunar-core" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
 
@@ -153,7 +153,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lunar-core", editable = "libs/lunar_core" },
+    { name = "lunar-core", editable = "lunar-core" },
     { name = "pyproj", specifier = ">=3.8.0" },
     { name = "rasterio", specifier = ">=1.5.1" },
 ]
@@ -178,9 +178,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "clps-api", editable = "services/api" },
+    { name = "clps-api", editable = "api" },
     { name = "clps-pipelines", editable = "pipelines" },
-    { name = "lunar-core", editable = "libs/lunar_core" },
+    { name = "lunar-core", editable = "lunar-core" },
 ]
 
 [package.metadata.requires-dev]
@@ -323,7 +323,7 @@ wheels = [
 [[package]]
 name = "lunar-core"
 version = "0.1.0"
-source = { editable = "libs/lunar_core" }
+source = { editable = "lunar-core" }
 dependencies = [
     { name = "numpy" },
     { name = "spiceypy" },

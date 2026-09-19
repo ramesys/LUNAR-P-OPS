@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test --project=desktop --project=phone",
+    "screenshots": "playwright test --project=screenshots"
   },
   "dependencies": {
     "@clps/api-client": "workspace:*",

@@ -1,0 +1,6 @@
+# Entry point so that `docker compose up --build` works from the repository root.
+# The stack itself lives in infrastructure/ (development: docker-compose.yml, production: docker-compose.prod.yml).
+name: clps-lunar-mission-browser
+
+include:
+  - infrastructure/docker-compose.yml

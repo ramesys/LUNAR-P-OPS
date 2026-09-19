@@ -19,12 +19,17 @@ export default defineConfig({
     {
       name: "desktop",
       use: { ...devices["Desktop Edge"], channel: "msedge" },
-      grepInvert: /@phone/,
+      grepInvert: /@phone|@screenshots/,
     },
     {
       name: "phone",
       use: { channel: "msedge", viewport: { width: 390, height: 844 }, isMobile: false },
       grep: /@phone/,
+    },
+    {
+      name: "screenshots",
+      use: { channel: "msedge", colorScheme: "light", deviceScaleFactor: 1 },
+      grep: /@screenshots/,
     },
   ],
 });
