@@ -6,7 +6,7 @@
 
 | Término | Significado | Invariantes |
 |---|---|---|
-| **Site** | Sitio candidato del catálogo: id, nombre, latitud y longitud (planetocéntricas, `MOON_ME`), origen (`sample` u `official`) | Latitud en [-90, 90]; longitud normalizada a [0, 360); un sitio `sample` nunca se muestra como dato oficial |
+| **Site** | Sitio candidato: id, nombre, latitud y longitud (planetocéntricas, `MOON_ME`) y origen (`sample` u `official` si viene del catálogo, `custom` si lo define el usuario) | Latitud en [-90, 90]; longitud normalizada a [0, 360); un sitio `sample` nunca se muestra como dato oficial; un sitio `custom` tiene id canónico `custom:{lat}:{lon}`, latitud ≤ −60° y siempre horizonte plano (ADR 0014) |
 | **Observer** | Un Site más la altura del observador sobre el terreno | Altura ≥ 0 m; la define el Scenario (por defecto 2 m) |
 | **Body** | Cuerpo observado: `SUN` o `EARTH` | Conjunto cerrado |
 | **Scenario** | Lo que el usuario pide comparar: 2 a 4 Sites, rango UTC [inicio, fin), paso, altura del observador, modelo de horizonte y despeje mínimo de la Tierra | 2 ≤ sitios ≤ 4, sin repetir; 0 < fin − inicio ≤ 1 año; paso fijo (por defecto 1 h); altura ≥ 0 (por defecto 2 m); horizonte `terrain` (por defecto) o `flat`; despeje DTE entre 0 y 10° (por defecto 0) |
