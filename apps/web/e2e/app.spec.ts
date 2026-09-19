@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type Download, type Locator, type Page } from "@playwright/test";
 
 const CRLF: string = String.fromCharCode(13, 10);
@@ -106,6 +106,56 @@ test.describe("desktop", (): void => {
     );
     const windows: string[] = exported["clps-windows_2026-01-01_2026-01-31.csv"] ?? [];
     expect(windows.length).toBeGreaterThan(3);
+  });
+
+  test("exports the charts as self-contained PNG images", async ({ page }): Promise<void> => {
+    await openScenario(page, YEAR_TERRAIN);
+    for (const [label, file] of [
+      ["sky diagram", "clps-sky_sample-b_2026-01-01_2026-01-31.png"],
+      ["timeline", "clps-timeline_2026-01-01_2026-01-31.png"],
+    ] as const) {
+      const downloadPromise: Promise<Download> = page.waitForEvent("download");
+      await page.getByRole("button", { name: `Download ${label} as PNG` }).click();
+      const download: Download = await downloadPromise;
+      expect(download.suggestedFilename()).toBe(file);
+      const bytes: Buffer = await readFile(await download.path());
+      await writeFile(`test-results/${file}`, bytes);
+
+      expect(bytes.subarray(1, 4).toString("ascii")).toBe("PNG");
+      const width: number = bytes.readUInt32BE(16);
+      const height: number = bytes.readUInt32BE(20);
+      expect(width).toBeGreaterThan(1500);
+      expect(height).toBeGreaterThan(500);
+
+      // Inlined styles: the image must contain the Sun's orange and the Earth's blue.
+      const colors: { sun: number; earth: number } = await page.evaluate(
+        async (base64: string): Promise<{ sun: number; earth: number }> => {
+          const image: HTMLImageElement = new Image();
+          image.src = `data:image/png;base64,${base64}`;
+          await image.decode();
+          const canvas: HTMLCanvasElement = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context: CanvasRenderingContext2D | null = canvas.getContext("2d");
+          if (context === null) return { sun: 0, earth: 0 };
+          context.drawImage(image, 0, 0);
+          const data: Uint8ClampedArray = context.getImageData(0, 0, image.width, image.height).data;
+          let sun: number = 0;
+          let earth: number = 0;
+          for (let i: number = 0; i < data.length; i += 4) {
+            const r: number = data[i] ?? 0;
+            const g: number = data[i + 1] ?? 0;
+            const b: number = data[i + 2] ?? 0;
+            if (r > 200 && g > 80 && g < 130 && b < 90) sun += 1;
+            if (r < 80 && g > 100 && g < 150 && b > 190) earth += 1;
+          }
+          return { sun, earth };
+        },
+        bytes.toString("base64"),
+      );
+      expect(colors.sun).toBeGreaterThan(100);
+      expect(colors.earth).toBeGreaterThan(100);
+    }
   });
 
   test("opens a shared link with a flat horizon", async ({ page }): Promise<void> => {

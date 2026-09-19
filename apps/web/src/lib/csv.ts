@@ -1,5 +1,7 @@
 import type { AnalysisRequest, AnalysisResponse, SiteResult, VisibilityWindow } from "@clps/api-client";
 
+import { inclusiveDateRange } from "./download.ts";
+
 /** RF-18: CSV exports built from the analysis on screen (RFC 4180, UTF-8 with BOM for Excel). */
 
 export type CsvValue = string | number | boolean | null;
@@ -154,7 +156,6 @@ export function windowsCsv(result: AnalysisResponse): string {
 
 /** File name with the inclusive UTC date range, e.g. clps-summary_2026-01-01_2026-12-31.csv. */
 export function exportFileName(result: AnalysisResponse, kind: string): string {
-  const start: string = result.request.start.slice(0, 10);
-  const lastIncluded: string = new Date(Date.parse(result.request.end) - 1).toISOString().slice(0, 10);
+  const [start, lastIncluded] = inclusiveDateRange(result.request);
   return `clps-${kind}_${start}_${lastIncluded}.csv`;
 }

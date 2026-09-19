@@ -2,6 +2,7 @@ import type { VisibilityWindow } from "@clps/api-client";
 import { describe, expect, it } from "vitest";
 import { describeApiError } from "./apiError.ts";
 import { siteIdsInSearch, validateCustomCoordinates } from "./customSite.ts";
+import { inclusiveDateRange, slug } from "./download.ts";
 import { formatHours, formatLatLon, formatPercent, formatWindowDuration } from "./format.ts";
 import { clampIndex, samplesPerTick, trailSamples, visibleAt } from "./playback.ts";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "./scale.ts";
@@ -152,6 +153,24 @@ describe("custom sites", (): void => {
     expect(validateCustomCoordinates(Number.NaN, 0)).toMatch(/Latitude/);
     expect(validateCustomCoordinates(-80, 361)).toMatch(/Longitude/);
     expect(siteIdsInSearch("?sites=a,custom:-88:45,b")).toEqual(["a", "custom:-88:45", "b"]);
+  });
+});
+
+describe("download helpers", (): void => {
+  it("builds file-name slugs and inclusive date ranges", (): void => {
+    expect(slug("Custom 87.50°S 10.00°E")).toBe("custom-87-50-s-10-00-e");
+    expect(slug("Sample B")).toBe("sample-b");
+    expect(
+      inclusiveDateRange({
+        site_ids: [],
+        start: "2026-01-01T00:00:00Z",
+        end: "2027-01-01T00:00:00.000Z",
+        step_minutes: 60,
+        observer_height_m: 2,
+        horizon: "terrain",
+        earth_min_clearance_deg: 0,
+      }),
+    ).toEqual(["2026-01-01", "2026-12-31"]);
   });
 });
 

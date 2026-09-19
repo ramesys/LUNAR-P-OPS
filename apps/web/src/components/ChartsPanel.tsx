@@ -1,5 +1,8 @@
 import type { AnalysisResponse, SiteResult } from "@clps/api-client";
 import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import { chartToPng, type LegendEntry } from "../lib/chartImage.ts";
+import { downloadBlob, inclusiveDateRange, slug } from "../lib/download.ts";
+import { formatUtc } from "../lib/format.ts";
 import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 import { HoverReadout } from "./HoverReadout.tsx";
@@ -9,6 +12,12 @@ import { Timeline } from "./Timeline.tsx";
 import { WindowsTable } from "./WindowsTable.tsx";
 
 const DEFAULT_CHART_WIDTH: number = 960;
+
+type ChartKind = "sky" | "timeline";
+
+function cssColor(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
 const MIN_CHART_WIDTH: number = 320;
 
 interface ChartsPanelProps {
@@ -28,6 +37,9 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
   const [hoursPerSecond, setHoursPerSecond] = useState<number>(DEFAULT_SPEED);
   const position: RefObject<number> = useRef<number>(0);
   const chartsRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
+  const skyRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
+  const timelineRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const measuredWidth: number = useElementWidth(chartsRef, DEFAULT_CHART_WIDTH);
   const chartWidth: number = Math.max(MIN_CHART_WIDTH, measuredWidth);
   const count: number = result.times.length;
@@ -55,6 +67,68 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
   }, [playing, hoursPerSecond, stepMinutes, count]);
 
   const shown: number = hoverIndex ?? index;
+
+  async function exportChart(kind: ChartKind): Promise<void> {
+    const svg: SVGSVGElement | null | undefined = (kind === "sky" ? skyRef : timelineRef).current?.querySelector("svg");
+    if (svg === null || svg === undefined) {
+      return;
+    }
+    const [start, end] = inclusiveDateRange(result.request);
+    const terrain: boolean = focused.horizon_model === "terrain";
+    const legend: LegendEntry[] = [
+      { label: "Sun", color: cssColor("--sun"), kind: "line" },
+      { label: "Earth", color: cssColor("--earth"), kind: "line" },
+      kind === "sky" && terrain
+        ? { label: "Terrain horizon (LOLA)", color: cssColor("--terrain-edge"), kind: "area" }
+        : {
+            label: terrain ? "Below the terrain horizon" : "Below the flat horizon",
+            color: cssColor("--axis"),
+            kind: "area",
+          },
+    ];
+    const hasSamples: boolean = result.sites.some((s: SiteResult): boolean => s.site.origin === "sample");
+    const credit: string = [
+      "CLPS Lunar Mission Browser",
+      "Ephemerides: NASA/JPL NAIF SPICE (DE440, DE421 lunar frame)",
+      ...(terrain ? ["Terrain: NASA GSFC LOLA"] : []),
+      ...(hasSamples ? ["Sample sites are placeholders, not CLPS sites"] : []),
+    ].join(" · ");
+    const title: string =
+      kind === "sky"
+        ? `Sky diagram · ${focused.site.name}`
+        : `Timeline · height above the horizon at ${focused.site.name}; Sun and DTE bands for all sites`;
+    try {
+      const blob: Blob = await chartToPng(svg, {
+        title,
+        subtitle: `${start} to ${end} UTC · ${terrain ? "LOLA terrain horizon" : "flat horizon"} · shown instant ${formatUtc(result.times[shown] ?? "")}`,
+        legend,
+        credit,
+        background: cssColor("--surface"),
+        textColor: cssColor("--text-primary"),
+        mutedColor: cssColor("--text-muted"),
+      });
+      const subject: string = kind === "sky" ? `_${slug(focused.site.name)}` : "";
+      downloadBlob(`clps-${kind}${subject}_${start}_${end}.png`, blob);
+      setExportError(null);
+    } catch (caught: unknown) {
+      setExportError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  function pngButton(kind: ChartKind, label: string): JSX.Element {
+    return (
+      <button
+        type="button"
+        className="small"
+        aria-label={`Download ${label} as PNG`}
+        onClick={(): void => {
+          void exportChart(kind);
+        }}
+      >
+        PNG
+      </button>
+    );
+  }
   const select: (i: number) => void = (i: number): void => {
     setPlaying(false);
     const next: number = clampIndex(i, count);
@@ -116,17 +190,22 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
       />
       <HoverReadout times={result.times} focused={focused} index={shown} previewing={hoverIndex !== null} />
       <div ref={chartsRef}>
-        <h3 className="chart-title">Sky diagram · {focused.site.name}</h3>
-        <SkyChart
+        <h3 className="chart-title">
+          Sky diagram · {focused.site.name} {pngButton("sky", "sky diagram")}
+        </h3>
+        <div ref={skyRef}>
+          <SkyChart
           result={focused}
           width={chartWidth}
           index={shown}
           trailSamples={trailSamples(stepMinutes)}
           onHover={setHoverIndex}
           onSelect={select}
-        />
-        <h3 className="chart-title">Timeline</h3>
-        <Timeline
+          />
+        </div>
+        <h3 className="chart-title">Timeline {pngButton("timeline", "timeline")}</h3>
+        <div ref={timelineRef}>
+          <Timeline
           times={result.times}
           width={chartWidth}
           sites={result.sites}
@@ -135,8 +214,14 @@ export function ChartsPanel({ result, focused, onFocus }: ChartsPanelProps): JSX
           index={shown}
           onHover={setHoverIndex}
           onSelect={select}
-        />
+          />
+        </div>
       </div>
+      {exportError !== null && (
+        <p className="form-errors" role="alert">
+          {exportError}
+        </p>
+      )}
       <WindowsTable result={focused} />
     </section>
   );

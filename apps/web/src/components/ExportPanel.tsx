@@ -1,6 +1,7 @@
 import type { AnalysisResponse } from "@clps/api-client";
 import type { JSX } from "react";
 import { exportFileName, summaryCsv, timeSeriesCsv, windowsCsv } from "../lib/csv.ts";
+import { downloadBlob } from "../lib/download.ts";
 import { InfoTip } from "./InfoTip.tsx";
 
 interface ExportPanelProps {
@@ -19,17 +20,6 @@ const OPTIONS: readonly ExportOption[] = [
   { kind: "windows", label: "Windows", build: windowsCsv },
 ];
 
-function download(fileName: string, content: string): void {
-  const url: string = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
-  const link: HTMLAnchorElement = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 /** RF-18: download the current comparison as CSV (UTC times, degrees, hours). */
 export function ExportPanel({ result }: ExportPanelProps): JSX.Element {
   return (
@@ -44,7 +34,10 @@ export function ExportPanel({ result }: ExportPanelProps): JSX.Element {
             key={option.kind}
             type="button"
             onClick={(): void => {
-              download(exportFileName(result, option.kind), option.build(result));
+              downloadBlob(
+                exportFileName(result, option.kind),
+                new Blob([option.build(result)], { type: "text/csv;charset=utf-8" }),
+              );
             }}
           >
             {option.label}
