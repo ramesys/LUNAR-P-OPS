@@ -75,6 +75,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sites/{site_id}/terrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Site Terrain */
+        get: operations["getSiteTerrain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/map": {
         parameters: {
             query?: never;
@@ -318,6 +335,27 @@ export interface components {
             /** Earth Windows */
             earth_windows: components["schemas"]["WindowOut"][];
         };
+        /**
+         * TerrainPatchOut
+         * @description Local terrain for the 3D view: heights (m) relative to the site's ground, with curvature.
+         *
+         *     Row-major `size` by `size` values: row 0 is the north edge, column 0 the west edge, spanning
+         *     ±half_width_m east/north of the site.
+         */
+        TerrainPatchOut: {
+            /** Site Id */
+            site_id: string;
+            /** Half Width M */
+            half_width_m: number;
+            /** Size */
+            size: number;
+            /** Heights M */
+            heights_m: number[];
+            /** Site Ground M */
+            site_ground_m: number;
+            /** Source */
+            source: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -450,6 +488,44 @@ export interface operations {
                 };
             };
             /** @description Unknown site id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getSiteTerrain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerrainPatchOut"];
+                };
+            };
+            /** @description Unknown site, or no terrain for it (custom sites never have) */
             404: {
                 headers: {
                     [name: string]: unknown;

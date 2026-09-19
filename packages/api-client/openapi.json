@@ -129,6 +129,48 @@
         }
       }
     },
+    "/api/sites/{site_id}/terrain": {
+      "get": {
+        "summary": "Get Site Terrain",
+        "operationId": "getSiteTerrain",
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerrainPatchOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown site, or no terrain for it (custom sites never have)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/map": {
       "get": {
         "summary": "Get Pole Map",
@@ -694,6 +736,48 @@
           "earth_windows"
         ],
         "title": "SiteResult"
+      },
+      "TerrainPatchOut": {
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "half_width_m": {
+            "type": "number",
+            "title": "Half Width M"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "heights_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Heights M"
+          },
+          "site_ground_m": {
+            "type": "number",
+            "title": "Site Ground M"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "site_id",
+          "half_width_m",
+          "size",
+          "heights_m",
+          "site_ground_m",
+          "source"
+        ],
+        "title": "TerrainPatchOut",
+        "description": "Local terrain for the 3D view: heights (m) relative to the site's ground, with curvature.\n\nRow-major `size` by `size` values: row 0 is the north edge, column 0 the west edge, spanning\n\u00b1half_width_m east/north of the site."
       },
       "ValidationError": {
         "properties": {

@@ -10,14 +10,16 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from lunar_core.kernels import load_kernels
 from lunar_core.sites import Site, custom_site
+from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import pole_map
+from clps_api import pole_map, terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     HealthResponse,
     PoleMapOut,
     SiteOut,
+    TerrainPatchOut,
 )
 from clps_api.service import CATALOG, resolve_site, run_analysis, site_out
 
@@ -74,6 +76,36 @@ def get_site(site_id: str) -> SiteOut:
     if site is None:
         raise HTTPException(status_code=404, detail=f"unknown site id: {site_id}")
     return site_out(site)
+
+
+TERRAIN_PATCH_SOURCE: str = (
+    "NASA GSFC LOLA LDEM_80S_20MPP_ADJ (20 m/px), resampled to the local east/north grid"
+)
+
+
+@app.get(
+    "/api/sites/{site_id}/terrain",
+    operation_id="getSiteTerrain",
+    responses={
+        404: {"description": "Unknown site, or no terrain for it (custom sites never have)"}
+    },
+)
+def get_site_terrain(site_id: str) -> TerrainPatchOut:
+    try:
+        site: Site | None = resolve_site(site_id)
+    except ValueError:
+        site = None
+    patch: LocalTerrainPatch | None = None if site is None else terrain_store.patch_for(site)
+    if site is None or patch is None:
+        raise HTTPException(status_code=404, detail=f"no terrain for site: {site_id}")
+    return TerrainPatchOut(
+        site_id=site.id,
+        half_width_m=patch.half_width_m,
+        size=patch.size,
+        heights_m=[round(float(v), 1) for v in patch.heights_m.ravel()],
+        site_ground_m=round(patch.site_ground_m, 1),
+        source=TERRAIN_PATCH_SOURCE,
+    )
 
 
 @app.get("/api/map", operation_id="getPoleMap")

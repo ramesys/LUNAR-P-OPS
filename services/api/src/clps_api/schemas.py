@@ -28,6 +28,21 @@ class SiteOut(BaseModel):
     """Polar stereographic position (m) on the pole map: +y toward 0°E, +x toward 90°E."""
 
 
+class TerrainPatchOut(BaseModel):
+    """Local terrain for the 3D view: heights (m) relative to the site's ground, with curvature.
+
+    Row-major `size` by `size` values: row 0 is the north edge, column 0 the west edge, spanning
+    ±half_width_m east/north of the site.
+    """
+
+    site_id: str
+    half_width_m: float
+    size: int
+    heights_m: list[float]
+    site_ground_m: float
+    source: str
+
+
 class ParallelOut(BaseModel):
     latitude_deg: float
     radius_m: float

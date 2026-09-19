@@ -7,14 +7,17 @@ from pathlib import Path
 from lunar_core.horizon import HorizonMask, horizon_mask
 from lunar_core.sites import Site
 from lunar_core.terrain import TerrainGrid, terrain_files
+from lunar_core.terrain_patch import LocalTerrainPatch, local_terrain_patch
 
 _cache: dict[tuple[str, float], HorizonMask] = {}
+_patches: dict[str, LocalTerrainPatch] = {}
 _lock: threading.Lock = threading.Lock()
 
 
 def clear_cache() -> None:
     with _lock:
         _cache.clear()
+        _patches.clear()
 
 
 def terrain_dir() -> Path:
@@ -45,4 +48,19 @@ def mask_for(site: Site, observer_height_m: float) -> HorizonMask | None:
                 observer_height_m=observer_height_m,
             )
             _cache[key] = cached
+        return cached
+
+
+def patch_for(site: Site) -> LocalTerrainPatch | None:
+    """Local ±6 km terrain around the site for the 3D view (RF-19); None without terrain."""
+    if not terrain_available(site):
+        return None
+    with _lock:
+        cached: LocalTerrainPatch | None = _patches.get(site.id)
+        if cached is None:
+            near_path, _ = terrain_files(terrain_dir(), site.id)
+            cached = local_terrain_patch(
+                site.latitude_deg, site.longitude_deg, TerrainGrid.load(near_path)
+            )
+            _patches[site.id] = cached
         return cached

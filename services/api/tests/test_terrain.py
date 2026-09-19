@@ -95,3 +95,17 @@ def test_earth_clearance_is_reported_and_bounded(client: TestClient):
 
     response = client.post("/api/analysis", json=request_body(earth_min_clearance_deg=12))
     assert response.status_code == 422
+
+
+def test_site_terrain_patch_is_served_for_sites_with_terrain(client: TestClient):
+    body = client.get(f"/api/sites/{SITE_WITH_TERRAIN}/terrain").json()
+
+    assert body["site_id"] == SITE_WITH_TERRAIN
+    assert body["size"] == 129
+    assert len(body["heights_m"]) == 129 * 129
+    center = body["heights_m"][64 * 129 + 64]
+    assert center == 0.0
+    assert min(body["heights_m"]) < -20  # flat synthetic terrain: only the curvature drop
+    assert client.get(f"/api/sites/{SITE_WITHOUT_TERRAIN}/terrain").status_code == 404
+    assert client.get("/api/sites/custom:-87.5:10/terrain").status_code == 404
+    assert client.get("/api/sites/nope/terrain").status_code == 404
