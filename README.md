@@ -10,7 +10,7 @@ Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a p
 > - un control de tiempo animado que sincroniza ambos gráficos;
 > - el panel de supuestos y fuentes, y un glosario.
 >
-> También se puede elegir entre horizonte con terreno o plano, fijar la elevación mínima de la Tierra, agregar un sitio propio por coordenadas (con horizonte plano), descargar los resultados en CSV (resumen, serie temporal y ventanas) y los gráficos en PNG y compartir la URL. Las posiciones del Sol y la Tierra están validadas contra JPL Horizons (error máximo de 0,05″) y el horizonte, contra el mapa de sombras permanentes de la NASA. Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
+> Hay dos modos: **Simple** (por defecto; resultados en lenguaje llano y explicaciones para el público y los educadores) y **Expert** (todos los ajustes y exportaciones). En modo Expert se puede elegir entre horizonte con terreno o plano, fijar la elevación mínima de la Tierra, agregar un sitio propio por coordenadas (con horizonte plano), descargar los resultados en CSV (resumen, serie temporal y ventanas) y los gráficos en PNG y compartir la URL. Las posiciones del Sol y la Tierra están validadas contra JPL Horizons (error máximo de 0,05″) y el horizonte, contra el mapa de sombras permanentes de la NASA. Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
 
 ## Requisitos
 
