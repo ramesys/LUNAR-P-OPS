@@ -2,12 +2,13 @@
 
 Herramienta para comparar sitios de aterrizaje y fechas en el polo sur lunar a partir de la posición del Sol y la Tierra sobre el horizonte, con foco en el potencial de energía solar y las ventanas de comunicación directa con la Tierra (DTE). Proyecto para el **NASA Space Apps Challenge 2026** (desafío #2).
 
-> Estado: **Capas 1 y 2 completas**. En http://localhost:5180 se eligen de 2 a 4 sitios de ejemplo (con checkboxes o en un mapa del polo sobre el relieve LOLA) y un rango de hasta un año, y se obtienen:
+> Estado: **Capas 1, 2 y 3 completas** (RF-01 a RF-19). En http://localhost:5180 se eligen de 2 a 4 sitios de ejemplo (con checkboxes o en un mapa del polo sobre el relieve LOLA) y un rango de hasta un año, y se obtienen:
 >
 > - una tabla comparativa con ranking;
 > - un diagrama de cielo con la silueta del terreno;
 > - una línea de tiempo con bandas de luz y comunicación directa;
 > - un control de tiempo animado que sincroniza ambos gráficos;
+> - una vista 3D del terreno LOLA alrededor del sitio, iluminada por el Sol en el instante mostrado;
 > - el panel de supuestos y fuentes, y un glosario.
 >
 > Hay dos modos: **Simple** (por defecto; resultados en lenguaje llano y explicaciones para el público y los educadores) y **Expert** (todos los ajustes y exportaciones). En modo Expert se puede elegir entre horizonte con terreno o plano, fijar la elevación mínima de la Tierra, agregar un sitio propio por coordenadas (con horizonte plano), descargar los resultados en CSV (resumen, serie temporal y ventanas) y los gráficos en PNG y compartir la URL. Las posiciones del Sol y la Tierra están validadas contra JPL Horizons (error máximo de 0,05″) y el horizonte, contra el mapa de sombras permanentes de la NASA. Ver el [roadmap](docs/roadmap.md), el [brief](docs/brief.md), el [modelo de dominio](docs/domain.md) y los [ADR](docs/adr/).
@@ -35,7 +36,7 @@ Si el terreno o el relieve no se pueden descargar, la app funciona igual (con ho
 | Servicio | URL |
 |---|---|
 | Web | http://localhost:5180 |
-| API | http://localhost:8000/api/health, `GET /api/sites`, `POST /api/analysis` |
+| API | http://localhost:8000/api/health, `GET /api/sites`, `POST /api/analysis`, `GET /api/map`, `GET /api/sites/{id}/terrain` (lista completa en Swagger) |
 | Docs de la API (Swagger) | http://localhost:8000/docs |
 
 Para la recarga en caliente (sincroniza el código al editar), usa `docker compose up --build --watch` o `make dev`.
