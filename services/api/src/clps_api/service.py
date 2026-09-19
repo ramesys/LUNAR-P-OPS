@@ -6,7 +6,7 @@ from lunar_core.assumptions import assumptions_for, data_sources
 from lunar_core.geometry import HorizontalPosition
 from lunar_core.horizon import HorizonMask
 from lunar_core.pole_map import site_map_xy
-from lunar_core.sites import Site, load_catalog
+from lunar_core.sites import CUSTOM_PREFIX, Site, load_catalog, parse_custom_site_id
 from lunar_core.windows import VisibilityWindow
 
 from clps_api import terrain_store
@@ -39,7 +39,7 @@ def site_out(site: Site) -> SiteOut:
         longitude_deg=site.longitude_deg,
         origin=site.origin,
         note=site.note,
-        terrain_available=terrain_store.terrain_available(site.id),
+        terrain_available=terrain_store.terrain_available(site),
     )
 
 
@@ -98,12 +98,24 @@ def _site_result(rank: int, analysis: SiteAnalysis) -> SiteResult:
     )
 
 
-def build_scenario(request: AnalysisRequest) -> Scenario:
-    unknown: list[str] = [i for i in request.site_ids if i not in _SITES_BY_ID]
+def resolve_site(site_id: str) -> Site | None:
+    """Catalog site, or a custom site parsed from its id; None if the id is unknown."""
+    if site_id.startswith(CUSTOM_PREFIX):
+        return parse_custom_site_id(site_id)
+    return _SITES_BY_ID.get(site_id)
+
+
+def resolve_sites(site_ids: list[str]) -> tuple[Site, ...]:
+    resolved: list[Site | None] = [resolve_site(i) for i in site_ids]
+    unknown: list[str] = [i for i, s in zip(site_ids, resolved, strict=True) if s is None]
     if unknown:
         raise ValueError(f"unknown site ids: {', '.join(unknown)}")
+    return tuple(s for s in resolved if s is not None)
+
+
+def build_scenario(request: AnalysisRequest) -> Scenario:
     return Scenario(
-        sites=tuple(_SITES_BY_ID[i] for i in request.site_ids),
+        sites=resolve_sites(request.site_ids),
         start=request.start,
         end=request.end,
         step=timedelta(minutes=request.step_minutes),
@@ -147,6 +159,6 @@ def clear_cache() -> None:
 
 def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
     terrain_key: tuple[bool, ...] = tuple(
-        terrain_store.terrain_available(site_id) for site_id in request.site_ids
+        terrain_store.terrain_available(site) for site in resolve_sites(request.site_ids)
     )
     return _cached_analysis(request.model_dump_json(), terrain_key)

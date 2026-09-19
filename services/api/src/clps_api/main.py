@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from lunar_core.kernels import load_kernels
+from lunar_core.sites import Site, custom_site
 
 from clps_api import pole_map
 from clps_api.schemas import (
@@ -18,7 +19,7 @@ from clps_api.schemas import (
     PoleMapOut,
     SiteOut,
 )
-from clps_api.service import CATALOG, run_analysis, site_out
+from clps_api.service import CATALOG, resolve_site, run_analysis, site_out
 
 
 @asynccontextmanager
@@ -45,6 +46,34 @@ def get_health() -> HealthResponse:
 @app.get("/api/sites", operation_id="listSites")
 def list_sites() -> list[SiteOut]:
     return [site_out(site) for site in CATALOG]
+
+
+@app.get(
+    "/api/sites/custom",
+    operation_id="createCustomSite",
+    responses={422: {"description": "Coordinates outside the south polar region"}},
+)
+def get_custom_site(latitude: float, longitude: float) -> SiteOut:
+    """Canonical custom site (RF-17) for user coordinates: planetocentric °, east longitude."""
+    try:
+        return site_out(custom_site(latitude, longitude))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get(
+    "/api/sites/{site_id}",
+    operation_id="getSite",
+    responses={404: {"description": "Unknown site id"}},
+)
+def get_site(site_id: str) -> SiteOut:
+    try:
+        site: Site | None = resolve_site(site_id)
+    except ValueError:
+        site = None
+    if site is None:
+        raise HTTPException(status_code=404, detail=f"unknown site id: {site_id}")
+    return site_out(site)
 
 
 @app.get("/api/map", operation_id="getPoleMap")

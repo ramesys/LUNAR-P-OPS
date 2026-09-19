@@ -20,7 +20,7 @@ class SiteOut(BaseModel):
     name: str
     latitude_deg: float
     longitude_deg: float
-    origin: Literal["sample", "official"]
+    origin: Literal["sample", "official", "custom"]
     note: str
     terrain_available: bool
     map_x_m: float

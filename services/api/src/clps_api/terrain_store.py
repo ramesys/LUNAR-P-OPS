@@ -21,13 +21,16 @@ def terrain_dir() -> Path:
     return Path(os.environ.get("CLPS_DATA_DIR", "data")) / "terrain"
 
 
-def terrain_available(site_id: str) -> bool:
-    return all(path.is_file() for path in terrain_files(terrain_dir(), site_id))
+def terrain_available(site: Site) -> bool:
+    """Custom sites never have terrain: it is only downloaded for catalog sites (ADR 0014)."""
+    if site.origin == "custom":
+        return False
+    return all(path.is_file() for path in terrain_files(terrain_dir(), site.id))
 
 
 def mask_for(site: Site, observer_height_m: float) -> HorizonMask | None:
-    """None when the site's terrain has not been downloaded (the caller falls back to flat)."""
-    if not terrain_available(site.id):
+    """None when the site has no downloaded terrain (the caller falls back to flat)."""
+    if not terrain_available(site):
         return None
     key: tuple[str, float] = (site.id, observer_height_m)
     with _lock:
