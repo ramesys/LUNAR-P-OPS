@@ -1,6 +1,7 @@
 import type { VisibilityWindow } from "@clps/api-client";
 import { describe, expect, it } from "vitest";
 import { describeApiError } from "./apiError.ts";
+import { siteIdsInSearch, validateCustomCoordinates } from "./customSite.ts";
 import { formatHours, formatLatLon, formatPercent, formatWindowDuration } from "./format.ts";
 import { clampIndex, samplesPerTick, trailSamples, visibleAt } from "./playback.ts";
 import { elevationDomain, linearScale, niceTicks, type Scale } from "./scale.ts";
@@ -140,6 +141,17 @@ describe("playback", (): void => {
     expect(visibleAt(windows, "2026-01-01T05:00:00Z")).toBe(true);
     expect(visibleAt(windows, "2026-01-01T06:00:00Z")).toBe(false);
     expect(visibleAt(windows, "2026-01-03T00:00:00Z")).toBe(false);
+  });
+});
+
+describe("custom sites", (): void => {
+  it("validates coordinates and reads site ids from a URL", (): void => {
+    expect(validateCustomCoordinates(-88.5, 45)).toBeNull();
+    expect(validateCustomCoordinates(-88.5, -45)).toBeNull();
+    expect(validateCustomCoordinates(-59, 0)).toMatch(/south polar region/);
+    expect(validateCustomCoordinates(Number.NaN, 0)).toMatch(/Latitude/);
+    expect(validateCustomCoordinates(-80, 361)).toMatch(/Longitude/);
+    expect(siteIdsInSearch("?sites=a,custom:-88:45,b")).toEqual(["a", "custom:-88:45", "b"]);
   });
 });
 

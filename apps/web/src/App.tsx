@@ -8,6 +8,7 @@ import { ScenarioForm } from "./components/ScenarioForm.tsx";
 import { PoleMap } from "./components/PoleMap.tsx";
 import { HealthStatus } from "./HealthStatus.tsx";
 import { describeApiError } from "./lib/apiError.ts";
+import { siteIdsInSearch } from "./lib/customSite.ts";
 import {
   formFromSearch,
   formToSearch,
@@ -98,32 +99,72 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
       .catch((): void => {
         setPoleMap(null);
       });
-    apiClient
-      .GET("/api/sites")
-      .then(({ data, error, response }): void => {
-        if (data === undefined) {
-          setStatus({ kind: "error", message: describeApiError(error, response.status) });
-          return;
-        }
-        setSites(data);
-        const fallback: Form = {
-          ...defaultForm(now),
-          siteIds: data.slice(0, DEFAULT_SITE_COUNT).map((s: Site): string => s.id),
-        };
-        const initial: Form = formFromSearch(
-          window.location.search,
-          fallback,
-          data.map((s: Site): string => s.id),
-        );
-        setForm(initial);
-        void runAnalysis(initial);
-      })
-      .catch((caught: unknown): void => {
-        setStatus({ kind: "error", message: caught instanceof Error ? caught.message : String(caught) });
-      });
+    const loadSites: () => Promise<void> = async (): Promise<void> => {
+      const { data, error, response } = await apiClient.GET("/api/sites");
+      if (data === undefined) {
+        setStatus({ kind: "error", message: describeApiError(error, response.status) });
+        return;
+      }
+      // Custom sites (RF-17) in a shared link are resolved by the API; invalid ones are dropped.
+      const catalogIds: string[] = data.map((s: Site): string => s.id);
+      const extraIds: string[] = siteIdsInSearch(window.location.search).filter(
+        (id: string): boolean => !catalogIds.includes(id),
+      );
+      const extras: Site[] = (
+        await Promise.all(
+          extraIds.map(async (id: string): Promise<Site | null> => {
+            const found: { data?: Site } = await apiClient.GET("/api/sites/{site_id}", {
+              params: { path: { site_id: id } },
+            });
+            return found.data ?? null;
+          }),
+        )
+      ).filter((s: Site | null): s is Site => s !== null);
+      const allSites: Site[] = [...data, ...extras];
+      setSites(allSites);
+      const fallback: Form = {
+        ...defaultForm(now),
+        siteIds: catalogIds.slice(0, DEFAULT_SITE_COUNT),
+      };
+      const initial: Form = formFromSearch(
+        window.location.search,
+        fallback,
+        allSites.map((s: Site): string => s.id),
+      );
+      setForm(initial);
+      void runAnalysis(initial);
+    };
+    loadSites().catch((caught: unknown): void => {
+      setStatus({ kind: "error", message: caught instanceof Error ? caught.message : String(caught) });
+    });
     // Load the catalog (and any scenario in the URL) once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const addCustomSite: (latitude: number, longitude: number) => Promise<string | null> = async (
+    latitude: number,
+    longitude: number,
+  ): Promise<string | null> => {
+    try {
+      const { data, error, response } = await apiClient.GET("/api/sites/custom", {
+        params: { query: { latitude, longitude } },
+      });
+      if (data === undefined) {
+        return describeApiError(error, response.status);
+      }
+      setSites((previous: Site[]): Site[] =>
+        previous.some((s: Site): boolean => s.id === data.id) ? previous : [...previous, data],
+      );
+      setForm((previous: Form): Form =>
+        previous.siteIds.includes(data.id) || previous.siteIds.length >= MAX_SITES
+          ? previous
+          : { ...previous, siteIds: [...previous.siteIds, data.id] },
+      );
+      return null;
+    } catch (caught: unknown) {
+      return caught instanceof Error ? caught.message : String(caught);
+    }
+  };
 
   const errors: string[] = validateForm(form);
   const ranks: Map<string, number> = new Map<string, number>(
@@ -157,6 +198,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           onSubmit={(): void => {
             void runAnalysis(form);
           }}
+          onAddCustomSite={addCustomSite}
         />
         {poleMap !== null && (
           <section className="card" aria-labelledby="map-title">

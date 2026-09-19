@@ -2,6 +2,7 @@ import type { SiteResult } from "@clps/api-client";
 import type { JSX } from "react";
 import { formatLatLon, formatPercent, formatWindowDuration } from "../lib/format.ts";
 import { InfoTip } from "./InfoTip.tsx";
+import { OriginChip } from "./OriginChip.tsx";
 
 interface ComparisonTableProps {
   sites: readonly SiteResult[];
@@ -57,7 +58,7 @@ export function ComparisonTable({ sites, focusedId, onFocus }: ComparisonTablePr
                   >
                     {result.site.name}
                   </button>
-                  {result.site.origin === "sample" && <span className="chip">sample</span>}
+                  <OriginChip origin={result.site.origin} />
                 </td>
                 <td className="num">{formatPercent(result.metrics.sun_fraction)}</td>
                 <td className="num">{formatPercent(result.metrics.earth_fraction)}</td>

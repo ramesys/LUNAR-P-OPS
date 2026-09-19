@@ -61,6 +61,25 @@ test.describe("desktop", (): void => {
     await expect(page).toHaveURL(/sites=sample-a%2Csample-b%2Csample-d%2Csample-c/);
   });
 
+  test("adds a custom site by coordinates and shares it in the URL", async ({ page }): Promise<void> => {
+    await openScenario(page, YEAR_TERRAIN);
+
+    await page.getByRole("spinbutton", { name: /Latitude/ }).fill("-87.25");
+    await page.getByRole("spinbutton", { name: /Longitude/ }).fill("-30");
+    await page.getByRole("button", { name: "Add site" }).click();
+    await expect(page.getByRole("checkbox", { name: /Custom 87.25°S 330.00°E/ })).toBeChecked();
+    await page.getByRole("button", { name: "Compare sites" }).click();
+
+    const table: Locator = page.getByRole("table", { name: /ranked by sunlit time/i });
+    await expect(table.getByRole("row")).toHaveCount(5);
+    const customRow: Locator = table.getByRole("row", { name: /Custom 87.25°S 330.00°E/ });
+    await expect(customRow.getByRole("cell", { name: "Flat" })).toBeVisible();
+    await expect(page).toHaveURL(/custom%3A-87.25%3A330/);
+
+    await page.reload();
+    await expect(page.getByRole("checkbox", { name: /Custom 87.25°S 330.00°E/ })).toBeChecked();
+  });
+
   test("opens a shared link with a flat horizon", async ({ page }): Promise<void> => {
     const table: Locator = await openScenario(
       page,

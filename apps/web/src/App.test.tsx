@@ -48,7 +48,11 @@ function siteResult(site: Site, rank: number, sunFraction: number): SiteResult {
 }
 
 function analysisFor(request: AnalysisRequest): AnalysisResponse {
-  const selected: Site[] = SITES.filter((s: Site): boolean => request.site_ids.includes(s.id));
+  const selected: Site[] = request.site_ids.map(
+    (id: string): Site =>
+      SITES.find((s: Site): boolean => s.id === id) ??
+      customSite(Number(id.split(":")[1]), Number(id.split(":")[2])),
+  );
   return {
     request,
     times: TIMES,
@@ -61,6 +65,20 @@ function analysisFor(request: AnalysisRequest): AnalysisResponse {
   };
 }
 
+function customSite(latitude: number, longitude: number): Site {
+  return {
+    id: `custom:${latitude.toString()}:${longitude.toString()}`,
+    name: `Custom ${Math.abs(latitude).toFixed(2)}°S ${longitude.toFixed(2)}°E`,
+    latitude_deg: latitude,
+    longitude_deg: longitude,
+    origin: "custom",
+    note: "",
+    terrain_available: false,
+    map_x_m: 1000,
+    map_y_m: 1000,
+  };
+}
+
 function fakeApi(requests: AnalysisRequest[]): ApiClient {
   return createApiClient({
     baseUrl: "http://api.test",
@@ -68,6 +86,22 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
       const path: string = new URL(input.url).pathname;
       if (path === "/api/sites") {
         return Response.json(SITES);
+      }
+      if (path === "/api/sites/custom") {
+        const query: URLSearchParams = new URL(input.url).searchParams;
+        const latitude: number = Number(query.get("latitude"));
+        if (latitude > -60) {
+          return Response.json({ detail: "custom sites must be in the south polar region" }, { status: 422 });
+        }
+        return Response.json(customSite(latitude, Number(query.get("longitude"))));
+      }
+      if (path.startsWith("/api/sites/")) {
+        const id: string = decodeURIComponent(path.slice("/api/sites/".length));
+        const match: RegExpExecArray | null = /^custom:(-?[\d.]+):(-?[\d.]+)$/.exec(id);
+        if (match === null) {
+          return Response.json({ detail: `unknown site id: ${id}` }, { status: 404 });
+        }
+        return Response.json(customSite(Number(match[1]), Number(match[2])));
       }
       if (path === "/api/map") {
         return Response.json({
@@ -173,5 +207,38 @@ describe("App", (): void => {
     expect(checkboxC).toHaveProperty("checked", true);
     fireEvent.click(await screen.findByRole("button", { name: /^Sample C,/ }));
     expect(checkboxC).toHaveProperty("checked", false);
+  });
+
+  it("adds a custom site by coordinates and marks it as flat-only", async (): Promise<void> => {
+    const requests: AnalysisRequest[] = [];
+    render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Sample C/ }));
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Latitude/ }), { target: { value: "-45" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Longitude/ }), { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add site" }));
+    expect(await screen.findByText(/between -90° and -60°/)).toBeDefined();
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Latitude/ }), { target: { value: "-87.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add site" }));
+    const custom: HTMLElement = await screen.findByRole("checkbox", { name: /Custom 87.50°S 10.00°E/ });
+    expect(custom).toHaveProperty("checked", true);
+    expect(screen.getAllByText("custom").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare sites" }));
+    const inResults: HTMLElement[] = await screen.findAllByRole("button", { name: "Custom 87.50°S 10.00°E" });
+    expect(inResults.length).toBeGreaterThan(0);
+    expect(requests.at(-1)?.site_ids).toEqual(["sample-a", "sample-b", "custom:-87.5:10"]);
+  });
+
+  it("restores custom sites from a shared link", async (): Promise<void> => {
+    window.history.replaceState(null, "", "/?sites=sample-a,custom:-86:200,custom:bad&from=2026-06-01&to=2026-06-02");
+    const requests: AnalysisRequest[] = [];
+    render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+
+    expect(requests[0]?.site_ids).toEqual(["sample-a", "custom:-86:200"]);
+    expect(screen.getByRole("checkbox", { name: /Custom 86.00°S 200.00°E/ })).toHaveProperty("checked", true);
   });
 });

@@ -156,6 +156,23 @@ h3 {
   margin-left: 6px;
 }
 
+.chip-custom {
+  border-color: var(--accent);
+}
+
+.custom-site {
+  border: 1px dashed var(--axis);
+  border-radius: 6px;
+  padding: 8px 12px 12px;
+  margin: 0 0 12px;
+}
+
+.custom-site legend {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
 .chip-muted {
   border-color: var(--axis);
   color: var(--text-muted);

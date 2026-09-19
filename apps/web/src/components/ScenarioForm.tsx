@@ -1,5 +1,6 @@
 import type { Site } from "@clps/api-client";
-import type { ChangeEvent, JSX, SyntheticEvent } from "react";
+import { useState, type ChangeEvent, type JSX, type KeyboardEvent, type SyntheticEvent } from "react";
+import { validateCustomCoordinates } from "../lib/customSite.ts";
 import { formatLatLon } from "../lib/format.ts";
 import {
   MAX_EARTH_CLEARANCE_DEG,
@@ -9,6 +10,7 @@ import {
   type ScenarioForm as Form,
 } from "../lib/scenario.ts";
 import { InfoTip } from "./InfoTip.tsx";
+import { OriginChip } from "./OriginChip.tsx";
 
 interface ScenarioFormProps {
   sites: readonly Site[];
@@ -17,6 +19,8 @@ interface ScenarioFormProps {
   busy: boolean;
   onChange: (form: Form) => void;
   onSubmit: () => void;
+  /** Resolves a custom site (RF-17); returns an error message, or null on success. */
+  onAddCustomSite: (latitude: number, longitude: number) => Promise<string | null>;
 }
 
 export function ScenarioForm({
@@ -26,10 +30,41 @@ export function ScenarioForm({
   busy,
   onChange,
   onSubmit,
+  onAddCustomSite,
 }: ScenarioFormProps): JSX.Element {
+  const [customLatitude, setCustomLatitude] = useState<string>("");
+  const [customLongitude, setCustomLongitude] = useState<string>("");
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [adding, setAdding] = useState<boolean>(false);
+
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     onSubmit();
+  }
+
+  async function addCustomSite(): Promise<void> {
+    const latitude: number = customLatitude.trim() === "" ? Number.NaN : Number(customLatitude);
+    const longitude: number = customLongitude.trim() === "" ? Number.NaN : Number(customLongitude);
+    const invalid: string | null = validateCustomCoordinates(latitude, longitude);
+    if (invalid !== null) {
+      setCustomError(invalid);
+      return;
+    }
+    setAdding(true);
+    const error: string | null = await onAddCustomSite(latitude, longitude);
+    setAdding(false);
+    setCustomError(error);
+    if (error === null) {
+      setCustomLatitude("");
+      setCustomLongitude("");
+    }
+  }
+
+  function addOnEnter(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void addCustomSite();
+    }
   }
 
   return (
@@ -52,7 +87,7 @@ export function ScenarioForm({
                 }}
               />
               <span className="site-name">{site.name}</span>
-              {site.origin === "sample" && <span className="chip">sample</span>}
+              <OriginChip origin={site.origin} />
               {!site.terrain_available && (
                 <span className="chip chip-muted" title="Terrain data not downloaded: a flat horizon is used">
                   flat only
@@ -64,6 +99,57 @@ export function ScenarioForm({
             </label>
           );
         })}
+      </fieldset>
+
+      <fieldset className="custom-site">
+        <legend>
+          Add a site by coordinates{" "}
+          <InfoTip text="Any point south of 60°S (planetocentric latitude, east longitude). Custom sites always use a flat horizon: terrain data is only prepared for catalog sites." />
+        </legend>
+        <div className="form-row">
+          <label>
+            Latitude (°, south negative)
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              placeholder="-88.5"
+              value={customLatitude}
+              onChange={(event: ChangeEvent<HTMLInputElement>): void => {
+                setCustomLatitude(event.target.value);
+              }}
+              onKeyDown={addOnEnter}
+            />
+          </label>
+          <label>
+            Longitude (°E)
+            <input
+              type="number"
+              inputMode="decimal"
+              step="any"
+              placeholder="45"
+              value={customLongitude}
+              onChange={(event: ChangeEvent<HTMLInputElement>): void => {
+                setCustomLongitude(event.target.value);
+              }}
+              onKeyDown={addOnEnter}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={adding}
+            onClick={(): void => {
+              void addCustomSite();
+            }}
+          >
+            {adding ? "Adding…" : "Add site"}
+          </button>
+        </div>
+        {customError !== null && (
+          <p className="form-errors" role="alert">
+            {customError}
+          </p>
+        )}
       </fieldset>
 
       <div className="form-row">

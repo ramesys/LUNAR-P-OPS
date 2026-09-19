@@ -94,7 +94,9 @@ export function PoleMap({ map, sites, selectedIds, ranks, maxSelected, onToggle 
           South Pole
         </text>
 
-        {sites.map((site: Site): JSX.Element => {
+        {sites
+          .filter((site: Site): boolean => Math.abs(site.map_x_m) <= half && Math.abs(site.map_y_m) <= half)
+          .map((site: Site): JSX.Element => {
           const selected: boolean = selectedIds.includes(site.id);
           const disabled: boolean = !selected && full;
           const rank: number | undefined = ranks.get(site.id);
