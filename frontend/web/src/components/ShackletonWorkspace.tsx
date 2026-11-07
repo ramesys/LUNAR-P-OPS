@@ -1,4 +1,4 @@
-import type { ApiClient, Candidate, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
+import type { ApiClient, Candidate, RegionalTerrain, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
 
 type Dataset = RoiTerrain["datasets"][number];
 type Coverage = RoiTerrain["coverage"];
@@ -50,6 +50,8 @@ export function candidateLabel(candidate: Candidate): string {
 export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidateSelected, defaultTimeUtc,
   defaultObserverHeightM }: Props): JSX.Element {
   const [terrain, setTerrain] = useState<TerrainState>({ kind: "loading" });
+  const [regional, setRegional] = useState<RegionalTerrain | null>(null);
+  const [regionalError, setRegionalError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
@@ -77,6 +79,12 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
       .catch((caught: unknown): void => {
         if (active) setTerrain({ kind: "error", message: caught instanceof Error ? caught.message : String(caught) });
       });
+    void apiClient.GET("/api/rois/{roi_id}/regional-terrain", { params: { path: { roi_id: ROI_ID } } })
+      .then(({ data }): void => {
+        if (!active) return;
+        if (data?.size === 81 && data.elevations_m.length === 81 * 81) setRegional(data);
+        else setRegionalError("Regional terrain unavailable; showing the 4 km study area.");
+      }).catch((): void => { if (active) setRegionalError("Regional terrain unavailable; showing the 4 km study area."); });
     void apiClient.GET("/api/rois/{roi_id}/candidates", { params: { path: { roi_id: ROI_ID } } })
       .then(({ data }): void => {
         if (!active || data === undefined) return;
@@ -125,9 +133,10 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
 
     {terrain.kind === "ready" &&
       <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
-        <RoiTerrain3D terrain={terrain.terrain} candidates={candidates} selectedId={selectedCandidateId}
+        <RoiTerrain3D terrain={terrain.terrain} regional={regional} candidates={candidates} selectedId={selectedCandidateId}
           onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
       </Suspense>}
+    {regionalError !== null && <p role="status">{regionalError}</p>}
     <fieldset className="new-candidate">
       <legend>Settings for the next terrain click</legend>
       <label>Observer height (m) <input type="number" min="0" max="100" step="0.1" value={height}

@@ -307,6 +307,17 @@ class RoiTerrainOut(BaseModel):
     limitations: list[str]
 
 
+class RegionalTerrainOut(BaseModel):
+    """Display-only far-field samples in the same projected ROI frame."""
+
+    half_width_m: float
+    spacing_m: float
+    size: int
+    elevations_m: list[float]
+    elevation_range_m: list[float]
+    dataset: RoiDatasetOut
+
+
 class ExperimentManifestOut(BaseModel):
     """Reproducibility manifest of one persisted evaluation, built only from stored records.
 

@@ -35,6 +35,7 @@ from clps_api.schemas import (
     HealthResponse,
     PoleMapOut,
     RecomputeReportOut,
+    RegionalTerrainOut,
     RoiOut,
     RoiTerrainOut,
     SiteOut,
@@ -189,6 +190,23 @@ def list_rois() -> list[RoiOut]:
 def get_roi_terrain(roi_id: str) -> RoiTerrainOut:
     try:
         found = roi_terrain.roi_terrain(roi_id)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"unknown ROI: {roi_id}")
+    return found
+
+
+@app.get(
+    "/api/rois/{roi_id}/regional-terrain",
+    operation_id="getRegionalTerrain",
+    responses={404: {"description": "Unknown ROI or far-field terrain unavailable"}},
+)
+def get_regional_terrain(roi_id: str) -> RegionalTerrainOut:
+    try:
+        found = roi_terrain.regional_terrain(roi_id)
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

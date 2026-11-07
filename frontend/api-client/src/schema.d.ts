@@ -194,6 +194,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rois/{roi_id}/regional-terrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Regional Terrain */
+        get: operations["getRegionalTerrain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rois/{roi_id}/candidates": {
         parameters: {
             query?: never;
@@ -846,6 +863,23 @@ export interface components {
             /** Notes */
             notes: string[];
         };
+        /**
+         * RegionalTerrainOut
+         * @description Display-only far-field samples in the same projected ROI frame.
+         */
+        RegionalTerrainOut: {
+            /** Half Width M */
+            half_width_m: number;
+            /** Spacing M */
+            spacing_m: number;
+            /** Size */
+            size: number;
+            /** Elevations M */
+            elevations_m: number[];
+            /** Elevation Range M */
+            elevation_range_m: number[];
+            dataset: components["schemas"]["RoiDatasetOut"];
+        };
         /** RoiCornerOut */
         RoiCornerOut: {
             /** Label */
@@ -1383,6 +1417,44 @@ export interface operations {
                 };
             };
             /** @description Unknown ROI, or its LOLA windows are not downloaded */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getRegionalTerrain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionalTerrainOut"];
+                };
+            };
+            /** @description Unknown ROI or far-field terrain unavailable */
             404: {
                 headers: {
                     [name: string]: unknown;

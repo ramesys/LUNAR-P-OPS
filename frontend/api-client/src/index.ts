@@ -31,3 +31,5 @@ export type Roi = Schemas["RoiOut"];
 export type RoiTerrain = Schemas["RoiTerrainOut"];
 export type ExperimentManifest = Schemas["ExperimentManifestOut"];
 export type RecomputeReport = Schemas["RecomputeReportOut"];
+
+export type RegionalTerrain = Schemas["RegionalTerrainOut"];

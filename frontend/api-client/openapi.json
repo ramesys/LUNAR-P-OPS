@@ -347,6 +347,48 @@
         }
       }
     },
+    "/api/rois/{roi_id}/regional-terrain": {
+      "get": {
+        "summary": "Get Regional Terrain",
+        "operationId": "getRegionalTerrain",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegionalTerrainOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown ROI or far-field terrain unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rois/{roi_id}/candidates": {
       "post": {
         "summary": "Create Roi Candidate",
@@ -1909,6 +1951,50 @@
         ],
         "title": "RecomputeReportOut",
         "description": "Recompute-and-compare result; the recomputed evaluation is never stored."
+      },
+      "RegionalTerrainOut": {
+        "properties": {
+          "half_width_m": {
+            "type": "number",
+            "title": "Half Width M"
+          },
+          "spacing_m": {
+            "type": "number",
+            "title": "Spacing M"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "elevations_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Elevations M"
+          },
+          "elevation_range_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Elevation Range M"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/RoiDatasetOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "half_width_m",
+          "spacing_m",
+          "size",
+          "elevations_m",
+          "elevation_range_m",
+          "dataset"
+        ],
+        "title": "RegionalTerrainOut",
+        "description": "Display-only far-field samples in the same projected ROI frame."
       },
       "RoiCornerOut": {
         "properties": {

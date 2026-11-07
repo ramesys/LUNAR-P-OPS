@@ -41,6 +41,7 @@ async function open(page: Page, f: Fixture): Promise<void> {
   await page.goto(SCENARIO);
   await expect(page.getByRole("table", { name: /ranked by sunlit time/i })).toBeVisible();
   await expect(candidateCard(page)).toContainText(f.evaluationId.slice(0, 22));
+  await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
 }
 
 const candidateCard: (page: Page) => Locator = (page: Page): Locator => page.getByRole("button", { name: /^Candidate evaluation/ });
@@ -124,10 +125,48 @@ test.describe("desktop", (): void => {
     expect(await page.locator("[aria-label^='3D terrain of the Shackleton']").getAttribute("data-camera")).toBe(camera);
   });
 
+  test("regional and detailed terrain share a scene and restrict candidate creation", async ({ page, request }): Promise<void> => {
+    const f: Fixture = await fixture(request);
+    await open(page, f);
+    const writes: string[] = watchWrites(page);
+    const scientificRequests: string[] = [];
+    page.on("request", (request: Request): void => {
+      if (request.method() !== "GET" && new URL(request.url()).pathname.startsWith("/api/")) scientificRequests.push(request.url());
+    });
+    const scene: Locator = page.locator(".terrain-canvas");
+    const canvas: Locator = scene.locator("canvas");
+    const builds: string | null = await scene.getAttribute("data-scene-builds");
+    await expect(page.getByText("240 m LOLA DEM · 250 m display grid")).toBeVisible();
+    await page.getByRole("button", { name: "Top view" }).click();
+    const box: { width: number; height: number } | null = await canvas.boundingBox();
+    if (box === null) throw new Error("terrain canvas missing");
+    let outside: { x: number; y: number } | null = null;
+    for (const [x, y] of [[0.3, 0.5], [0.7, 0.5], [0.5, 0.3], [0.5, 0.7]] as const) {
+      const position: { x: number; y: number } = { x: box.width * x, y: box.height * y };
+      await canvas.hover({ position });
+      const hud: string = await page.locator(".terrain-hud").innerText();
+      const match: RegExpMatchArray | null = /(-?\d+) m E · (-?\d+) m N/.exec(hud);
+      if (match !== null && (Math.abs(Number(match[1])) > 2300 || Math.abs(Number(match[2])) > 2300)) { outside = position; break; }
+    }
+    expect(outside).not.toBeNull();
+    if (outside === null) throw new Error("Could not identify an outside terrain position");
+    await canvas.click({ position: outside });
+    await expect(page.getByRole("status").filter({ hasText: "Outside the outlined" })).toBeVisible();
+    await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
+    await expect(page.getByText("20 m LOLA DEM · 20 m display grid")).toBeVisible();
+    expect(await scene.getAttribute("data-scene-builds")).toBe(builds);
+    await page.getByRole("button", { name: "Regional explore · 20 km" }).click();
+    await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
+    expect(await scene.getAttribute("data-scene-builds")).toBe(builds);
+    expect(writes).toEqual([]);
+    expect(scientificRequests).toEqual([]);
+  });
+
   test("creates and evaluates a map candidate, then follows the timeline", async ({ page }): Promise<void> => {
     await page.goto(SCENARIO);
     const canvas: Locator = page.locator(".terrain-canvas canvas");
     await expect(canvas).toBeVisible();
+    await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
     const bounds: { width: number; height: number } | null = await canvas.boundingBox();
     if (bounds === null) throw new Error("terrain canvas missing");
     // A previous run may have left a selectable marker at a click position in the test DB.

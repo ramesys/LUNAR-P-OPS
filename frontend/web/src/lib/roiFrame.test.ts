@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RoiTerrain } from "@clps/api-client";
-import { displayElevation, displayHeightM, toGeographic, toLocal, type LocalPoint } from "./roiFrame.ts";
+import { displayElevation, displayHeightM, validTriangleIndices, toGeographic, toLocal, type LocalPoint } from "./roiFrame.ts";
 
 // Values returned by the backend (`lunar_core.roi.local_frame` + `polar_stereographic_south_inverse`)
 // for the Shackleton Rim B ROI.
@@ -26,6 +26,26 @@ describe("ROI frame", (): void => {
     }
   });
 
+  it("uses the spherical tangent height for a 20 km regional corner", (): void => {
+    const point: LocalPoint = { east_m: 10000, north_m: 10000 };
+    const [lat, lon] = toGeographic(FRAME, point);
+    const [centerLat, centerLon] = toGeographic(FRAME, { east_m: 0, north_m: 0 });
+    const unit: (a: number, b: number) => [number, number, number] = (a: number, b: number): [number, number, number] => {
+      const phi: number = a * Math.PI / 180;
+      const lambda: number = b * Math.PI / 180;
+      return [Math.cos(phi) * Math.cos(lambda), Math.cos(phi) * Math.sin(lambda), Math.sin(phi)];
+    };
+    const p: [number, number, number] = unit(lat, lon);
+    const c: [number, number, number] = unit(centerLat, centerLon);
+    const expected: number = (1737400 + 1200) * (p[0] * c[0] + p[1] * c[1] + p[2] * c[2]) - (1737400 + 50);
+    expect(displayHeightM(1200, 50, point, FRAME)).toBeCloseTo(expected, 5);
+  });
+
+  it("omits mesh faces touching missing DEM samples", (): void => {
+    expect(validTriangleIndices([0, 1, 2, 1, 3, 2], [1, 2, null, 4])).toEqual([]);
+    expect(validTriangleIndices([0, 1, 2, 1, 3, 2], [1, 2, 3, null])).toEqual([0, 1, 2]);
+  });
+
   it("interpolates the display grid with row 0 at the north edge", (): void => {
     // 3 x 3 grid over ±10 m: elevation = east + 2 * north.
     const grid: Pick<RoiTerrain, "size" | "spacing_m" | "elevations_m" | "roi"> = { size: 3, spacing_m: 10, roi: { half_width_m: 10 } as never,
@@ -34,7 +54,7 @@ describe("ROI frame", (): void => {
     expect(displayElevation(grid, { east_m: -10, north_m: -10 })).toBeCloseTo(-30);
     expect(displayElevation(grid, { east_m: 11, north_m: 0 })).toBeNull();
     expect(displayElevation({ ...grid, elevations_m: [null, ...grid.elevations_m.slice(1)] }, { east_m: -9, north_m: 9 })).toBeNull();
-    expect(displayHeightM(100, 40, { east_m: 0, north_m: 0 })).toBe(60);
-    expect(displayHeightM(100, 40, { east_m: 2000, north_m: 2000 })).toBeCloseTo(60 - 8e6 / 3474800, 9);
+    expect(displayHeightM(100, 40, { east_m: 0, north_m: 0 }, FRAME)).toBe(60);
+    expect(displayHeightM(100, 40, { east_m: 2000, north_m: 2000 }, FRAME)).toBeCloseTo(60 - 8e6 / 3474800, 2);
   });
 });

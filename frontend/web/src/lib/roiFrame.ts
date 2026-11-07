@@ -63,7 +63,27 @@ export function displayElevation(grid: Grid, point: LocalPoint): number | null {
   return (a * (1 - fc) + b * fc) * (1 - fr) + (c * (1 - fc) + d * fc) * fr;
 }
 
-/** Height (m) drawn for a DEM elevation: relative to the ROI centre, with the sphere's curvature. */
-export function displayHeightM(elevationM: number, centerElevationM: number, point: LocalPoint): number {
-  return elevationM - centerElevationM - (point.east_m ** 2 + point.north_m ** 2) / (2 * MOON_RADIUS_M);
+/** Height relative to the centre's spherical tangent plane; projected x/z remain display axes. */
+export function displayHeightM(elevationM: number, centerElevationM: number, point: LocalPoint, frame: Frame): number {
+  const [cx = 0, cy = 0] = frame.center_projected_m;
+  const [ex = 0, ey = 0] = frame.east_axis_projected;
+  const [nx = 0, ny = 0] = frame.north_axis_projected;
+  const x: number = cx + point.east_m * ex + point.north_m * nx;
+  const y: number = cy + point.east_m * ey + point.north_m * ny;
+  const scale: number = 4 * MOON_RADIUS_M ** 2;
+  const chordTerm: number = 2 * scale * ((x - cx) ** 2 + (y - cy) ** 2) /
+    ((scale + x ** 2 + y ** 2) * (scale + cx ** 2 + cy ** 2));
+  return elevationM - centerElevationM - (MOON_RADIUS_M + elevationM) * chordTerm;
+}
+
+/** Omit every triangle that touches a missing DEM sample. */
+export function validTriangleIndices(indices: ArrayLike<number>, elevations: readonly (number | null)[]): number[] {
+  const result: number[] = [];
+  for (let i: number = 0; i + 2 < indices.length; i += 3) {
+    const a: number = indices[i] ?? -1;
+    const b: number = indices[i + 1] ?? -1;
+    const c: number = indices[i + 2] ?? -1;
+    if ([a, b, c].every((index: number): boolean => Number.isFinite(elevations[index]))) result.push(a, b, c);
+  }
+  return result;
 }

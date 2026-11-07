@@ -15,6 +15,7 @@ from lunar_core.terrain import (
 from clps_api import terrain_store
 from clps_api.evaluation import file_hash, verify_point_coverage
 from clps_api.schemas import (
+    RegionalTerrainOut,
     RoiCornerOut,
     RoiCoverageCheckOut,
     RoiCoverageOut,
@@ -183,4 +184,30 @@ def _build(
             ),
         ),
         limitations=LIMITATIONS,
+    )
+
+
+def regional_terrain(roi_id: str) -> RegionalTerrainOut | None:
+    """Return a bounded 20 km far-field display grid; never modify the science ROI."""
+    roi = ROIS.get(roi_id)
+    if roi is None:
+        return None
+    _, path = terrain_files(terrain_store.terrain_dir(), roi.id)
+    if not path.is_file():
+        raise FileNotFoundError(f"Far-field LOLA window for {roi.id} is not downloaded")
+    far = TerrainGrid.load(path)
+    dataset = _dataset("far", far, file_hash(path))
+    frame = local_frame(roi.center_latitude_deg, roi.center_longitude_deg)
+    offsets = np.linspace(-10_000.0, 10_000.0, 81)
+    east, north = np.meshgrid(offsets, offsets[::-1])
+    values = far.sample(*frame.to_projected(east, north))
+    if not np.all(np.isfinite(values)):
+        raise ValueError("Regional terrain contains missing or out-of-coverage DEM samples")
+    return RegionalTerrainOut(
+        half_width_m=10_000.0,
+        spacing_m=250.0,
+        size=81,
+        elevations_m=[round(float(value), 2) for value in values.ravel()],
+        elevation_range_m=[float(values.min()), float(values.max())],
+        dataset=dataset,
     )

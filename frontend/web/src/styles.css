@@ -1374,3 +1374,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .more-tools { right: 10px; bottom: 162px; }
 }
 .empty-timeline { margin: 7px 0 0; color: #b2c6ca; font-size: .8rem; }
+.terrain-scale { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 0 2px; }
+.terrain-scale button { font-size: .76rem; }
+.terrain-scale button[aria-pressed="true"] { border-color: #75d9cd; color: #e4fffb; background: #1a3a3c; }
+.terrain-scale span { color: var(--text-secondary); font-size: .72rem; margin-left: auto; }

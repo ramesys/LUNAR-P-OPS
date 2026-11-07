@@ -252,6 +252,21 @@ def test_real_shackleton_roi_and_candidate_evaluation(
     client = TestClient(app)
     t = client.get("/api/rois/shackleton-rim-b/terrain").json()
     near = TerrainGrid.load(near_path)
+    regional = client.get("/api/rois/shackleton-rim-b/regional-terrain").json()
+    far = TerrainGrid.load(far_path)
+    frame = local_frame(ROI.center_latitude_deg, ROI.center_longitude_deg)
+    for index, east, north in [
+        (0, -10000, 10000),
+        (81 * 40 + 40, 0, 0),
+        (81 * 81 - 1, 10000, -10000),
+    ]:
+        x, y = frame.to_projected(east, north)
+        expected = float(far.sample(np.atleast_1d(x), np.atleast_1d(y))[0])
+        assert regional["elevations_m"][index] == pytest.approx(expected, abs=0.0051)
+    assert (
+        regional["dataset"]["local_window_sha256"]
+        == hashlib.sha256(far_path.read_bytes()).hexdigest()
+    )
     assert t["center_elevation_m"] == float(
         near.sample(np.array([CENTER_X]), np.array([CENTER_Y]))[0]
     )
@@ -270,3 +285,31 @@ def test_real_shackleton_roi_and_candidate_evaluation(
         assert r["provenance"]["near_sha256"] == t["datasets"][0]["local_window_sha256"]
         assert r["provenance"]["far_sha256"] == t["datasets"][1]["local_window_sha256"]
         assert len(r["horizon_elevation_deg"]) == 720 and len(r["samples"]) == 3
+
+
+def test_regional_terrain_samples_far_dem_in_roi_frame(client: TestClient, tmp_path: Path):
+    response = client.get("/api/rois/shackleton-rim-b/regional-terrain")
+    assert response.status_code == 200
+    region = response.json()
+    assert (region["half_width_m"], region["spacing_m"], region["size"]) == (10000, 250, 81)
+    assert len(region["elevations_m"]) == 81 * 81
+    assert region["dataset"]["dataset_id"] == "LDEM_60S_240MPP_ADJ"
+    assert region["dataset"]["resolution_m"] == 240
+    assert all(value == 0 for value in region["elevations_m"])
+    far = TerrainGrid.load(terrain_files(tmp_path / "terrain", ROI.id)[1])
+    frame = local_frame(ROI.center_latitude_deg, ROI.center_longitude_deg)
+    for index, e, n in [(0, -10000, 10000), (81 * 40 + 40, 0, 0), (81 * 81 - 1, 10000, -10000)]:
+        x, y = frame.to_projected(e, n)
+        sampled = far.sample(np.atleast_1d(x), np.atleast_1d(y))
+        assert region["elevations_m"][index] == pytest.approx(float(sampled[0]))
+    assert client.get("/api/rois/unknown/regional-terrain").status_code == 404
+
+
+def test_regional_missing_samples_are_reported(client: TestClient, tmp_path: Path):
+    _, path = terrain_files(tmp_path / "terrain", ROI.id)
+    grid = TerrainGrid.load(path)
+    grid.heights[:] = np.nan
+    grid.save(path)
+    response = client.get("/api/rois/shackleton-rim-b/regional-terrain")
+    assert response.status_code == 422
+    assert "missing or out-of-coverage" in response.json()["detail"]

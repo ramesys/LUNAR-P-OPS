@@ -1,6 +1,6 @@
-import type { Candidate, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
+import type { Candidate, RegionalTerrain, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
 import { formatUtc } from "../lib/format.ts";
-import { useEffect, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import {
   AmbientLight,
   BufferAttribute,
@@ -31,7 +31,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { pickTerrain, type TerrainPick } from "../lib/terrainPicking.ts";
-import { displayElevation, displayHeightM, toGeographic, toLocal, type LocalPoint } from "../lib/roiFrame.ts";
+import { displayElevation, displayHeightM, validTriangleIndices, toGeographic, toLocal, type LocalPoint } from "../lib/roiFrame.ts";
 import { bodyDirection, directionalGuides, roiAzimuth } from "../lib/sceneGeometry.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 
@@ -42,6 +42,7 @@ import { useElementWidth } from "../lib/useElementWidth.ts";
  */
 export interface RoiTerrain3DProps {
   terrain: RoiTerrain;
+  regional?: RegionalTerrain | null;
   candidates: Candidate[];
   selectedId: string | null;
   onPick: (point: LocalPoint) => void;
@@ -83,7 +84,7 @@ function hasWebGL(): boolean {
 
 function heightKm(terrain: RoiTerrain, point: LocalPoint, exaggeration: number): number {
   const elevation: number | null = displayElevation(terrain, point);
-  return elevation === null ? 0 : (displayHeightM(elevation, terrain.center_elevation_m, point) / 1000) * exaggeration;
+  return elevation === null ? 0 : ((displayHeightM(elevation, terrain.center_elevation_m, point, terrain) + (exaggeration - 1) * (elevation - terrain.center_elevation_m)) / 1000);
 }
 
 function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): SceneParts {
@@ -95,7 +96,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   const scene: Scene = new Scene();
   scene.background = new Color("#05060a");
   const extentKm: number = (2 * terrain.roi.half_width_m) / 1000;
-  const camera: PerspectiveCamera = new PerspectiveCamera(45, 1 / ASPECT, 0.01, 100);
+  const camera: PerspectiveCamera = new PerspectiveCamera(45, 1 / ASPECT, 0.01, 150);
   camera.position.copy(defaultCameraPosition(extentKm));
   const geometry: PlaneGeometry = new PlaneGeometry(extentKm, extentKm, terrain.size - 1, terrain.size - 1);
   geometry.setAttribute("color", new BufferAttribute(new Float32Array(terrain.size * terrain.size * 3), 3));
@@ -105,9 +106,9 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   scene.add(mesh);
-  const ambient: AmbientLight = new AmbientLight("#ffffff", 0.35);
+  const ambient: AmbientLight = new AmbientLight("#ffffff", 0.28);
   scene.add(ambient);
-  const light: DirectionalLight = new DirectionalLight("#ffffff", 2.2);
+  const light: DirectionalLight = new DirectionalLight("#ffffff", 1.45);
   light.position.copy(RELIEF_LIGHT);
   light.shadow.mapSize.set(2048, 2048);
   const reach: number = extentKm * 0.8;
@@ -126,7 +127,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
   controls.enableDamping = false;
   controls.minDistance = 0.2;
-  controls.maxDistance = extentKm * 4;
+  controls.maxDistance = 80;
   controls.update();
   return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, light, ambient };
 }
@@ -141,10 +142,23 @@ function applyHeights(parts: SceneParts, terrain: RoiTerrain, exaggeration: numb
     const point: LocalPoint = { east_m: -half + (i % terrain.size) * terrain.spacing_m,
       north_m: half - Math.floor(i / terrain.size) * terrain.spacing_m };
     const elevation: number | null = terrain.elevations_m[i] ?? null;
-    position.setZ(i, elevation === null ? 0 : (displayHeightM(elevation, terrain.center_elevation_m, point) / 1000) * exaggeration);
-    const shade: number = elevation === null ? 0 : 0.35 + 0.55 * (elevation - low) / Math.max(high - low, 1);
+    position.setZ(i, elevation === null ? 0 : ((displayHeightM(elevation, terrain.center_elevation_m, point, terrain) + (exaggeration - 1) * (elevation - terrain.center_elevation_m)) / 1000));
+    const col: number = i % terrain.size;
+    const row: number = Math.floor(i / terrain.size);
+    const left: number | null = terrain.elevations_m[i - (col > 0 ? 1 : 0)] ?? null;
+    const right: number | null = terrain.elevations_m[i + (col < terrain.size - 1 ? 1 : 0)] ?? null;
+    const north: number | null = terrain.elevations_m[i - (row > 0 ? terrain.size : 0)] ?? null;
+    const south: number | null = terrain.elevations_m[i + (row < terrain.size - 1 ? terrain.size : 0)] ?? null;
+    const slope: number = left === null || right === null || north === null || south === null ? 0 :
+      Math.hypot(right - left, north - south) / (2 * terrain.spacing_m);
+    const shade: number = elevation === null ? 0 : (0.32 + 0.55 * (elevation - low) / Math.max(high - low, 1)) *
+      (1 - 0.14 * Math.min(1, slope));
     if (elevation === null) color.setXYZ(i, 0.8, 0.1, 0.1);
     else color.setXYZ(i, shade, shade * 0.98, shade * 0.94);
+  }
+  const index: BufferAttribute | null = parts.terrain.geometry.getIndex();
+  if (index !== null && terrain.elevations_m.some((value: number | null): boolean => value === null)) {
+    parts.terrain.geometry.setIndex(validTriangleIndices(index.array, terrain.elevations_m));
   }
   position.needsUpdate = true;
   color.needsUpdate = true;
@@ -170,13 +184,15 @@ function drawMarkers(parts: SceneParts, terrain: RoiTerrain, candidates: Candida
   old.forEach((child: Object3D): void => { disposeObject(child); parts.markers.remove(child); });
   for (const candidate of candidates) {
     const point: LocalPoint = toLocal(terrain, candidate.latitude_deg, candidate.longitude_deg);
+    if (displayElevation(terrain, point) === null) continue;
     const selected: boolean = candidate.candidate_id === selectedId;
     const color: string = selected ? SELECTED : OTHER;
     const marker: Group = new Group();
-    const pinHeight: number = selected ? 0.3 : 0.22;
+    const markerScale: number = terrain.roi.half_width_m > 2000 ? 2.5 : 1;
+    const pinHeight: number = (selected ? 0.3 : 0.22) * markerScale;
     const pin: Mesh = new Mesh(new CylinderGeometry(0.008, 0.008, pinHeight, 8), new MeshBasicMaterial({ color }));
     pin.position.y = pinHeight / 2;
-    const head: Mesh = new Mesh(new SphereGeometry(selected ? 0.05 : 0.038, 16, 12), new MeshBasicMaterial({ color }));
+    const head: Mesh = new Mesh(new SphereGeometry((selected ? 0.05 : 0.038) * markerScale, 16, 12), new MeshBasicMaterial({ color }));
     head.position.y = pinHeight;
     marker.add(pin, head);
     marker.position.set(point.east_m / 1000, heightKm(terrain, point, exaggeration), -point.north_m / 1000);
@@ -187,7 +203,7 @@ function drawMarkers(parts: SceneParts, terrain: RoiTerrain, candidates: Candida
 
 
 function defaultCameraPosition(extentKm: number): Vector3 {
-  return new Vector3(extentKm * 0.6, extentKm * 0.7, extentKm * 1.0);
+  return new Vector3(extentKm * 0.42, extentKm * 0.55, extentKm * 0.7);
 }
 
 function label(text: string): Sprite {
@@ -216,12 +232,16 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
   const half: number = terrain.roi.half_width_m;
   const points: number[] = [];
   const lift: number = 0.004;
-  for (let line: number = -half; line <= half + 1e-6; line += 1000) {
+  const interval: number = half > 2000 ? 5000 : 1000;
+  for (let line: number = -half; line <= half + 1e-6; line += interval) {
     for (let t: number = -half; t < half - 1e-6; t += terrain.spacing_m) {
       {
         const a: number = t;
         const b: number = t + terrain.spacing_m;
-        // East-west line at north = line, then north-south line at east = line.
+        // Draw grid segments only where both DEM endpoints exist.
+        if ([{ east_m: a, north_m: line }, { east_m: b, north_m: line },
+          { east_m: line, north_m: a }, { east_m: line, north_m: b }].some(
+          (point: LocalPoint): boolean => displayElevation(terrain, point) === null)) continue;
         points.push(a / 1000, heightKm(terrain, { east_m: a, north_m: line }, exaggeration) + lift, -line / 1000,
           b / 1000, heightKm(terrain, { east_m: b, north_m: line }, exaggeration) + lift, -line / 1000);
         points.push(line / 1000, heightKm(terrain, { east_m: line, north_m: a }, exaggeration) + lift, -a / 1000,
@@ -232,8 +252,26 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
   const geometry: BufferGeometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(points), 3));
   parts.overlay.add(new LineSegments(geometry, new LineBasicMaterial({ color: "#7fb0e0", transparent: true, opacity: 0.35 })));
+  if (half > 2000) {
+    // Outline the scientifically supported 4 km square on the coarse display surface.
+    const boundary: number[] = [];
+    for (let t: number = -2000; t < 2000; t += terrain.spacing_m) {
+      const next: number = Math.min(t + terrain.spacing_m, 2000);
+      for (const side of [-2000, 2000]) {
+        for (const [a, b] of [[{ east_m: t, north_m: side }, { east_m: next, north_m: side }],
+          [{ east_m: side, north_m: t }, { east_m: side, north_m: next }]] as [LocalPoint, LocalPoint][]) {
+          boundary.push(a.east_m / 1000, heightKm(terrain, a, exaggeration) + 0.02, -a.north_m / 1000,
+            b.east_m / 1000, heightKm(terrain, b, exaggeration) + 0.02, -b.north_m / 1000);
+        }
+      }
+    }
+    const outline: BufferGeometry = new BufferGeometry();
+    outline.setAttribute("position", new BufferAttribute(new Float32Array(boundary), 3));
+    parts.overlay.add(new LineSegments(outline, new LineBasicMaterial({ color: "#f2c14e", depthTest: false })));
+  }
   const edge: number = half / 1000 + 0.2;
   for (const [text, x, z, e, n] of [["N", 0, -edge, 0, half], ["S", 0, edge, 0, -half], ["E", edge, 0, half, 0], ["W", -edge, 0, -half, 0]] as const) {
+    if (displayElevation(terrain, { east_m: e, north_m: n }) === null) continue;
     const sprite: Sprite = label(text);
     sprite.position.set(x, heightKm(terrain, { east_m: e, north_m: n }, exaggeration) + 0.12, z);
     parts.overlay.add(sprite);
@@ -257,11 +295,12 @@ function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: Scientif
   parts.light.castShadow = useSun;
   if (!useSun || evaluation === null || sample === undefined) {
     parts.light.position.copy(RELIEF_LIGHT);
-    parts.light.intensity = 2.2;
-    parts.ambient.intensity = 0.35;
+    parts.light.intensity = 1.45;
+    parts.ambient.intensity = 0.28;
   }
   if (evaluation === null || sample === undefined) return;
   const point: LocalPoint = toLocal(terrain, evaluation.candidate.latitude_deg, evaluation.candidate.longitude_deg);
+  if (displayElevation(terrain, point) === null) return;
   // Observer height is represented by a fixed-size pin so it remains visible at 4 km scale.
   const ground: Vector3 = new Vector3(point.east_m / 1000, heightKm(terrain, point, exaggeration), -point.north_m / 1000);
   const origin: Vector3 = ground.clone().add(new Vector3(0, 0.12, 0));
@@ -308,7 +347,7 @@ function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: Scientif
   }
 }
 
-export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelectMarker, temporal = null, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
+export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId, onPick, onSelectMarker, temporal = null, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
   const hostRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const canvasRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const partsRef: RefObject<SceneParts | null> = useRef<SceneParts | null>(null);
@@ -316,10 +355,19 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
     useRef({ onPick, onSelectMarker });
   const width: number = Math.max(320, useElementWidth(hostRef, 960));
   const [exaggeration, setExaggeration] = useState<number>(1);
+  const [regionalMode, setRegionalMode] = useState<boolean>(true);
+  const isRegional: boolean = regionalMode && regional !== null;
+  const displayTerrain: RoiTerrain = useMemo((): RoiTerrain => !isRegional || regional === null ? terrain : {
+    ...terrain, roi: { ...terrain.roi, half_width_m: regional.half_width_m }, size: regional.size,
+    spacing_m: regional.spacing_m, elevations_m: regional.elevations_m, elevation_range_m: regional.elevation_range_m,
+  }, [terrain, regional, isRegional]);
+  const displayRef: RefObject<RoiTerrain> = useRef<RoiTerrain>(displayTerrain);
+  useEffect((): void => { displayRef.current = displayTerrain; }, [displayTerrain]);
+  const [pickNotice, setPickNotice] = useState<string | null>(null);
   const [failed, setFailed] = useState<boolean>((): boolean => !hasWebGL());
   const [hover, setHover] = useState<Hover | null>(null);
   const [heading, setHeading] = useState<number>(0);
-  const [sunLighting, setSunLighting] = useState<boolean>(true);
+  const [sunLighting, setSunLighting] = useState<boolean>(false);
   const [showSun, setShowSun] = useState<boolean>(true);
   const [showEarth, setShowEarth] = useState<boolean>(true);
   const [showHorizon, setShowHorizon] = useState<boolean>(true);
@@ -373,7 +421,14 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
       const marker: unknown = ray.intersectObject(parts.markers, true)[0]?.object.userData["candidateId"];
       if (typeof marker === "string") { callbacks.current.onSelectMarker(marker); return; }
       const hit: TerrainPick | null = pickTerrain(parts.camera, parts.terrain, mouse);
-      if (hit !== null) callbacks.current.onPick({ east_m: hit.east_m, north_m: hit.north_m });
+      if (hit !== null) {
+        if (Math.abs(hit.east_m) > terrain.roi.half_width_m || Math.abs(hit.north_m) > terrain.roi.half_width_m) {
+          setPickNotice("Outside the outlined 4 × 4 km study area; candidate creation is unavailable here.");
+          return;
+        }
+        setPickNotice(null);
+        callbacks.current.onPick({ east_m: hit.east_m, north_m: hit.north_m });
+      }
     };
     let frame: number = 0;
     let pending: PointerEvent | null = null;
@@ -389,8 +444,8 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
         const hit: TerrainPick | null = pickTerrain(parts.camera, parts.terrain, mouse);
         if (hit === null) { setHover(null); return; }
         const point: LocalPoint = { east_m: hit.east_m, north_m: hit.north_m };
-        const [latitude, longitude] = toGeographic(terrain, point);
-        setHover({ point, latitude, longitude, elevation: displayElevation(terrain, point) });
+        const [latitude, longitude] = toGeographic(displayRef.current, point);
+        setHover({ point, latitude, longitude, elevation: displayElevation(displayRef.current, point) });
       });
     };
     const onLeave: () => void = (): void => { pending = null; setHover(null); };
@@ -414,28 +469,45 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terrain, failed]);
 
+  // Swap bounded grids in the existing scene; only an explicit scale change reframes the camera.
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
-    applyHeights(parts, terrain, exaggeration);
-    drawOverlay(parts, terrain, exaggeration);
-    renderRef.current();
-  }, [terrain, exaggeration, failed]);
+    const extent: number = 2 * displayTerrain.roi.half_width_m / 1000;
+    parts.terrain.geometry.dispose();
+    parts.terrain.geometry = new PlaneGeometry(extent, extent, displayTerrain.size - 1, displayTerrain.size - 1);
+    parts.terrain.geometry.setAttribute("color", new BufferAttribute(new Float32Array(displayTerrain.size * displayTerrain.size * 3), 3));
+    parts.controls.target.set(0, 0, 0);
+    parts.camera.position.copy(defaultCameraPosition(extent));
+    const reach: number = extent * 0.8;
+    parts.light.shadow.camera.left = -reach; parts.light.shadow.camera.right = reach;
+    parts.light.shadow.camera.top = reach; parts.light.shadow.camera.bottom = -reach;
+    parts.light.shadow.camera.updateProjectionMatrix();
+    parts.controls.update();
+  }, [displayTerrain, failed]);
 
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
-    drawMarkers(parts, terrain, candidates, selectedId, exaggeration);
+    applyHeights(parts, displayTerrain, exaggeration);
+    drawOverlay(parts, displayTerrain, exaggeration);
     renderRef.current();
-  }, [terrain, candidates, selectedId, exaggeration, failed]);
+  }, [displayTerrain, exaggeration, failed]);
+
+  useEffect((): void => {
+    const parts: SceneParts | null = partsRef.current;
+    if (parts === null) return;
+    drawMarkers(parts, displayTerrain, candidates, selectedId, exaggeration);
+    renderRef.current();
+  }, [displayTerrain, candidates, selectedId, exaggeration, failed]);
 
   // The timeline cursor moves only these display objects; the camera and the scene stay as they are.
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
-    drawBodies(parts, terrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon);
+    drawBodies(parts, displayTerrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon);
     renderRef.current();
-  }, [terrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon, failed]);
+  }, [displayTerrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon, failed]);
 
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
@@ -448,7 +520,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
   function view(action: "reset" | "top" | "in" | "out" | "selected"): void {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
-    const extentKm: number = (2 * terrain.roi.half_width_m) / 1000;
+    const extentKm: number = (2 * displayTerrain.roi.half_width_m) / 1000;
     const { camera, controls } = parts;
     if (action === "reset") { controls.target.set(0, 0, 0); camera.position.copy(defaultCameraPosition(extentKm)); }
     if (action === "top") { camera.position.set(controls.target.x, controls.target.y + extentKm * 1.35, controls.target.z + 0.001); }
@@ -459,8 +531,8 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
     if (action === "selected") {
       const chosen: Candidate | undefined = candidates.find((c: Candidate): boolean => c.candidate_id === selectedId);
       if (chosen === undefined) return;
-      const point: LocalPoint = toLocal(terrain, chosen.latitude_deg, chosen.longitude_deg);
-      const target: Vector3 = new Vector3(point.east_m / 1000, heightKm(terrain, point, exaggeration), -point.north_m / 1000);
+      const point: LocalPoint = toLocal(displayTerrain, chosen.latitude_deg, chosen.longitude_deg);
+      const target: Vector3 = new Vector3(point.east_m / 1000, heightKm(displayTerrain, point, exaggeration), -point.north_m / 1000);
       camera.position.add(target.clone().sub(controls.target));
       controls.target.copy(target);
     }
@@ -477,7 +549,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
         <div className="terrain-hud" aria-live="polite">
           {hover === null ? <span>Hover the terrain for coordinates</span> : <>
             <span><strong>{Math.abs(hover.latitude).toFixed(5)}°S {hover.longitude.toFixed(5)}°E</strong></span>
-            <span>DEM {hover.elevation === null ? "no data" : `${hover.elevation.toFixed(1)} m`} <span className="muted">(20 m grid, display)</span></span>
+            <span>DEM {hover.elevation === null ? "no data" : `${hover.elevation.toFixed(1)} m`} <span className="muted">{isRegional ? "(240 m DEM, 250 m display grid)" : "(20 m DEM display grid)"}</span></span>
             <span className="muted">{hover.point.east_m.toFixed(0)} m E · {hover.point.north_m.toFixed(0)} m N of centre</span>
           </>}
         </div>
@@ -497,6 +569,12 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
           </svg>
         </div>
       </div>
+      <div className="terrain-scale" role="group" aria-label="Terrain scale">
+        <button type="button" aria-pressed={isRegional} disabled={regional === null} onClick={(): void => { if (isRegional) view("reset"); else setRegionalMode(true); setPickNotice(null); }}>Regional explore · 20 km</button>
+        <button type="button" aria-pressed={!isRegional} onClick={(): void => { setRegionalMode(false); setPickNotice(null); }}>Scientific detail · 4 km</button>
+        <span>{isRegional ? "240 m LOLA DEM · 250 m display grid" : "20 m LOLA DEM · 20 m display grid"}</span>
+      </div>
+      {pickNotice !== null && <p role="status">{pickNotice}</p>}
       <div id="geometry-controls" className="terrain-controls" role="toolbar" aria-label="3D view controls">
         <button type="button" onClick={(): void => { view("reset"); }}>Reset view</button>
         <button type="button" onClick={(): void => { view("top"); }}>Top view</button>
@@ -516,11 +594,12 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
       </div>
       <p className="muted small">
         Left-drag rotates, right-drag pans, scroll zooms. <strong>Click the terrain</strong> to save a new candidate there; click a marker to select it.
-        Grid lines every 1 km; <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
+        Grid lines every {isRegional ? "5" : "1"} km; {isRegional && "Select Regional explore again to reset its view. "} {isRegional && "Gold outline: supported 4 km candidate study area. Regional terrain is display only; click within the outline to create a candidate. "} <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
         {sample !== undefined && <>White pin: evaluated observer (symbolic height). Orange Sun and blue Earth rays show stored directions; solid/filled means visible, dashed/open means blocked.
           Azimuths are measured clockwise from north at the candidate. Fine coloured dashed lines and small rings show the stored horizon angle in each body's direction; grey dashed lines mark the local horizontal. These are angular guides, not distant terrain or body distances.
           Visibility uses the stored 200 km terrain horizon; the Sun's upper limb and Earth's centre are tested. </>}
-        {sunLighting && sample !== undefined ? "Sun lighting and shadows cover only the 4 km mesh and do not represent distant occlusion." : "Lighting is fixed for relief and is not the Sun."}
+        {sunLighting && sample !== undefined ? "Sun lighting and shadows cover only the displayed mesh and do not represent distant occlusion." : "Lighting is fixed for relief and is not the Sun."}
+        {" "}The two scales switch between separate LOLA grids; surface and marker heights can differ between resolutions.
         {" "}Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.
       </p>
     </div>
