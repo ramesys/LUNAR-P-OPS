@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { Vector3 } from "three";
-import { bodyDirection, directionalGuides } from "./sceneGeometry.ts";
+import { bodyDirection, directionalGuides, roiAzimuth } from "./sceneGeometry.ts";
 
 describe("stored sky geometry", (): void => {
   it("maps north, east and altitude to the terrain axes", (): void => {
     expect(bodyDirection(0, 0).distanceTo(new Vector3(0, 0, -1))).toBeLessThan(1e-10);
     expect(bodyDirection(90, 0).distanceTo(new Vector3(1, 0, 0))).toBeLessThan(1e-10);
     expect(bodyDirection(0, 90).distanceTo(new Vector3(0, 1, 0))).toBeLessThan(1e-10);
+  });
+
+  it("rotates candidate-local north into the ROI-centred projected frame", (): void => {
+    expect(roiAzimuth(0, 66, 56)).toBeCloseTo(10);
+    expect(roiAzimuth(90, 46, 56)).toBeCloseTo(80);
+    expect(roiAzimuth(0, 1, 359)).toBeCloseTo(2);
   });
 
   it("places the body and its horizon at their stored elevations in the same azimuth", (): void => {

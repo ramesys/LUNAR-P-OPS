@@ -1,0 +1,40 @@
+# Separate test stack: scientific inputs are read-only; SQLite lives only in tmpfs.
+name: lunar-ops-e2e
+services:
+  api:
+    build:
+      context: ../backend
+      dockerfile: ../infrastructure/docker/api.Dockerfile
+      target: dev
+    environment:
+      CLPS_DATA_DIR: /data
+    tmpfs:
+      - /data
+    volumes:
+      - ../data/kernels:/data/kernels:ro
+      - ../data/terrain:/data/terrain:ro
+      - ../data/basemap:/data/basemap:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  web:
+    build:
+      context: ../frontend
+      dockerfile: ../infrastructure/docker/web.Dockerfile
+      target: dev
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    ports:
+      - "127.0.0.1:15180:5173"
+    volumes:
+      - ./e2e/isolated-stack.txt:/workspace/web/public/e2e-isolated.txt:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173/e2e-isolated.txt').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12

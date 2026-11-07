@@ -4,7 +4,9 @@
 
 Built for the **NASA Space Apps Challenge 2026** (challenge #2, *CLPS Lunar Mission Browser*). Near the lunar south pole the Sun circles only a few degrees above the horizon and the Earth hangs low, so a single hill decides whether a lander has power or can talk to Earth. This app turns NASA/JPL ephemerides and NASA LOLA terrain into a comparison that mission planners, educators and the public can read at a glance.
 
-![Simple mode overview](docs/screenshots/01-overview-simple.png)
+![Earlier catalog view](docs/screenshots/01-overview-simple.png)
+
+The images below document an earlier catalog-focused interface; the current app also includes the Shackleton workspace, Landing Graph and candidate Inspector.
 
 > **Sites are placeholders.** The catalog currently holds *sample* sites with arbitrary coordinates (clearly labeled in the UI). The official candidate sites are published with the full challenge statement; swapping them in is a one-file change (see [Updating the site catalog](#updating-the-site-catalog)).
 
@@ -58,7 +60,7 @@ Built for the **NASA Space Apps Challenge 2026** (challenge #2, *CLPS Lunar Miss
 |---|---|
 | ![Expert comparison](docs/screenshots/07-expert-comparison.png) | ![Mobile](docs/screenshots/09-mobile.png) |
 
-Screenshots are generated, not hand-made: run `make screenshots` against a running dev stack to refresh them.
+These are historical screenshots and do not show the current workspace. `make screenshots` overwrites the README images; start the isolated test stack with `make e2e-up` first and review generated images before committing them.
 
 ## Quick start
 
@@ -238,8 +240,9 @@ All backend and frontend tasks run **inside the dev containers**, so the host on
 | `make test` | Backend tests (pytest, including the Horizons golden test) and frontend unit tests (Vitest) |
 | `make lint` | `ruff` + `mypy --strict` and ESLint + `tsc --noEmit` |
 | `make fmt` | Format Python with ruff |
-| `make e2e` | Playwright end-to-end tests against the running stack (host: Node 22+, pnpm, Microsoft Edge) |
-| `make screenshots` | Regenerate `docs/screenshots` |
+| `make e2e` | Start the isolated test stack and run Playwright (host: Node 22+, pnpm, installed Edge or `E2E_CHANNEL=chrome`) |
+| `make e2e-up` / `make e2e-stop` | Start / stop the separate test stack on port 15180 |
+| `make screenshots` | Overwrite README images in `docs/screenshots` using the isolated stack |
 | `make openapi` / `make check-openapi` | Regenerate the TypeScript client from the API / fail if it is out of date |
 | `make fetch-data` · `fetch-terrain` · `fetch-basemap` | Download kernels / LOLA terrain windows / map relief (idempotent) |
 | `make golden` | Refresh the JPL Horizons reference data (network) |
@@ -297,7 +300,7 @@ WEB_PORT=8080 docker compose -f infrastructure/docker-compose.prod.yml up -d --b
 - **Resources:** images are about 962 MB (API) and 75 MB (web), and the data volume about 111 MB. The first start downloads the data (roughly 2–4 minutes including the build).
 - **HTTPS:** put the published port behind your usual TLS terminator (Caddy, Traefik, a cloud load balancer). The API runs with `--proxy-headers`.
 - **Updating:** `git pull && make prod-up`. Data is kept in the volume. `docker compose -f infrastructure/docker-compose.prod.yml down -v` also deletes it.
-- **Verifying a deployment:** the end-to-end suite can target any URL, for example `cd frontend && E2E_BASE_URL=http://localhost:8080 pnpm --filter @clps/web e2e`. It passes against the production stack.
+- **Browser tests:** `make e2e-up` mounts the scientific data read-only and uses a separate temporary SQLite database. The Playwright suite targets only this isolated stack, not a deployment or the normal development database. The temporary test database is discarded when the API container stops or is recreated.
 
 ## Data sources and credits
 

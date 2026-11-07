@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type APIRequestContext, type APIResponse, type Download, type Locator, type Page, type Request } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Download, type Locator, type Page, type Request, type Response as PageResponse } from "@playwright/test";
 
 /**
- * Sprint 07: candidate evaluation and catalog comparison contexts against the running stack.
+ * Candidate evaluation and catalog comparison contexts against the isolated test stack.
  * The fixture candidate and its evaluation are created through the public API with fixed inputs,
- * so repeated runs reuse the same persisted records (identities are content hashes).
+ * so repeated runs reuse test records while the isolated stack is running.
  */
 
 const SCENARIO: string = "/?sites=sample-a,sample-b&from=2026-01-01&to=2026-01-02&step=120&height=2&horizon=terrain&dte=0&mode=expert";
@@ -111,6 +111,38 @@ test.describe("desktop", (): void => {
     await expect(candidateCard(page)).toContainText(`sample ${f.samples.toString()}/${f.samples.toString()}`);
     expect(writes).toEqual([]);
     expect(await page.locator("[aria-label^='3D terrain of the Shackleton']").getAttribute("data-camera")).toBe(camera);
+  });
+
+  test("creates and evaluates a map candidate, then follows the timeline", async ({ page }): Promise<void> => {
+    await page.goto(SCENARIO);
+    const canvas: Locator = page.locator(".terrain-canvas canvas");
+    await expect(canvas).toBeVisible();
+    const bounds: { width: number; height: number } | null = await canvas.boundingBox();
+    if (bounds === null) throw new Error("terrain canvas missing");
+    // A previous run may have left a selectable marker at a click position in the test DB.
+    let candidateResponse: PageResponse | null = null;
+    for (let attempt: number = 0; attempt < 8; attempt++) {
+      const x: number = 0.4 + Math.random() * 0.22;
+      const y: number = 0.55 + Math.random() * 0.08;
+      const created: Promise<PageResponse | null> = page.waitForResponse((response): boolean =>
+        response.url().includes("/api/rois/shackleton-rim-b/candidates") && response.request().method() === "POST",
+      { timeout: 2000 }).catch((): null => null);
+      await canvas.click({ position: { x: bounds.width * x, y: bounds.height * y } });
+      candidateResponse = await created;
+      if (candidateResponse !== null) break;
+    }
+    if (candidateResponse === null) throw new Error("No terrain click created a candidate");
+    expect(candidateResponse.ok()).toBe(true);
+    const candidate: { candidate_id: string } = await candidateResponse.json() as { candidate_id: string };
+    await expect(page.getByRole("region", { name: "Landing graph" })).toContainText(candidate.candidate_id.slice(0, 22));
+    await page.getByLabel("Duration (h, max 168)").fill("6");
+    await page.getByLabel("Step (min)").fill("60");
+    await page.getByRole("button", { name: "Evaluate C0" }).click();
+    await expect(page.locator(".terrain-time")).toContainText("stored sample 1/6", { timeout: 30_000 });
+    await inspectorTime(page).getByRole("button", { name: "Step forward" }).click();
+    await expect(page.locator(".terrain-time")).toContainText("stored sample 2/6");
+    await expect(resultsNode(page)).toContainText("cursor 2/6");
+    await expect(page.getByRole("complementary", { name: "Inspector" })).toContainText("Inspecting stored sample 2 of 6");
   });
 
   test("distinguishes draft from saved inputs and restores everything after reload", async ({ page, request }): Promise<void> => {

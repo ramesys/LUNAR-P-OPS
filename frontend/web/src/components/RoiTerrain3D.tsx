@@ -32,7 +32,7 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { pickTerrain, type TerrainPick } from "../lib/terrainPicking.ts";
 import { displayElevation, displayHeightM, toGeographic, toLocal, type LocalPoint } from "../lib/roiFrame.ts";
-import { bodyDirection, directionalGuides } from "../lib/sceneGeometry.ts";
+import { bodyDirection, directionalGuides, roiAzimuth } from "../lib/sceneGeometry.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 
 /**
@@ -154,6 +154,7 @@ function applyHeights(parts: SceneParts, terrain: RoiTerrain, exaggeration: numb
 
 function disposeObject(root: Object3D): void {
   root.traverse((object: Object3D): void => {
+    if (object instanceof Sprite) { object.material.map?.dispose(); object.material.dispose(); }
     if (object instanceof Mesh || object instanceof LineSegments) {
       const mesh: Mesh | LineSegments = object;
       mesh.geometry.dispose();
@@ -210,7 +211,6 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
   const old: Object3D[] = [...parts.overlay.children];
   old.forEach((child: Object3D): void => {
     disposeObject(child);
-    if (child instanceof Sprite) { child.material.map?.dispose(); child.material.dispose(); }
     parts.overlay.remove(child);
   });
   const half: number = terrain.roi.half_width_m;
@@ -272,7 +272,7 @@ function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: Scientif
   for (const [enabled, color, az, el, horizon, visible] of [[showSun, SUN_COLOR, sample.sun_azimuth_deg, sample.sun_elevation_deg, sample.sun_horizon_deg, sample.sun_visible],
     [showEarth, EARTH_COLOR, sample.earth_azimuth_deg, sample.earth_elevation_deg, sample.earth_horizon_deg, sample.earth_visible]] as const) {
     if (!enabled) continue;
-    const guides: ReturnType<typeof directionalGuides> = directionalGuides(origin, az, el, horizon, BODY_DISTANCE_KM);
+    const guides: ReturnType<typeof directionalGuides> = directionalGuides(origin, roiAzimuth(az, evaluation.candidate.longitude_deg, terrain.roi.center_longitude_deg), el, horizon, BODY_DISTANCE_KM);
     const end: Vector3 = guides.body;
     if (showHorizon) {
       // This is an angular guide, not a reconstruction of the distant terrain profile.
@@ -300,7 +300,7 @@ function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: Scientif
     parts.bodies.add(marker);
   }
   if (useSun) {
-    const sun: Vector3 = bodyDirection(sample.sun_azimuth_deg, sample.sun_elevation_deg);
+    const sun: Vector3 = bodyDirection(roiAzimuth(sample.sun_azimuth_deg, evaluation.candidate.longitude_deg, terrain.roi.center_longitude_deg), sample.sun_elevation_deg);
     parts.light.position.copy(sun.multiplyScalar(12));
     // Lit while the Sun's upper limb is above the astronomical horizon; terrain blocking is separate.
     parts.light.intensity = sample.sun_elevation_deg > -0.27 ? 2.6 : 0;
@@ -518,7 +518,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
         Left-drag rotates, right-drag pans, scroll zooms. <strong>Click the terrain</strong> to save a new candidate there; click a marker to select it.
         Grid lines every 1 km; <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
         {sample !== undefined && <>White pin: evaluated observer (symbolic height). Orange Sun and blue Earth rays show stored directions; solid/filled means visible, dashed/open means blocked.
-          Fine coloured dashed lines and small rings show the stored horizon angle in each body's direction; grey dashed lines mark the local horizontal. These are angular guides, not distant terrain or body distances.
+          Azimuths are measured clockwise from north at the candidate. Fine coloured dashed lines and small rings show the stored horizon angle in each body's direction; grey dashed lines mark the local horizontal. These are angular guides, not distant terrain or body distances.
           Visibility uses the stored 200 km terrain horizon; the Sun's upper limb and Earth's centre are tested. </>}
         {sunLighting && sample !== undefined ? "Sun lighting and shadows cover only the 4 km mesh and do not represent distant occlusion." : "Lighting is fixed for relief and is not the Sun."}
         {" "}Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.

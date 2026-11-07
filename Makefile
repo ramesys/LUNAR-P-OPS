@@ -89,11 +89,19 @@ lint-web:
 fmt:
 	$(PY_RUN) sh -c "ruff check --fix . && ruff format ."
 
-# Host-side (Node + pnpm + Microsoft Edge) against the running dev stack: `make up` first.
-e2e:
+# Browser tests use a separate stack: read-only scientific inputs and a tmpfs candidate database.
+.PHONY: e2e-up e2e-stop
+e2e-up:
+	docker compose -f infrastructure/docker-compose.e2e.yml up --build -d --wait
+
+e2e-stop:
+	docker compose -f infrastructure/docker-compose.e2e.yml stop
+
+# Host-side Node + pnpm + installed browser. The isolation guard refuses the normal stack.
+e2e: e2e-up
 	cd frontend && pnpm --filter @clps/web e2e
 
-# Regenerates the README screenshots in docs/screenshots (dev stack must be running).
+# Regenerates the README screenshots in docs/screenshots (isolated stack must be running).
 screenshots:
 	cd frontend && pnpm --filter @clps/web screenshots
 

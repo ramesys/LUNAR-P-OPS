@@ -14,3 +14,8 @@ export function directionalGuides(origin: Vector3, azimuthDeg: number, elevation
     origin.clone().add(bodyDirection(azimuthDeg, angle).multiplyScalar(distance));
   return { body: endpoint(elevationDeg), horizon: endpoint(horizonDeg), horizontal: endpoint(0) };
 }
+
+/** Convert local true-north azimuth to the south-polar ROI centre's display axes. */
+export function roiAzimuth(azimuthDeg: number, candidateLongitudeDeg: number, centerLongitudeDeg: number): number {
+  return ((azimuthDeg + candidateLongitudeDeg - centerLongitudeDeg) % 360 + 360) % 360;
+}
