@@ -126,6 +126,18 @@ def list_for(candidate_id: str) -> list[EvaluationOut]:
 
 
 def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
+    """Compute and persist (idempotent: identical inputs and outputs reuse the stored record)."""
+    return save(compute(candidate, request))
+
+
+def software_commit() -> str | None:
+    """Git commit of the running code when the deployment provides it (CLPS_GIT_COMMIT)."""
+    commit = os.environ.get("CLPS_GIT_COMMIT", "").strip()
+    return commit or None
+
+
+def compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
+    """Run the candidate evaluation without storing it."""
     window = candidate.terrain_window_id
     if window not in TERRAIN_WINDOWS:
         window = "sample-a"  # Never derive a path from an unknown id; identity checks still fail.
@@ -152,7 +164,11 @@ def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationO
         "lunar_core_version": version("lunar-core"),
         "spiceypy_version": version("spiceypy"),
         "numpy_version": version("numpy"),
+        "clps_api_version": version("clps-api"),
     }
+    commit = software_commit()
+    if commit is not None:
+        provenance["software_commit"] = commit
     warnings = [
         "Independent scientific validation has not been established for this candidate.",
         "Geometric Earth visibility is not communication performance; "
@@ -295,19 +311,17 @@ def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationO
     identifier = hashlib.sha256(
         json.dumps(content, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     ).hexdigest()
-    return save(
-        EvaluationOut(
-            evaluation_id=f"evaluation-{identifier}",
-            candidate_id=candidate.candidate_id,
-            status=status,
-            request=request,
-            candidate=candidate,
-            provenance=provenance,
-            warnings=warnings,
-            errors=errors,
-            horizon_azimuth_deg=horizon_az,
-            horizon_elevation_deg=horizon_el,
-            samples=samples,
-            intervals=intervals,
-        )
+    return EvaluationOut(
+        evaluation_id=f"evaluation-{identifier}",
+        candidate_id=candidate.candidate_id,
+        status=status,
+        request=request,
+        candidate=candidate,
+        provenance=provenance,
+        warnings=warnings,
+        errors=errors,
+        horizon_azimuth_deg=horizon_az,
+        horizon_elevation_deg=horizon_el,
+        samples=samples,
+        intervals=intervals,
     )

@@ -29,3 +29,5 @@ export type ScientificEvaluation = Schemas["EvaluationOut"];
 export type CandidateRef = Schemas["CandidateRefOut"];
 export type Roi = Schemas["RoiOut"];
 export type RoiTerrain = Schemas["RoiTerrainOut"];
+export type ExperimentManifest = Schemas["ExperimentManifestOut"];
+export type RecomputeReport = Schemas["RecomputeReportOut"];

@@ -1,10 +1,11 @@
 import type { AnalysisResponse, ApiClient, Candidate, PoleMap as PoleMapData, Site, SiteResult } from "@clps/api-client";
-import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type JSX, type RefObject } from "react";
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { LandingGraph } from "./components/LandingGraph.tsx";
 import { ShackletonWorkspace } from "./components/ShackletonWorkspace.tsx";
 import { SelectionGuard } from "./lib/selectionGuard.ts";
 import { loadSelection, saveSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
+import { createExplorationStore, ExplorationContext, INITIAL, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
@@ -64,8 +65,13 @@ export function defaultForm(now: Date): Form {
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [candidate, setCandidate] = useState<Candidate | null>(null);
-  // The single persisted selection: root C0 (graph, marker) and the committed revision (C0/C1).
-  const [revisionId, setRevisionId] = useState<string | null>(null);
+  // The single space–time exploration state (selection, active evaluation, draft, cursor).
+  const [store] = useState<ExplorationStore>((): ExplorationStore => {
+    const saved: WorkspaceSelection | null = loadSelection();
+    return createExplorationStore(saved === null ? INITIAL :
+      { ...INITIAL, rootId: saved.rootId, revisionId: saved.revisionId, cursorUtc: saved.cursorUtc ?? null });
+  });
+  const revisionId: string | null = useSyncExternalStore(store.subscribe, (): string | null => store.getState().revisionId);
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const candidateGuard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
   const [sites, setSites] = useState<Site[]>([]);
@@ -84,15 +90,27 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   }, []);
   const onCandidateSelected: (value: Candidate) => void = useCallback((value: Candidate): void => {
     candidateGuard.current.invalidate();
-    saveSelection({ rootId: value.candidate_id, revisionId: value.candidate_id });
     setCandidateError(null);
     setCandidate(value);
-    setRevisionId(value.candidate_id);
-  }, []);
+    store.dispatch({ type: "select-root", rootId: value.candidate_id });
+  }, [store]);
   const onSelectRevision: (revision: Candidate) => void = useCallback((revision: Candidate): void => {
-    setRevisionId(revision.candidate_id);
-    saveSelection({ rootId: revision.parent_candidate_id ?? revision.candidate_id, revisionId: revision.candidate_id });
-  }, []);
+    store.dispatch({ type: "select-revision", revisionId: revision.candidate_id, rootId: revision.parent_candidate_id ?? revision.candidate_id });
+  }, [store]);
+  // Persist identifiers only (debounced: playback moves the cursor many times per second).
+  useEffect((): (() => void) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe: () => void = store.subscribe((): void => {
+      clearTimeout(timer);
+      timer = setTimeout((): void => {
+        const state: ExplorationState = store.getState();
+        if (state.rootId === null || state.revisionId === null) return;
+        saveSelection({ rootId: state.rootId, revisionId: state.revisionId,
+          evaluationId: state.evaluation?.evaluation_id ?? null, cursorUtc: state.cursorUtc });
+      }, 300);
+    });
+    return (): void => { clearTimeout(timer); unsubscribe(); };
+  }, [store]);
   useEffect((): (() => void) => {
     const guard: SelectionGuard = candidateGuard.current;
     const sequence: number = guard.next();
@@ -102,7 +120,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         .then(({ data }): void => {
           if (!guard.isCurrent(sequence)) return;
           if (data === undefined) setCandidateError("The saved candidate is unavailable. Select a terrain point to continue.");
-          else { setCandidate(data); setRevisionId(saved.revisionId); }
+          else setCandidate(data);
         }).catch((): void => {
           if (guard.isCurrent(sequence)) setCandidateError("Could not restore the saved candidate. Check the API connection.");
         });
@@ -233,6 +251,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
     result?.sites.find((s: SiteResult): boolean => s.site.id === focusedId) ?? result?.sites[0];
 
   return (
+    <ExplorationContext.Provider value={store}>
     <div className="page">
       <header className="page-header">
         <div className="title-row">
@@ -359,5 +378,6 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         <HealthStatus apiClient={apiClient} /> · NASA Space Apps Challenge 2026
       </footer>
     </div>
+    </ExplorationContext.Provider>
   );
 }

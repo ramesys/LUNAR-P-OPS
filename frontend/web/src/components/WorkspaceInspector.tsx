@@ -1,6 +1,9 @@
-import type { Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
-import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
-import { computationState, evaluationChart, visibleHours, type ComputationState, type EvaluationChart } from "../lib/evaluationCharts.ts";
+import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
+import { ExperimentPanel } from "./ExperimentPanel.tsx";
+import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import { computationState, evaluationChart, horizonGap, visibleHours, type ComputationState, type EvaluationChart, type HorizonGap } from "../lib/evaluationCharts.ts";
+import { nearestSample, useExploration, useExplorationStore, type Draft, type ExplorationStore } from "../lib/explorationStore.ts";
+import { formatUtc } from "../lib/format.ts";
 import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
 import type { Mode } from "../lib/mode.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
@@ -11,7 +14,7 @@ import { SkyChart } from "./SkyChart.tsx";
 import { TimeControl } from "./TimeControl.tsx";
 import { Timeline } from "./Timeline.tsx";
 
-export interface Draft { observer_height_m: number; selected_time_utc: string }
+export type { Draft } from "../lib/explorationStore.ts";
 
 interface Props {
   root: Candidate;
@@ -24,6 +27,8 @@ interface Props {
   draft: Draft | null;
   mode: Mode;
   busy: boolean;
+  /** Needed for experiment export and recompute; omitted in isolated tests. */
+  apiClient?: ApiClient;
   /** Set when a graph node was picked: highlights the matching Inspector section. */
   focus?: { part: "candidate" | "result"; at: number } | null;
   onSelectRevision: (candidate: Candidate) => void;
@@ -46,7 +51,7 @@ function latLon(c: Candidate): string {
 }
 
 /** Selected candidate, its parameters, status and persisted result, in order of importance. */
-export function WorkspaceInspector({ root, child, selected, selectedRef, evaluation, c0Result, c1Result, draft, mode, busy, focus = null,
+export function WorkspaceInspector({ root, child, selected, selectedRef, evaluation, c0Result, c1Result, draft, mode, busy, focus = null, apiClient,
   onSelectRevision, onDraftChange }: Props): JSX.Element {
   const label: string = revisionLabel(root, selected);
   const state: ComputationState = computationState(evaluation);
@@ -101,6 +106,7 @@ export function WorkspaceInspector({ root, child, selected, selectedRef, evaluat
       {evaluation === null ? <p className="muted">No stored evaluation for {label}.</p> : <EvaluationSummary evaluation={evaluation} label={label} />}
       {c0Result !== null && c1Result !== null && <ResultComparison c0={c0Result} c1={c1Result} />}
     </section>
+    {evaluation !== null && apiClient !== undefined && <ExperimentPanel key={evaluation.evaluation_id} apiClient={apiClient} evaluation={evaluation} />}
 
     <details open={mode === "expert"}>
       <summary>Data source, CandidateRef and provenance</summary>
@@ -112,49 +118,74 @@ export function WorkspaceInspector({ root, child, selected, selectedRef, evaluat
 
 function EvaluationSummary({ evaluation, label }: { evaluation: ScientificEvaluation; label: string }): JSX.Element {
   const chart: EvaluationChart | null = evaluationChart(evaluation, `${label} candidate`);
+  const gap: HorizonGap | null = horizonGap(evaluation);
+  const start: string = evaluation.samples[0]?.time_utc ?? evaluation.candidate.selected_time_utc;
+  const end: string = new Date(Date.parse(evaluation.candidate.selected_time_utc) + evaluation.request.duration_hours * 3600_000).toISOString();
   return <div>
-    <p><strong>{evaluation.status}</strong> · {evaluation.request.duration_hours} h from {evaluation.candidate.selected_time_utc}, {evaluation.request.step_minutes} min step
-      {" "}<span className="muted mono-wrap">{evaluation.evaluation_id.slice(0, 27)}…</span></p>
+    <p><strong>{evaluation.status}</strong> <span className="muted mono-wrap">{evaluation.evaluation_id.slice(0, 27)}…</span></p>
+    <p className="interval-line">Evaluated interval <strong>{formatUtc(start)} → {formatUtc(end)}</strong> ({evaluation.request.duration_hours} h),
+      {" "}{evaluation.samples.length} samples every {evaluation.request.step_minutes} min — each state is known only at its sample time; transitions are uncertain by up to one step.</p>
     {evaluation.errors.map((message: string): JSX.Element => <p role="alert" key={message}>{message}</p>)}
     {chart !== null && <>
       <p>Sampled visibility: <strong>Sun {visibleHours(evaluation, "sun").toFixed(1)} h</strong> · <strong>Earth {visibleHours(evaluation, "earth").toFixed(1)} h</strong> · both {visibleHours(evaluation, "simultaneous").toFixed(1)} h of {evaluation.request.duration_hours} h</p>
-      <EvaluationCharts key={evaluation.evaluation_id} chart={chart} stepMinutes={evaluation.request.step_minutes} />
+      {gap !== null && <ZeroVisibility gap={gap} />}
+      <EvaluationCharts chart={chart} evaluation={evaluation} />
     </>}
     <ul className="muted small-list">{evaluation.warnings.map((message: string): JSX.Element => <li key={message}>{message}</li>)}</ul>
     <details><summary>Intervals, time series, horizon and provenance</summary><ResultDetails result={evaluation} label={label} /></details>
   </div>;
 }
 
-/** The original CLPS sky diagram, timeline and time control, fed by the persisted evaluation. */
-function EvaluationCharts({ chart, stepMinutes }: { chart: EvaluationChart; stepMinutes: number }): JSX.Element {
+/** Explains a zero-visibility result from the stored samples instead of leaving an empty chart. */
+function ZeroVisibility({ gap }: { gap: HorizonGap }): JSX.Element | null {
+  const lines: string[] = [];
+  if (gap.sunHours === 0) lines.push(`Sun never cleared the terrain horizon in this interval: closest approach ${gap.sunClosest.toFixed(2)}° (Sun elevation minus horizon at the Sun's azimuth, upper limb counted).`);
+  if (gap.earthHours === 0) lines.push(`Earth never cleared the terrain horizon: closest approach ${gap.earthClosest.toFixed(2)}° (Earth centre minus horizon).`);
+  if (lines.length === 0) return null;
+  return <div className="zero-state" role="note">
+    {lines.map((line: string): JSX.Element => <p key={line}>{line}</p>)}
+    <p className="muted small">This is the stored geometric result for this date range. To explore another period, edit the start time in the Time node or here, create C1, and evaluate (up to 168 h per run).</p>
+  </div>;
+}
+
+/** The original CLPS sky diagram, timeline and time control, driving the shared cursor. */
+function EvaluationCharts({ chart, evaluation }: { chart: EvaluationChart; evaluation: ScientificEvaluation }): JSX.Element {
+  const store: ExplorationStore = useExplorationStore();
+  const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
+  const playing: boolean = useExploration((state): boolean => state.playing);
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const width: number = Math.max(300, useElementWidth(host, 420));
-  const [index, setIndex] = useState<number>(0);
   const [hover, setHover] = useState<number | null>(null);
   const [speed, setSpeed] = useState<number>(DEFAULT_SPEED);
-  const [playing, setPlaying] = useState<boolean>(false);
   const position: RefObject<number> = useRef<number>(0);
   const count: number = chart.times.length;
+  const index: number = Math.max(0, nearestSample(evaluation, cursorUtc));
+  const indexRef: RefObject<number> = useRef<number>(index);
+  useEffect((): void => { indexRef.current = index; }, [index]);
+  const moveTo: (i: number) => void = useCallback((i: number): void => {
+    store.dispatch({ type: "cursor", utc: chart.times[clampIndex(i, count)] ?? null });
+  }, [store, chart, count]);
+  // Playback walks the stored samples only; it never requests a computation.
   useEffect((): (() => void) | undefined => {
     if (!playing) return undefined;
-    position.current = index;
-    const perTick: number = samplesPerTick(speed, stepMinutes);
+    position.current = indexRef.current >= count - 1 ? 0 : indexRef.current;
+    const perTick: number = samplesPerTick(speed, evaluation.request.step_minutes);
     const timer: ReturnType<typeof setInterval> = setInterval((): void => {
       position.current = Math.min(count - 1, position.current + perTick);
-      setIndex(Math.floor(position.current + 1e-9));
-      if (position.current >= count - 1) setPlaying(false);
+      moveTo(Math.floor(position.current + 1e-9));
+      if (position.current >= count - 1) store.dispatch({ type: "playing", playing: false });
     }, TICK_MS);
     return (): void => { clearInterval(timer); };
-    // Restart only when playback settings change, not on every index update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, speed, stepMinutes, count]);
+  }, [playing, speed, evaluation.request.step_minutes, count, moveTo, store]);
   const shown: number = hover ?? Math.min(index, count - 1);
-  const select: (i: number) => void = (i: number): void => { setPlaying(false); setIndex(clampIndex(i, count)); };
+  const select: (i: number) => void = (i: number): void => { store.dispatch({ type: "playing", playing: false }); moveTo(i); };
   return <div ref={host} className="inspector-charts">
-    <TimeControl times={chart.times} index={shown} playing={playing} hoursPerSecond={speed} onIndex={(i: number): void => { setIndex(clampIndex(i, count)); }}
-      onPlayingChange={setPlaying} onSpeed={setSpeed} />
+    <p className="muted small">Inspecting stored sample <strong>{(index + 1).toString()} of {count.toString()}</strong> at {formatUtc(chart.times[index] ?? "")}
+      {index === 0 ? " (start of interval)" : index === count - 1 ? " (end of interval)" : ""}. The terrain view and graph follow this cursor; it never changes the candidate or runs a calculation.</p>
+    <TimeControl times={chart.times} index={shown} playing={playing} hoursPerSecond={speed} onIndex={moveTo}
+      onPlayingChange={(next: boolean): void => { store.dispatch({ type: "playing", playing: next }); }} onSpeed={setSpeed} />
     <HoverReadout times={chart.times} focused={chart.site} index={shown} previewing={hover !== null} />
-    <SkyChart result={chart.site} width={width} index={shown} trailSamples={trailSamples(stepMinutes)} onHover={setHover} onSelect={select} />
+    <SkyChart result={chart.site} width={width} index={shown} trailSamples={trailSamples(evaluation.request.step_minutes)} onHover={setHover} onSelect={select} />
     <Timeline times={chart.times} width={width} sites={[chart.site]} focused={chart.site} rangeEnd={chart.rangeEnd}
       index={shown} onHover={setHover} onSelect={select} />
   </div>;

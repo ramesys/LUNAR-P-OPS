@@ -318,6 +318,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/evaluations/{evaluation_id}/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Experiment Manifest
+         * @description Reproducibility manifest: stored inputs, data and kernel hashes, method and outputs.
+         */
+        get: operations["getExperimentManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evaluations/{evaluation_id}/recompute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recompute Evaluation
+         * @description Re-run the stored inputs and compare numerically; the recomputation is not stored.
+         */
+        post: operations["recomputeEvaluation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -609,6 +649,65 @@ export interface components {
             /** Simultaneous Visible */
             simultaneous_visible: boolean;
         };
+        /**
+         * ExperimentManifestOut
+         * @description Reproducibility manifest of one persisted evaluation, built only from stored records.
+         *
+         *     Fields an older record did not store hold "not_recorded" and are listed in `not_recorded`.
+         */
+        ExperimentManifestOut: {
+            /**
+             * Schema Version
+             * @default lunar-ops-experiment/1
+             * @constant
+             */
+            schema_version: "lunar-ops-experiment/1";
+            /**
+             * Exported At Utc
+             * Format: date-time
+             */
+            exported_at_utc: string;
+            /** Evaluation Id */
+            evaluation_id: string;
+            /** Candidate Id */
+            candidate_id: string;
+            /** Parent Candidate Id */
+            parent_candidate_id: string | null;
+            candidate: components["schemas"]["CandidateOut"];
+            candidate_ref: components["schemas"]["CandidateRefOut"] | null;
+            parent_candidate: components["schemas"]["CandidateOut"] | null;
+            request: components["schemas"]["EvaluationRequest"];
+            /** Interval */
+            interval: {
+                [key: string]: unknown;
+            };
+            /** Terrain */
+            terrain: {
+                [key: string]: unknown;
+            };
+            /** Spice */
+            spice: {
+                [key: string]: unknown;
+            };
+            /** Method */
+            method: {
+                [key: string]: unknown;
+            };
+            /** Software */
+            software: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: {
+                [key: string]: unknown;
+            };
+            /** Outputs */
+            outputs: {
+                [key: string]: unknown;
+            };
+            /** Not Recorded */
+            not_recorded: string[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -632,6 +731,17 @@ export interface components {
             azimuth_deg: number[];
             /** Elevation Deg */
             elevation_deg: number[];
+        };
+        /** InputCheckOut */
+        InputCheckOut: {
+            /** Name */
+            name: string;
+            /** Stored */
+            stored: string;
+            /** Current */
+            current: string;
+            /** Match */
+            match: boolean;
         };
         /** MeridianOut */
         MeridianOut: {
@@ -675,6 +785,62 @@ export interface components {
             source_name: string;
             /** Source Url */
             source_url: string;
+        };
+        /**
+         * RecomputeReportOut
+         * @description Recompute-and-compare result; the recomputed evaluation is never stored.
+         */
+        RecomputeReportOut: {
+            /** Evaluation Id */
+            evaluation_id: string;
+            /**
+             * Recomputed At Utc
+             * Format: date-time
+             */
+            recomputed_at_utc: string;
+            /**
+             * Persisted
+             * @constant
+             */
+            persisted: false;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "reproduced" | "differs" | "inputs_changed";
+            /**
+             * Stored Status
+             * @enum {string}
+             */
+            stored_status: "COMPUTED_UNVERIFIED" | "VALIDATED" | "UNAVAILABLE" | "ERROR";
+            /**
+             * Recomputed Status
+             * @enum {string}
+             */
+            recomputed_status: "COMPUTED_UNVERIFIED" | "VALIDATED" | "UNAVAILABLE" | "ERROR";
+            /** Stored Output Sha256 */
+            stored_output_sha256: string;
+            /** Recomputed Output Sha256 */
+            recomputed_output_sha256: string;
+            /** Recomputed Errors */
+            recomputed_errors: string[];
+            /** Input Checks */
+            input_checks: components["schemas"]["InputCheckOut"][];
+            /** Tolerances */
+            tolerances: {
+                [key: string]: number | string;
+            };
+            /** Differences */
+            differences: {
+                [key: string]: number | null;
+            };
+            /**
+             * Validation Status
+             * @enum {string}
+             */
+            validation_status: "not_independently_validated" | "independently_validated";
+            /** Notes */
+            notes: string[];
         };
         /** RoiCornerOut */
         RoiCornerOut: {
@@ -1514,6 +1680,82 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EvaluationOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getExperimentManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evaluation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentManifestOut"];
+                };
+            };
+            /** @description Evaluation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recomputeEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evaluation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecomputeReportOut"];
+                };
+            };
+            /** @description Evaluation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

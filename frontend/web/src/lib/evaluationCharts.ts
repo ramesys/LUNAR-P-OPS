@@ -56,3 +56,21 @@ export function computationState(evaluation: ScientificEvaluation | null): Compu
 export function visibleHours(evaluation: ScientificEvaluation, key: "sun" | "earth" | "simultaneous"): number {
   return (evaluation.intervals[key] ?? []).reduce((total: number, i): number => total + i.duration_seconds, 0) / 3600;
 }
+
+export interface HorizonGap { sunHours: number; earthHours: number; sunClosest: number; earthClosest: number }
+
+/**
+ * Closest approach to the terrain horizon over the stored samples, in degrees (negative: below).
+ * Sun uses the upper limb, like the backend rule; the 0.2666° semidiameter is its mean value, so the
+ * printed number is descriptive only. Visibility itself always comes from the stored flags.
+ */
+export function horizonGap(evaluation: ScientificEvaluation): HorizonGap | null {
+  if (evaluation.samples.length === 0) return null;
+  const SUN_SEMIDIAMETER_DEG: number = 0.2666;
+  return {
+    sunHours: visibleHours(evaluation, "sun"),
+    earthHours: visibleHours(evaluation, "earth"),
+    sunClosest: Math.max(...evaluation.samples.map((s): number => s.sun_elevation_deg + SUN_SEMIDIAMETER_DEG - s.sun_horizon_deg)),
+    earthClosest: Math.max(...evaluation.samples.map((s): number => s.earth_elevation_deg - s.earth_horizon_deg)),
+  };
+}

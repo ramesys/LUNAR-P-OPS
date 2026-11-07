@@ -13,7 +13,15 @@ from lunar_core.roi import ROIS
 from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import candidate, candidate_store, evaluation, pole_map, roi_terrain, terrain_store
+from clps_api import (
+    candidate,
+    candidate_store,
+    evaluation,
+    experiment,
+    pole_map,
+    roi_terrain,
+    terrain_store,
+)
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
@@ -23,8 +31,10 @@ from clps_api.schemas import (
     CandidateRequest,
     EvaluationOut,
     EvaluationRequest,
+    ExperimentManifestOut,
     HealthResponse,
     PoleMapOut,
+    RecomputeReportOut,
     RoiOut,
     RoiTerrainOut,
     SiteOut,
@@ -268,3 +278,29 @@ def get_evaluation(evaluation_id: str) -> EvaluationOut:
     if found is None:
         raise HTTPException(status_code=404, detail="evaluation not found")
     return found
+
+
+@app.get(
+    "/api/evaluations/{evaluation_id}/manifest",
+    operation_id="getExperimentManifest",
+    responses={404: {"description": "Evaluation not found"}},
+)
+def get_experiment_manifest(evaluation_id: str) -> ExperimentManifestOut:
+    """Reproducibility manifest: stored inputs, data and kernel hashes, method and outputs."""
+    found = evaluation.get(evaluation_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return experiment.manifest(found)
+
+
+@app.post(
+    "/api/evaluations/{evaluation_id}/recompute",
+    operation_id="recomputeEvaluation",
+    responses={404: {"description": "Evaluation not found"}},
+)
+def recompute_evaluation(evaluation_id: str) -> RecomputeReportOut:
+    """Re-run the stored inputs and compare numerically; the recomputation is not stored."""
+    found = evaluation.get(evaluation_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return experiment.recompute(found)

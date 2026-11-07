@@ -85,7 +85,11 @@ export class LandingNode extends ClassicPreset.Node {
   }
 }
 export type LandingConnection = ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>;
-export interface LandingNodes { nodes: LandingNode[]; height: LandingNode; time: LandingNode; candidate: LandingNode; committed: ClassicPreset.InputControl<"text"> }
+export interface LandingNodes {
+  nodes: LandingNode[]; height: LandingNode; time: LandingNode; candidate: LandingNode; committed: ClassicPreset.InputControl<"text">;
+  /** Read-only values of the committed revision, shown next to the editable draft. */
+  persistedHeight: ClassicPreset.InputControl<"text">; persistedTime: ClassicPreset.InputControl<"text">;
+}
 export type LandingScheme = GetSchemes<LandingNode, LandingConnection>;
 
 export function describeRef(ref: CandidateRef | null, label: string): string {
@@ -134,6 +138,10 @@ export async function buildLandingNodes(editor: NodeEditor<LandingScheme>, candi
     change: (value: number): void => { height.value = value; onChange(); } }));
   time.addControl("value", new ClassicPreset.InputControl("text", { initial: candidate.selected_time_utc,
     change: (value: string): void => { time.value = value; onChange(); } }));
+  const persistedHeight: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: `saved: ${candidate.observer_height_m.toString()} m` });
+  const persistedTime: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: `saved: ${candidate.selected_time_utc}` });
+  height.addControl("persisted", persistedHeight);
+  time.addControl("persisted", persistedTime);
   const nodes: LandingNode[] = [location, terrain, height, time, result];
   for (const node of nodes) {
     if (!isActive()) throw new Error("Graph setup cancelled");
@@ -143,7 +151,7 @@ export async function buildLandingNodes(editor: NodeEditor<LandingScheme>, candi
     if (!isActive()) throw new Error("Graph setup cancelled");
     await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(spec.node, "value", result, spec.key));
   }
-  return { nodes, height, time, candidate: result, committed };
+  return { nodes, height, time, candidate: result, committed, persistedHeight, persistedTime };
 }
 
 /** Backend calls used by the scientific nodes (the Python service stays the only scientific engine). */
@@ -168,6 +176,8 @@ export class ScientificComputationNode extends LandingNode {
   settings: EvaluationSettings = { duration_hours: 24, step_minutes: 60 };
   backendCalls: number = 0;
   private requested: string | null = null;
+  /** Stored evaluation chosen per candidate (history pick or last run); restore falls back to latest. */
+  private readonly preferred: Map<string, string> = new Map<string, string>();
   private readonly memo: Map<string, Promise<EvaluationRef | null>> = new Map<string, Promise<EvaluationRef | null>>();
   private readonly api: ScienceApi;
 
@@ -182,13 +192,19 @@ export class ScientificComputationNode extends LandingNode {
     this.requested = settingsKey(candidateId, this.settings);
   }
 
+  /** Show a specific stored evaluation (read-only); cancels a pending run request. */
+  prefer(candidateId: string, evaluationId: string | null): void {
+    if (evaluationId === null) this.preferred.delete(candidateId); else this.preferred.set(candidateId, evaluationId);
+    this.requested = null;
+  }
+
   override data(inputs: Record<string, unknown[]>): Promise<Record<string, unknown>> {
     const ref: unknown = inputs["candidate_ref"]?.[0];
     if (!isCandidateRef(ref)) {
       return Promise.reject(new Error("No CandidateRef received: connect Candidate.candidate_ref to Scientific computation."));
     }
     const key: string = settingsKey(ref.candidate_id, this.settings);
-    const memoKey: string = this.requested === key ? `run|${key}` : `restore|${ref.candidate_id}`;
+    const memoKey: string = this.requested === key ? `run|${key}` : `restore|${ref.candidate_id}|${this.preferred.get(ref.candidate_id) ?? "latest"}`;
     let pending: Promise<EvaluationRef | null> | undefined = this.memo.get(memoKey);
     if (pending === undefined) {
       pending = this.requested === key ? this.run(ref, { ...this.settings }) : this.restore(ref);
@@ -200,8 +216,9 @@ export class ScientificComputationNode extends LandingNode {
 
   private async restore(ref: CandidateRef): Promise<EvaluationRef | null> {
     const stored: ScientificEvaluation[] = await this.api.listEvaluations(ref.candidate_id);
-    const latest: ScientificEvaluation | undefined = stored.at(-1);
-    return latest === undefined ? null : evaluationRef(latest, "restored");
+    const wanted: string | undefined = this.preferred.get(ref.candidate_id);
+    const chosen: ScientificEvaluation | undefined = stored.find((e: ScientificEvaluation): boolean => e.evaluation_id === wanted) ?? stored.at(-1);
+    return chosen === undefined ? null : evaluationRef(chosen, "restored");
   }
 
   private async run(ref: CandidateRef, settings: EvaluationSettings): Promise<EvaluationRef> {
@@ -214,7 +231,8 @@ export class ScientificComputationNode extends LandingNode {
     this.backendCalls++;
     const evaluation: ScientificEvaluation = await this.api.evaluate(ref.candidate_id, settings);
     if (evaluation.candidate_id !== ref.candidate_id) throw new Error("Evaluation belongs to a different candidate.");
-    this.memo.delete(`restore|${ref.candidate_id}`);
+    for (const key of [...this.memo.keys()]) if (key.startsWith(`restore|${ref.candidate_id}|`)) this.memo.delete(key);
+    this.preferred.set(ref.candidate_id, evaluation.evaluation_id);
     return evaluationRef(evaluation, "computed");
   }
 }
@@ -253,7 +271,12 @@ export interface ScientificNodes {
   compute: ScientificComputationNode;
   result: ResultsNode;
   computeStatus: ClassicPreset.InputControl<"text">;
+  /** Settings the next explicit Evaluate will use (draft). */
+  nextRun: ClassicPreset.InputControl<"text">;
   display: ClassicPreset.InputControl<"text">;
+  /** The stored evaluation's interval, and the inspected sample (display state only). */
+  interval: ClassicPreset.InputControl<"text">;
+  cursor: ClassicPreset.InputControl<"text">;
 }
 
 export async function addScientificNodes(editor: NodeEditor<LandingScheme>, candidateNode: LandingNode, candidate: Candidate,
@@ -271,13 +294,19 @@ export async function addScientificNodes(editor: NodeEditor<LandingScheme>, cand
   result.addInput("evaluation_ref", new ClassicPreset.Input(SOCKETS.evaluationRef, "evaluation_ref: EvaluationRef"));
   const computeStatus: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "Waiting for Evaluate" });
   compute.addControl("status", computeStatus);
+  const nextRun: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "next run: 24 h @ 60 min" });
+  compute.addControl("next", nextRun);
   const display: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "Not evaluated" });
   result.addControl("status", display);
+  const interval: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "interval: —" });
+  result.addControl("interval", interval);
+  const cursor: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "cursor: —" });
+  result.addControl("cursor", cursor);
   const nodes: LandingNode[] = [compute, result];
   for (const node of nodes) { if (!active()) throw new Error("Graph setup cancelled"); await editor.addNode(node); }
   for (const [source, output, target, input] of [[candidateNode, "candidate_ref", compute, "candidate_ref"], [compute, "evaluation_ref", result, "evaluation_ref"]] as const) {
     if (!active()) throw new Error("Graph setup cancelled");
     await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(source, output, target, input));
   }
-  return { nodes, compute, result, computeStatus, display };
+  return { nodes, compute, result, computeStatus, nextRun, display, interval, cursor };
 }

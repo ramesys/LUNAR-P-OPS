@@ -3,7 +3,14 @@
  * committed revision (C0 or its C1) on the graph's `candidate_ref` output. Only identifiers are
  * stored; candidates and evaluations are always re-read from the API.
  */
-export interface WorkspaceSelection { rootId: string; revisionId: string }
+export interface WorkspaceSelection {
+  rootId: string;
+  revisionId: string;
+  /** Inspected stored evaluation of the revision, if one was chosen. */
+  evaluationId?: string | null;
+  /** Inspected sample time; display state only. */
+  cursorUtc?: string | null;
+}
 
 const KEY: string = "lunar-ops-selection";
 /** Sprint 02–04 pointer to the selected C0; still read so older sessions restore. */
@@ -19,15 +26,17 @@ export function loadSelection(): WorkspaceSelection | null {
     try {
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null) {
-        const { rootId, revisionId } = parsed as Partial<WorkspaceSelection>;
+        const { rootId, revisionId, evaluationId, cursorUtc } = parsed as Partial<WorkspaceSelection>;
         if (typeof rootId === "string" && rootId !== "") {
-          return { rootId, revisionId: typeof revisionId === "string" && revisionId !== "" ? revisionId : rootId };
+          return { rootId, revisionId: typeof revisionId === "string" && revisionId !== "" ? revisionId : rootId,
+            evaluationId: typeof evaluationId === "string" ? evaluationId : null,
+            cursorUtc: typeof cursorUtc === "string" && Number.isFinite(Date.parse(cursorUtc)) ? cursorUtc : null };
         }
       }
     } catch { /* Fall back to the legacy pointer. */ }
   }
   const legacy: string | null = read(LEGACY_KEY);
-  return legacy === null || legacy === "" ? null : { rootId: legacy, revisionId: legacy };
+  return legacy === null || legacy === "" ? null : { rootId: legacy, revisionId: legacy, evaluationId: null, cursorUtc: null };
 }
 
 export function saveSelection(selection: WorkspaceSelection): void {

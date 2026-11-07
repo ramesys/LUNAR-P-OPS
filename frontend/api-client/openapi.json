@@ -732,6 +732,92 @@
           }
         }
       }
+    },
+    "/api/evaluations/{evaluation_id}/manifest": {
+      "get": {
+        "summary": "Get Experiment Manifest",
+        "description": "Reproducibility manifest: stored inputs, data and kernel hashes, method and outputs.",
+        "operationId": "getExperimentManifest",
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExperimentManifestOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Evaluation not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluations/{evaluation_id}/recompute": {
+      "post": {
+        "summary": "Recompute Evaluation",
+        "description": "Re-run the stored inputs and compare numerically; the recomputation is not stored.",
+        "operationId": "recomputeEvaluation",
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecomputeReportOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Evaluation not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1339,6 +1425,129 @@
         ],
         "title": "EvaluationSample"
       },
+      "ExperimentManifestOut": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "lunar-ops-experiment/1",
+            "title": "Schema Version",
+            "default": "lunar-ops-experiment/1"
+          },
+          "exported_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exported At Utc"
+          },
+          "evaluation_id": {
+            "type": "string",
+            "title": "Evaluation Id"
+          },
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "parent_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Candidate Id"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateOut"
+          },
+          "candidate_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parent_candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "$ref": "#/components/schemas/EvaluationRequest"
+          },
+          "interval": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Interval"
+          },
+          "terrain": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Terrain"
+          },
+          "spice": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spice"
+          },
+          "method": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Method"
+          },
+          "software": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Software"
+          },
+          "status": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Status"
+          },
+          "outputs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Outputs"
+          },
+          "not_recorded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Not Recorded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exported_at_utc",
+          "evaluation_id",
+          "candidate_id",
+          "parent_candidate_id",
+          "candidate",
+          "candidate_ref",
+          "parent_candidate",
+          "request",
+          "interval",
+          "terrain",
+          "spice",
+          "method",
+          "software",
+          "status",
+          "outputs",
+          "not_recorded"
+        ],
+        "title": "ExperimentManifestOut",
+        "description": "Reproducibility manifest of one persisted evaluation, built only from stored records.\n\nFields an older record did not store hold \"not_recorded\" and are listed in `not_recorded`."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1399,6 +1608,34 @@
           "elevation_deg"
         ],
         "title": "HorizonMaskOut"
+      },
+      "InputCheckOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "stored": {
+            "type": "string",
+            "title": "Stored"
+          },
+          "current": {
+            "type": "string",
+            "title": "Current"
+          },
+          "match": {
+            "type": "boolean",
+            "title": "Match"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "stored",
+          "current",
+          "match"
+        ],
+        "title": "InputCheckOut"
       },
       "MeridianOut": {
         "properties": {
@@ -1532,6 +1769,140 @@
         ],
         "title": "PoleMapOut",
         "description": "Square map centered on the pole, spanning \u00b1half_width_m on both axes."
+      },
+      "RecomputeReportOut": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "title": "Evaluation Id"
+          },
+          "recomputed_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recomputed At Utc"
+          },
+          "persisted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Persisted"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "reproduced",
+              "differs",
+              "inputs_changed"
+            ],
+            "title": "Outcome"
+          },
+          "stored_status": {
+            "type": "string",
+            "enum": [
+              "COMPUTED_UNVERIFIED",
+              "VALIDATED",
+              "UNAVAILABLE",
+              "ERROR"
+            ],
+            "title": "Stored Status"
+          },
+          "recomputed_status": {
+            "type": "string",
+            "enum": [
+              "COMPUTED_UNVERIFIED",
+              "VALIDATED",
+              "UNAVAILABLE",
+              "ERROR"
+            ],
+            "title": "Recomputed Status"
+          },
+          "stored_output_sha256": {
+            "type": "string",
+            "title": "Stored Output Sha256"
+          },
+          "recomputed_output_sha256": {
+            "type": "string",
+            "title": "Recomputed Output Sha256"
+          },
+          "recomputed_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recomputed Errors"
+          },
+          "input_checks": {
+            "items": {
+              "$ref": "#/components/schemas/InputCheckOut"
+            },
+            "type": "array",
+            "title": "Input Checks"
+          },
+          "tolerances": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Tolerances"
+          },
+          "differences": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Differences"
+          },
+          "validation_status": {
+            "type": "string",
+            "enum": [
+              "not_independently_validated",
+              "independently_validated"
+            ],
+            "title": "Validation Status"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "recomputed_at_utc",
+          "persisted",
+          "outcome",
+          "stored_status",
+          "recomputed_status",
+          "stored_output_sha256",
+          "recomputed_output_sha256",
+          "recomputed_errors",
+          "input_checks",
+          "tolerances",
+          "differences",
+          "validation_status",
+          "notes"
+        ],
+        "title": "RecomputeReportOut",
+        "description": "Recompute-and-compare result; the recomputed evaluation is never stored."
       },
       "RoiCornerOut": {
         "properties": {

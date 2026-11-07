@@ -1,4 +1,5 @@
-import type { Candidate, RoiTerrain } from "@clps/api-client";
+import type { Candidate, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
+import { formatUtc } from "../lib/format.ts";
 import { useEffect, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import {
   AmbientLight,
@@ -10,6 +11,7 @@ import {
   DirectionalLight,
   Group,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineSegments,
   type Material,
   Mesh,
@@ -43,6 +45,10 @@ export interface RoiTerrain3DProps {
   selectedId: string | null;
   onPick: (point: LocalPoint) => void;
   onSelectMarker: (candidateId: string) => void;
+  /** Active stored evaluation and the inspected sample index (display only). */
+  temporal?: { evaluation: ScientificEvaluation; index: number } | null;
+  /** Unsaved observer height of the active candidate, shown as a preview label only. */
+  draftHeightM?: number | null;
 }
 
 interface SceneParts {
@@ -53,13 +59,16 @@ interface SceneParts {
   terrain: Mesh<PlaneGeometry, MeshStandardMaterial>;
   markers: Group;
   overlay: Group;
+  bodies: Group;
+  light: DirectionalLight;
+  ambient: AmbientLight;
 }
 
 interface Hover { point: LocalPoint; latitude: number; longitude: number; elevation: number | null }
 
 const ASPECT: number = 0.62;
 const EXAGGERATIONS: readonly number[] = [1, 2, 3];
-const SELECTED: string = "#eb6834";
+const SELECTED: string = "#f2c14e";
 const OTHER: string = "#46c2d6";
 
 function hasWebGL(): boolean {
@@ -80,6 +89,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   const renderer: WebGLRenderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, width * ASPECT);
+  renderer.shadowMap.enabled = true;
   host.replaceChildren(renderer.domElement);
   const scene: Scene = new Scene();
   scene.background = new Color("#05060a");
@@ -91,12 +101,22 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   const mesh: Mesh<PlaneGeometry, MeshStandardMaterial> = new Mesh<PlaneGeometry, MeshStandardMaterial>(
     geometry, new MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   mesh.rotation.x = -Math.PI / 2;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   scene.add(mesh);
-  // Fixed display lighting for relief; it is not the Sun position at any time.
-  scene.add(new AmbientLight("#ffffff", 0.35));
+  const ambient: AmbientLight = new AmbientLight("#ffffff", 0.35);
+  scene.add(ambient);
   const light: DirectionalLight = new DirectionalLight("#ffffff", 2.2);
-  light.position.set(-3, 2.2, -1.5);
-  scene.add(light);
+  light.position.copy(RELIEF_LIGHT);
+  light.shadow.mapSize.set(2048, 2048);
+  const reach: number = extentKm * 0.8;
+  light.shadow.camera.left = -reach; light.shadow.camera.right = reach;
+  light.shadow.camera.top = reach; light.shadow.camera.bottom = -reach;
+  light.shadow.camera.near = 0.1; light.shadow.camera.far = 40;
+  light.shadow.bias = -0.0004;
+  scene.add(light, light.target);
+  const bodies: Group = new Group();
+  scene.add(bodies);
   const markers: Group = new Group();
   const overlay: Group = new Group();
   scene.add(markers, overlay);
@@ -107,7 +127,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   controls.minDistance = 0.2;
   controls.maxDistance = extentKm * 4;
   controls.update();
-  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay };
+  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, light, ambient };
 }
 
 function applyHeights(parts: SceneParts, terrain: RoiTerrain, exaggeration: number): void {
@@ -219,7 +239,64 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
   }
 }
 
-export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelectMarker }: RoiTerrain3DProps): JSX.Element {
+/** Fixed relief light (not the Sun). */
+const RELIEF_LIGHT: Vector3 = new Vector3(-3, 2.2, -1.5);
+const SUN_COLOR: string = "#eb6834";
+const EARTH_COLOR: string = "#3987e5";
+const BODY_DISTANCE_KM: number = 2.2;
+
+/** Unit vector toward (azimuth clockwise from north, elevation) in world axes (x east, y up, z south). */
+export function bodyDirection(azimuthDeg: number, elevationDeg: number): Vector3 {
+  const az: number = (azimuthDeg * Math.PI) / 180;
+  const el: number = (elevationDeg * Math.PI) / 180;
+  return new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
+}
+
+type Sample = ScientificEvaluation["samples"][number];
+
+/** Stored SPICE Sun/Earth directions at one sample, drawn from the evaluated candidate's position. */
+function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: ScientificEvaluation | null, sample: Sample | undefined,
+  exaggeration: number, sunLighting: boolean): void {
+  const old: Object3D[] = [...parts.bodies.children];
+  old.forEach((child: Object3D): void => { disposeObject(child); parts.bodies.remove(child); });
+  const useSun: boolean = sunLighting && evaluation !== null && sample !== undefined;
+  parts.light.castShadow = useSun;
+  if (!useSun || evaluation === null || sample === undefined) {
+    parts.light.position.copy(RELIEF_LIGHT);
+    parts.light.intensity = 2.2;
+    parts.ambient.intensity = 0.35;
+  }
+  if (evaluation === null || sample === undefined) return;
+  const point: LocalPoint = toLocal(terrain, evaluation.candidate.latitude_deg, evaluation.candidate.longitude_deg);
+  const origin: Vector3 = new Vector3(point.east_m / 1000, heightKm(terrain, point, exaggeration) + 0.02, -point.north_m / 1000);
+  for (const [color, az, el, visible] of [[SUN_COLOR, sample.sun_azimuth_deg, sample.sun_elevation_deg, sample.sun_visible],
+    [EARTH_COLOR, sample.earth_azimuth_deg, sample.earth_elevation_deg, sample.earth_visible]] as const) {
+    const direction: Vector3 = bodyDirection(az, el);
+    const end: Vector3 = origin.clone().add(direction.clone().multiplyScalar(BODY_DISTANCE_KM));
+    const geometry: BufferGeometry = new BufferGeometry().setFromPoints([origin, end]);
+    // Solid when the stored terrain-horizon test says visible; dashed when it says blocked.
+    const line: LineSegments = new LineSegments(geometry, visible
+      ? new LineBasicMaterial({ color, depthTest: false })
+      : new LineDashedMaterial({ color, dashSize: 0.06, gapSize: 0.04, depthTest: false }));
+    line.computeLineDistances();
+    line.renderOrder = 2;
+    parts.bodies.add(line);
+    const marker: Mesh = new Mesh(new SphereGeometry(0.09, 20, 14),
+      new MeshBasicMaterial({ color, wireframe: !visible, depthTest: false }));
+    marker.renderOrder = 2;
+    marker.position.copy(end);
+    parts.bodies.add(marker);
+  }
+  if (useSun) {
+    const sun: Vector3 = bodyDirection(sample.sun_azimuth_deg, sample.sun_elevation_deg);
+    parts.light.position.copy(sun.multiplyScalar(12));
+    // Lit while the Sun's upper limb is above the astronomical horizon; terrain blocking is separate.
+    parts.light.intensity = sample.sun_elevation_deg > -0.27 ? 2.6 : 0;
+    parts.ambient.intensity = 0.55;
+  }
+}
+
+export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelectMarker, temporal = null, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
   const hostRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const canvasRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const partsRef: RefObject<SceneParts | null> = useRef<SceneParts | null>(null);
@@ -230,6 +307,9 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
   const [failed, setFailed] = useState<boolean>((): boolean => !hasWebGL());
   const [hover, setHover] = useState<Hover | null>(null);
   const [heading, setHeading] = useState<number>(0);
+  const [sunLighting, setSunLighting] = useState<boolean>(true);
+  const evaluation: ScientificEvaluation | null = temporal?.evaluation ?? null;
+  const sample: Sample | undefined = temporal === null ? undefined : evaluation?.samples[temporal.index];
   const builds: RefObject<number> = useRef<number>(0);
 
   useEffect((): void => { callbacks.current = { onPick, onSelectMarker }; }, [onPick, onSelectMarker]);
@@ -334,6 +414,14 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
     renderRef.current();
   }, [terrain, candidates, selectedId, exaggeration, failed]);
 
+  // The timeline cursor moves only these display objects; the camera and the scene stay as they are.
+  useEffect((): void => {
+    const parts: SceneParts | null = partsRef.current;
+    if (parts === null) return;
+    drawBodies(parts, terrain, evaluation, sample, exaggeration, sunLighting);
+    renderRef.current();
+  }, [terrain, evaluation, sample, exaggeration, sunLighting, failed]);
+
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
@@ -378,6 +466,14 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
             <span className="muted">{hover.point.east_m.toFixed(0)} m E · {hover.point.north_m.toFixed(0)} m N of centre</span>
           </>}
         </div>
+        {evaluation !== null && <div className="terrain-time" aria-live="polite">
+          {sample === undefined ? <span>No stored samples ({evaluation.status}) — nothing to show in time.</span> : <>
+            <span><strong>{formatUtc(sample.time_utc)}</strong> · stored sample {((temporal?.index ?? 0) + 1).toString()}/{evaluation.samples.length.toString()} (every {evaluation.request.step_minutes.toString()} min)</span>
+            <span><span className="sun-text">Sun</span> {sample.sun_elevation_deg.toFixed(2)}° vs horizon {sample.sun_horizon_deg.toFixed(2)}° → <strong>{sample.sun_visible ? "visible" : "blocked"}</strong></span>
+            <span><span className="earth-text">Earth</span> {sample.earth_elevation_deg.toFixed(2)}° vs horizon {sample.earth_horizon_deg.toFixed(2)}° → <strong>{sample.earth_visible ? "in view" : "blocked"}</strong></span>
+          </>}
+          {draftHeightM !== null && draftHeightM !== evaluation.candidate.observer_height_m && <span className="draft-text">Draft observer height {draftHeightM.toString()} m (unsaved; result above is for {evaluation.candidate.observer_height_m.toString()} m)</span>}
+        </div>}
         <div className="terrain-compass" title="North arrow (follows the camera)" aria-label={`North is ${heading.toString()}° clockwise from screen up`}>
           <svg viewBox="-20 -20 40 40" width="44" height="44" style={{ transform: `rotate(${heading.toString()}deg)` }} aria-hidden="true">
             <circle r="18" className="compass-ring" /><path d="M0,-14 L6,4 L0,0 L-6,4 Z" className="compass-north" /><text y="-4" dy="-12" textAnchor="middle">N</text>
@@ -391,6 +487,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
         <button type="button" aria-label="Zoom out" onClick={(): void => { view("out"); }}>－</button>
         <button type="button" disabled={selectedId === null || !candidates.some((c: Candidate): boolean => c.candidate_id === selectedId)}
           onClick={(): void => { view("selected"); }}>Centre on selected</button>
+        <label><input type="checkbox" checked={sunLighting} disabled={evaluation === null} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setSunLighting(event.target.checked); }} /> Light from stored Sun direction</label>
         <label>Vertical exaggeration{" "}
           <select value={exaggeration} onChange={(event: ChangeEvent<HTMLSelectElement>): void => { setExaggeration(Number(event.target.value)); }}>
             {EXAGGERATIONS.map((value: number): JSX.Element => <option key={value} value={value}>{`${value.toString()}×`}</option>)}
@@ -400,7 +497,9 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
       <p className="muted small">
         Left-drag rotates, right-drag pans, scroll zooms. <strong>Click the terrain</strong> to save a new candidate there; click a marker to select it.
         Grid lines every 1 km; <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
-        Lighting is fixed for relief and is not the Sun. Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.
+        {temporal === null || !sunLighting ? "Lighting is fixed for relief and is not the Sun." :
+          <>Orange and blue lines: stored SPICE Sun and Earth directions at the timeline cursor (solid line and filled ball = visible over the stored 200 km terrain horizon; dashed line and open ball = blocked). The light and shadows use the Sun direction on this 4 km mesh only and do not show distant terrain, so visibility comes from the stored horizon result.</>}
+        {" "}Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.
       </p>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { ApiClient, Candidate, RoiTerrain } from "@clps/api-client";
+import type { ApiClient, Candidate, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
 
 type Dataset = RoiTerrain["datasets"][number];
 type Coverage = RoiTerrain["coverage"];
@@ -17,6 +17,7 @@ import {
 import { describeApiError } from "../lib/apiError.ts";
 import type { LocalPoint } from "../lib/roiFrame.ts";
 import { SelectionGuard } from "../lib/selectionGuard.ts";
+import { nearestSample, useExploration, type Draft } from "../lib/explorationStore.ts";
 import type { RoiTerrain3DProps } from "./RoiTerrain3D.tsx";
 
 const RoiTerrain3D: LazyExoticComponent<ComponentType<RoiTerrain3DProps>> = lazy(
@@ -56,6 +57,12 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
   const [time, setTime] = useState<string>(defaultTimeUtc);
   const [lastPick, setLastPick] = useState<LocalPoint | null>(null);
   const guard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
+  // Shared space–time state: the active stored evaluation and the inspected sample.
+  const evaluation: ScientificEvaluation | null = useExploration((state): ScientificEvaluation | null => state.evaluation);
+  const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
+  const draft: Draft | null = useExploration((state): Draft | null => state.draft);
+  const inRoi: ScientificEvaluation | null = evaluation?.candidate.terrain_window_id === ROI_ID ? evaluation : null;
+  const temporal: RoiTerrain3DProps["temporal"] = inRoi === null ? null : { evaluation: inRoi, index: Math.max(0, nearestSample(inRoi, cursorUtc)) };
   const settings: RefObject<{ height: number; time: string }> = useRef({ height, time });
   useEffect((): void => { settings.current = { height, time }; }, [height, time]);
 
@@ -125,7 +132,7 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     {terrain.kind === "ready" &&
       <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
         <RoiTerrain3D terrain={terrain.terrain} candidates={candidates} selectedId={selectedCandidateId}
-          onPick={onPick} onSelectMarker={onSelectMarker} />
+          onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
       </Suspense>}
     {busy && <p>Sampling the LOLA raster at the selected point…</p>}
     {lastPick !== null && <p className="muted">Last terrain pick: {lastPick.east_m.toFixed(1)} m east, {lastPick.north_m.toFixed(1)} m north of the ROI centre (local projected metres).</p>}

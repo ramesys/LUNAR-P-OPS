@@ -24,6 +24,13 @@ describe("Scientific results", () => {
     expect(screen.queryByText(/visibility comparison/i)).toBeNull();
     view.rerender(<ScientificResults c0={computed} c1={{ ...computed, evaluation_id: "e2" }} />);
     expect(screen.getByText(/visibility comparison/i)).toBeDefined();
-    expect(screen.getByText(/cannot be attributed to height alone/i)).toBeDefined();
+    expect(screen.getByText(/Identical scientific inputs/)).toBeDefined();
+    const taller: ScientificEvaluation = { ...computed, evaluation_id: "e3", candidate: { ...candidate, candidate_id: "c1", observer_height_m: 6 } };
+    view.rerender(<ScientificResults c0={computed} c1={taller} />);
+    expect(screen.getByText(/only the observer height \(m\) differs \(2 → 6\)/)).toBeDefined();
+    const later: ScientificEvaluation = { ...taller, candidate: { ...taller.candidate, selected_time_utc: "2026-02-08T00:00:00Z" } };
+    view.rerender(<ScientificResults c0={computed} c1={later} />);
+    expect(screen.getByText(/2 inputs differ \(observer height \(m\), start time \(UTC\)\)/)).toBeDefined();
+    expect(screen.getByText(/cannot be attributed to any one of them/)).toBeDefined();
   });
 });

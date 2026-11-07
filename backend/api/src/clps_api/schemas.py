@@ -305,3 +305,54 @@ class RoiTerrainOut(BaseModel):
     datasets: list[RoiDatasetOut]
     coverage: RoiCoverageOut
     limitations: list[str]
+
+
+class ExperimentManifestOut(BaseModel):
+    """Reproducibility manifest of one persisted evaluation, built only from stored records.
+
+    Fields an older record did not store hold "not_recorded" and are listed in `not_recorded`.
+    """
+
+    schema_version: Literal["lunar-ops-experiment/1"] = "lunar-ops-experiment/1"
+    exported_at_utc: AwareDatetime
+    evaluation_id: str
+    candidate_id: str
+    parent_candidate_id: str | None
+    candidate: CandidateOut
+    candidate_ref: CandidateRefOut | None
+    parent_candidate: CandidateOut | None
+    request: EvaluationRequest
+    interval: dict[str, object]
+    terrain: dict[str, object]
+    spice: dict[str, object]
+    method: dict[str, object]
+    software: dict[str, object]
+    status: dict[str, object]
+    outputs: dict[str, object]
+    not_recorded: list[str]
+
+
+class InputCheckOut(BaseModel):
+    name: str
+    stored: str
+    current: str
+    match: bool
+
+
+class RecomputeReportOut(BaseModel):
+    """Recompute-and-compare result; the recomputed evaluation is never stored."""
+
+    evaluation_id: str
+    recomputed_at_utc: AwareDatetime
+    persisted: Literal[False]
+    outcome: Literal["reproduced", "differs", "inputs_changed"]
+    stored_status: Literal["COMPUTED_UNVERIFIED", "VALIDATED", "UNAVAILABLE", "ERROR"]
+    recomputed_status: Literal["COMPUTED_UNVERIFIED", "VALIDATED", "UNAVAILABLE", "ERROR"]
+    stored_output_sha256: str
+    recomputed_output_sha256: str
+    recomputed_errors: list[str]
+    input_checks: list[InputCheckOut]
+    tolerances: dict[str, float | str]
+    differences: dict[str, float | int | None]
+    validation_status: Literal["not_independently_validated", "independently_validated"]
+    notes: list[str]

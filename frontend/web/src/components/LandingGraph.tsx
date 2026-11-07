@@ -23,8 +23,11 @@ import {
 } from "./landingGraph.ts";
 
 import { SelectionGuard } from "../lib/selectionGuard.ts";
+import { nearestSample, useExploration, useExplorationStore, type Draft, type ExperimentSettings, type ExplorationStore } from "../lib/explorationStore.ts";
+import { loadSelection } from "../lib/workspaceSelection.ts";
+import { formatUtc } from "../lib/format.ts";
 import type { Mode } from "../lib/mode.ts";
-import { WorkspaceInspector, revisionLabel, type Draft } from "./WorkspaceInspector.tsx";
+import { WorkspaceInspector, revisionLabel } from "./WorkspaceInspector.tsx";
 
 type Extra = ReactArea2D<LandingScheme>;
 interface Graph { engine: DataflowEngine<LandingScheme>; area: AreaPlugin<LandingScheme, Extra>; landing: LandingNodes; science: ScientificNodes; refresh: () => void }
@@ -108,7 +111,11 @@ interface LandingGraphProps {
 export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelectRevision, mode }: LandingGraphProps): JSX.Element {
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const [preview, setPreview] = useState<CandidatePreview | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const store: ExplorationStore = useExplorationStore();
+  const draft: Draft | null = useExploration((state): Draft | null => state.draft);
+  const settings: ExperimentSettings = useExploration((state): ExperimentSettings => state.settings);
+  const storeEvaluation: ScientificEvaluation | null = useExploration((state): ScientificEvaluation | null => state.evaluation);
+  const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
   const [children, setChildren] = useState<Candidate[]>([]);
   const [childrenLoaded, setChildrenLoaded] = useState<boolean>(false);
   const childRef: RefObject<Candidate | null> = useRef<Candidate | null>(null);
@@ -120,8 +127,6 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
   const [c0History, setC0History] = useState<ScientificEvaluation[]>([]);
   const [c1History, setC1History] = useState<ScientificEvaluation[]>([]);
   const [evaluationBusy, setEvaluationBusy] = useState<boolean>(false);
-  const [duration, setDuration] = useState<number>(24);
-  const [step, setStep] = useState<number>(60);
   const [outputRef, setOutputRef] = useState<CandidateRef | null>(null);
   const [graphReady, setGraphReady] = useState<boolean>(false);
   const [focus, setFocus] = useState<{ part: "candidate" | "result"; at: number } | null>(null);
@@ -237,7 +242,9 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
         const first: ScientificEvaluation[] = results[0] ?? [];
         const second: ScientificEvaluation[] = results[1] ?? [];
         setC0History(first); setC1History(second);
-        setC0Result(first.at(-1) ?? null); setC1Result(second.at(-1) ?? null);
+        // Keep a result already chosen for the same candidate (history pick or graph restore).
+        setC0Result((previous: ScientificEvaluation | null): ScientificEvaluation | null => previous?.candidate_id === candidate.candidate_id ? previous : first.at(-1) ?? null);
+        setC1Result((previous: ScientificEvaluation | null): ScientificEvaluation | null => previous !== null && previous.candidate_id === childId ? previous : second.at(-1) ?? null);
       }
     }).catch((): void => { if (evalRef.isCurrent(token)) setError("Could not reload saved scientific evaluations."); });
     return (): void => { evalRef.invalidate(); };
@@ -272,12 +279,12 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     void (async (): Promise<void> => {
       let ready: boolean = false;
       let landing: LandingNodes | null = null;
-      const refresh: () => void = (): void => {
+      const refresh: (attempt?: number) => void = (attempt: number = 0): void => {
         if (!ready || landing === null || disposed) return;
         const request: number = ++revision;
         const node: LandingNode = landing.candidate;
         const { height, time } = landing;
-        setDraft({ observer_height_m: Number(height.value), selected_time_utc: String(time.value) });
+        store.dispatch({ type: "draft", draft: { observer_height_m: Number(height.value), selected_time_utc: String(time.value) } });
         setPreview(null);
         // Reset the editable parameter nodes (and thus Candidate and its successors); the
         // scientific nodes memoise their backend calls, so this never repeats a calculation.
@@ -292,7 +299,10 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
           setContracts([...editor.getNodes()]);
           setPreview(result.status === "valid" ? result.value : null);
           setError(result.status === "valid" ? null : "Enter an observer height of 0–100 m and a UTC time like 2026-11-07T00:00:00Z.");
-        }).catch((): void => { /* Superseded by a newer reset. */ });
+        }).catch((caught: unknown): void => {
+          // A reset elsewhere (e.g. moving candidate_ref) cancelled this fetch: run the latest preview again.
+          if (caught instanceof Cancelled && !disposed && request === revision && attempt < 3) refresh(attempt + 1);
+        });
       };
       editor.addPipe((context) => {
         if (context.type === "connectioncreate") {
@@ -325,6 +335,9 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       const science: ScientificNodes = await addScientificNodes(editor, built.candidate, candidate, api.current, (): boolean => !disposed);
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (disposed) return;
+      // Restore the evaluation inspected before reload (read-only; falls back to the latest).
+      const saved: ReturnType<typeof loadSelection> = loadSelection();
+      if (saved?.rootId === candidate.candidate_id && typeof saved.evaluationId === "string") science.compute.prefer(saved.revisionId, saved.evaluationId);
       graphRef.current = { engine, area, landing: built, science, refresh };
       setContracts([...built.nodes, ...science.nodes]);
       for (const [index, node] of built.nodes.entries()) {
@@ -368,6 +381,45 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphReady, selectedId, children, childrenLoaded]);
 
+  const active: ScientificEvaluation | null = selected === null ? null : selected.candidate_id === candidate.candidate_id ? c0Result : c1Result;
+  // Publish the selected revision's displayed (persisted) evaluation as the shared active one.
+  useEffect((): void => {
+    if (selected !== null && (active === null || active.candidate_id === selected.candidate_id)) store.dispatch({ type: "evaluation", evaluation: active });
+  }, [store, selected, active]);
+
+  // Graph shows the committed revision's saved values beside the editable draft.
+  useEffect((): void => {
+    const graph: Graph | null = graphRef.current;
+    if (!graphReady || graph === null || selected === null) return;
+    const label: string = revisionLabel(candidate, selected);
+    graph.landing.persistedHeight.setValue(`saved ${label}: ${selected.observer_height_m.toString()} m`);
+    graph.landing.persistedTime.setValue(`saved ${label}: ${selected.selected_time_utc}`);
+    void graph.area.update("control", graph.landing.persistedHeight.id);
+    void graph.area.update("control", graph.landing.persistedTime.id);
+  }, [graphReady, selected, candidate]);
+
+  useEffect((): void => {
+    const graph: Graph | null = graphRef.current;
+    if (!graphReady || graph === null) return;
+    graph.science.nextRun.setValue(`next run: ${settings.duration_hours.toString()} h @ ${settings.step_minutes.toString()} min`);
+    void graph.area.update("control", graph.science.nextRun.id);
+  }, [graphReady, settings]);
+
+  // The Results node names the stored interval and the inspected sample (display only).
+  useEffect((): void => {
+    const graph: Graph | null = graphRef.current;
+    if (!graphReady || graph === null) return;
+    const shown: ScientificEvaluation | null = storeEvaluation;
+    const index: number = nearestSample(shown, cursorUtc);
+    const sample: ScientificEvaluation["samples"][number] | undefined = index < 0 ? undefined : shown?.samples[index];
+    graph.science.interval.setValue(shown === null ? "interval: —" :
+      `interval: ${shown.candidate.selected_time_utc.slice(0, 16)}Z + ${shown.request.duration_hours.toString()} h @ ${shown.request.step_minutes.toString()} min`);
+    graph.science.cursor.setValue(sample === undefined || shown === null ? "cursor: no stored samples" :
+      `cursor ${(index + 1).toString()}/${shown.samples.length.toString()}: ${formatUtc(sample.time_utc)} · Sun ${sample.sun_visible ? "visible" : "hidden"} · Earth ${sample.earth_visible ? "in view" : "not in view"}`);
+    void graph.area.update("control", graph.science.interval.id);
+    void graph.area.update("control", graph.science.cursor.id);
+  }, [graphReady, storeEvaluation, cursorUtc]);
+
   async function commit(): Promise<void> {
     if (preview === null || saving || evaluationBusy) return;
     const request: number = ++generation.current;
@@ -389,12 +441,14 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     const graph: Graph | null = graphRef.current;
     const target: Candidate | null = selected;
     if (graph === null || target === null || evaluationBusy) return;
+    const { duration_hours: duration, step_minutes: step } = settings;
     if (!Number.isFinite(duration) || duration <= 0 || duration > 168 || !Number.isInteger(step) || step < 1 || step > 360) {
       setError("Choose a duration up to 168 hours and a step between 1 and 360 minutes."); return;
     }
     const evalGuard: SelectionGuard = evalGeneration.current;
     const token: number = evalGuard.next();
     setEvaluationBusy(true); setError(null);
+    store.dispatch({ type: "activity", activity: { kind: "running", candidateId: target.candidate_id } });
     graph.science.computeStatus.setValue(`Running for ${labelFor(target.candidate_id)}…`);
     void graph.area.update("node", graph.science.compute.id);
     try {
@@ -409,13 +463,28 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       if (outcome.evaluation !== null && outcome.evaluation.candidate_id !== target.candidate_id) return;
       await showOutcome(graph, outcome);
       if (outcome.error !== null) setError(`Scientific evaluation failed: ${outcome.error}`);
+      store.dispatch({ type: "activity", activity: outcome.error === null ? { kind: "idle" } : { kind: "error", message: outcome.error } });
     } catch {
-      if (evalGuard.isCurrent(token)) setError("Scientific evaluation failed or was superseded. Retry with a saved candidate.");
+      if (evalGuard.isCurrent(token)) {
+        setError("Scientific evaluation failed or was superseded. Retry with a saved candidate.");
+        store.dispatch({ type: "activity", activity: { kind: "error", message: "Evaluation failed or was superseded." } });
+      }
     } finally { if (evalGuard.isCurrent(token)) setEvaluationBusy(false); }
   }
 
+  /** Inspect another stored evaluation (read-only). The selected revision's choice flows through the graph. */
+  async function chooseEvaluation(candidateId: string, evaluationId: string): Promise<void> {
+    const graph: Graph | null = graphRef.current;
+    const history: ScientificEvaluation[] = candidateId === candidate.candidate_id ? c0History : c1History;
+    const chosen: ScientificEvaluation | undefined = history.find((item: ScientificEvaluation): boolean => item.evaluation_id === evaluationId);
+    if (graph === null || chosen === undefined) return;
+    graph.science.compute.prefer(candidateId, evaluationId);
+    if (candidateId !== selected?.candidate_id) { remember(chosen); return; }
+    graph.engine.reset(graph.science.compute.id);
+    await showOutcome(graph, await fetchResults(graph));
+  }
+
   const label: string = selected === null ? "—" : revisionLabel(candidate, selected);
-  const evaluation: ScientificEvaluation | null = selected === null ? null : selected.candidate_id === candidate.candidate_id ? c0Result : c1Result;
   return <>
     <section className="ws-graph card" aria-label="Landing graph">
       <div className="graph-head">
@@ -425,8 +494,8 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       <div className="graph-toolbar" role="toolbar" aria-label="Graph actions">
         <button type="button" disabled={preview === null || saving || evaluationBusy} onClick={(): void => { void commit(); }}>Create Candidate C1</button>
         <span className="toolbar-sep" aria-hidden="true" />
-        <label>Duration (h, max 168) <input type="number" min="0.01" max="168" disabled={evaluationBusy} value={duration} onChange={(event): void => { setDuration(Number(event.target.value)); }} /></label>
-        <label>Step (min) <input type="number" min="1" max="360" disabled={evaluationBusy} value={step} onChange={(event): void => { setStep(Number(event.target.value)); }} /></label>
+        <label>Duration (h, max 168) <input type="number" min="0.01" max="168" disabled={evaluationBusy} value={settings.duration_hours} onChange={(event): void => { store.dispatch({ type: "settings", settings: { ...settings, duration_hours: Number(event.target.value) } }); }} /></label>
+        <label>Step (min) <input type="number" min="1" max="360" disabled={evaluationBusy} value={settings.step_minutes} onChange={(event): void => { store.dispatch({ type: "settings", settings: { ...settings, step_minutes: Number(event.target.value) } }); }} /></label>
         <button type="button" className="primary" disabled={evaluationBusy || selected === null || !graphReady} onClick={(): void => { void runScientific(); }}>Evaluate {label}</button>
         {evaluationBusy && <span role="status">Computing terrain horizon and SPICE positions…</span>}
         {saving && <span role="status">Saving C1…</span>}
@@ -440,10 +509,10 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       {preview === null ? <p>Live preview unavailable.</p> : <p>Live preview (unsaved): height {preview.observer_height_m} m · time {preview.selected_time_utc} · elevation {preview.terrain_elevation_m.toFixed(2)} m.</p>}
       {error !== null && <p role="alert">{error}</p>}
       {child !== null && <p className="muted">C1 {child.candidate_id.slice(0, 22)}…: observer height {candidate.observer_height_m} → {child.observer_height_m} m; UTC {candidate.selected_time_utc} → {child.selected_time_utc}; terrain and coordinates retained from C0.</p>}
-      {c0History.length > 1 && <label>C0 evaluation history <select value={c0Result?.evaluation_id ?? ""} onChange={(event): void => { setC0Result(c0History.find((item): boolean => item.evaluation_id === event.target.value) ?? null); }}>
+      {c0History.length > 1 && <label>C0 evaluation history <select value={c0Result?.evaluation_id ?? ""} onChange={(event): void => { void chooseEvaluation(candidate.candidate_id, event.target.value); }}>
         {c0History.map((item): JSX.Element => <option key={item.evaluation_id} value={item.evaluation_id}>{item.status} · {item.request.duration_hours} h · {item.request.step_minutes} min · {item.evaluation_id.slice(-8)}</option>)}
       </select></label>}{" "}
-      {c1History.length > 1 && <label>C1 evaluation history <select value={c1Result?.evaluation_id ?? ""} onChange={(event): void => { setC1Result(c1History.find((item): boolean => item.evaluation_id === event.target.value) ?? null); }}>
+      {c1History.length > 1 && <label>C1 evaluation history <select value={c1Result?.evaluation_id ?? ""} onChange={(event): void => { if (child !== null) void chooseEvaluation(child.candidate_id, event.target.value); }}>
         {c1History.map((item): JSX.Element => <option key={item.evaluation_id} value={item.evaluation_id}>{item.status} · {item.request.duration_hours} h · {item.request.step_minutes} min · {item.evaluation_id.slice(-8)}</option>)}
       </select></label>}
       <details><summary>Scientific node contracts</summary>{contracts.map((node): JSX.Element => <div key={node.id}>
@@ -452,7 +521,7 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     </section>
     {selected === null ? <aside className="ws-inspector card" aria-label="Inspector"><h2>Inspector</h2><p className="muted">Loading the selected revision…</p></aside> :
       <WorkspaceInspector root={candidate} child={child} selected={selected} selectedRef={outputRef?.candidate_id === selected.candidate_id ? outputRef : null}
-        focus={focus} evaluation={evaluation} c0Result={c0Result} c1Result={child === null ? null : c1Result} draft={draft} mode={mode} busy={evaluationBusy || saving}
+        apiClient={apiClient} focus={focus} evaluation={active} c0Result={c0Result} c1Result={child === null ? null : c1Result} draft={draft} mode={mode} busy={evaluationBusy || saving}
         onSelectRevision={onSelectRevision} onDraftChange={(next: Draft): void => { const graph: Graph | null = graphRef.current; if (graph !== null) applyDraft(graph, next); }} />}
   </>;
 }

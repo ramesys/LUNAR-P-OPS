@@ -28,6 +28,10 @@ services:
     build: *api-build
     ports:
       - "8000:8000"
+    environment:
+      # Optional: recorded in new evaluations' provenance, e.g.
+      # CLPS_GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d api
+      CLPS_GIT_COMMIT: ${CLPS_GIT_COMMIT:-}
     volumes:
       - ../data:/data
     depends_on:
