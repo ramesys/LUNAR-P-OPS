@@ -1,5 +1,10 @@
 # Architecture Decision Records
 
+> These records (0001–0018) document the upstream CLPS Lunar Mission Browser, on which LUNA-P/OPS
+> is built. LUNA-P/OPS decisions are recorded in the sprint reports (`../LUNAR_OPS_SPRINT_0*.md`);
+> the current design is summarized in [ARCHITECTURE.md](../ARCHITECTURE.md) and
+> [SCIENTIFIC_METHODOLOGY.md](../SCIENTIFIC_METHODOLOGY.md).
+
 Each significant decision is recorded as a short ADR (context → decision → consequences). The
 records are written in **Spanish**, the team's working language; the main [README](../../README.md)
 summarizes them in English. Some records cite "the brief" (§ sections): that was the internal
