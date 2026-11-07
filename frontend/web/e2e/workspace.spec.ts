@@ -68,6 +68,21 @@ test.describe("desktop", (): void => {
     const writes: string[] = watchWrites(page);
     const camera: string | null = await page.locator("[aria-label^='3D terrain of the Shackleton']").getAttribute("data-camera");
 
+    // Scene controls alter the actual canvas without changing the stored result or camera.
+    const canvas: Locator = page.locator(".terrain-canvas canvas");
+    await expect(canvas).toBeVisible();
+    await expect(page.locator(".terrain-time")).toContainText("Observer: 2.0 m above terrain (saved)");
+    const withGuides: Buffer = await canvas.screenshot();
+    await page.getByRole("checkbox", { name: "Horizon guides" }).uncheck();
+    const withoutGuides: Buffer = await canvas.screenshot();
+    expect(withGuides.equals(withoutGuides)).toBe(false);
+    await page.getByRole("checkbox", { name: "Sun ray" }).uncheck();
+    await page.getByRole("checkbox", { name: "Earth ray" }).uncheck();
+    expect((await canvas.screenshot()).equals(withoutGuides)).toBe(false);
+    await page.getByRole("checkbox", { name: "Sun ray" }).check();
+    await page.getByRole("checkbox", { name: "Earth ray" }).check();
+    await page.getByRole("checkbox", { name: "Horizon guides" }).check();
+
     // Candidate timeline: Inspector, 3D time panel, graph Results node and context bar agree.
     await inspectorTime(page).getByRole("button", { name: "Step forward" }).click();
     await inspectorTime(page).getByRole("button", { name: "Step forward" }).click();
