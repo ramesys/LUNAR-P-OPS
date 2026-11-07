@@ -1,4 +1,6 @@
-import type { ScientificEvaluation } from "@clps/api-client";
+import type { BrushExecution, BrushPreview, ScientificEvaluation } from "@clps/api-client";
+import type { BrushMode } from "./brushTypes.ts";
+import type { LocalPoint } from "./roiFrame.ts";
 import { createContext, useContext, useSyncExternalStore, type Context } from "react";
 
 /**
@@ -12,6 +14,10 @@ import { createContext, useContext, useSyncExternalStore, type Context } from "r
  *  - persisted : terrain click → new C0; "Create Candidate C1" → new revision. Nothing else.
  *  - evaluation: "Evaluate" (POST) and "Recompute & compare" (not stored). Selecting candidates,
  *                evaluations or time only reads stored results.
+ *  - regions   : drawing, selecting, editing and deleting Constraint Brush regions are draft
+ *                state. Only a confirmed region execution writes (C0s and evaluations), and
+ *                deleting a region never deletes those records. A preview or execution result is
+ *                applied only to the unchanged region revision it was requested for.
  */
 export interface Draft { observer_height_m: number; selected_time_utc: string }
 export interface ExperimentSettings { duration_hours: number; step_minutes: number }
@@ -39,6 +45,28 @@ export interface CatalogState {
   focus: { siteId: string; name: string; latitude_deg: number; longitude_deg: number } | null;
 }
 
+/** Editable Constraint Brush parameters of one region (form values; percentages, optional limits as text). */
+export interface BrushParams {
+  spacing_m: number; max_points: number; observer_height_m: number; start_utc: string;
+  duration_hours: number; step_minutes: number; min_sun_pct: number; min_earth_pct: number; min_both_pct: number;
+  max_darkness_hours: string; max_earth_gap_hours: string; retention: "all" | "passing";
+}
+
+export interface BrushRegion {
+  id: string;
+  /** Sequence number shown as "Region n" / "Rn"; never reused while the region exists. */
+  number: number;
+  vertices: LocalPoint[];
+  closed: boolean;
+  params: BrushParams;
+  /** Increments on every edit; stale preview/execution responses carry an older revision. */
+  revision: number;
+  preview: BrushPreview | null;
+  execution: BrushExecution | null;
+}
+
+export interface InspectedSample { regionId: string; index: number }
+
 export interface ExplorationState {
   context: ScientificContext;
   catalog: CatalogState;
@@ -56,7 +84,14 @@ export interface ExplorationState {
   /** UTC of the inspected stored sample; never part of the scientific inputs. */
   cursorUtc: string | null;
   playing: boolean;
+  regions: BrushRegion[];
+  activeRegionId: string | null;
+  brushMode: BrushMode;
+  /** Brush result the user is inspecting; follows the selected candidate when it is a region result. */
+  inspectedSample: InspectedSample | null;
 }
+
+export type RegionPatch = Partial<Pick<BrushRegion, "vertices" | "closed" | "params">>;
 
 export type ExplorationAction =
   | { type: "select-root"; rootId: string }
@@ -71,7 +106,15 @@ export type ExplorationAction =
   | { type: "catalog-analysis"; analysisKey: string; label: string; times: readonly string[]; stepMinutes: number }
   | { type: "catalog-cursor"; utc: string | null }
   | { type: "catalog-playing"; playing: boolean }
-  | { type: "catalog-focus"; focus: CatalogState["focus"] };
+  | { type: "catalog-focus"; focus: CatalogState["focus"] }
+  | { type: "region-create"; id: string; params: BrushParams }
+  | { type: "region-select"; regionId: string }
+  | { type: "region-edit"; regionId: string; patch: RegionPatch }
+  | { type: "region-delete"; regionId: string }
+  | { type: "brush-mode"; mode: BrushMode }
+  | { type: "region-preview"; regionId: string; revision: number; preview: BrushPreview | null }
+  | { type: "region-execution"; regionId: string; revision: number; execution: BrushExecution }
+  | { type: "region-inspect"; sample: InspectedSample | null };
 
 export const INITIAL_CATALOG: CatalogState = { analysisKey: null, label: "", times: [], stepMinutes: 0, cursorUtc: null, playing: false, focus: null };
 
@@ -79,7 +122,32 @@ export const INITIAL: ExplorationState = {
   context: "candidate", catalog: INITIAL_CATALOG,
   rootId: null, revisionId: null, evaluation: null, activity: { kind: "idle" }, draft: null,
   settings: { duration_hours: 24, step_minutes: 60 }, cursorUtc: null, playing: false,
+  regions: [], activeRegionId: null, brushMode: "off", inspectedSample: null,
 };
+
+/** Candidate behind an inspected brush result, if that result was persisted. */
+export function inspectedCandidateId(state: Pick<ExplorationState, "regions" | "inspectedSample">, sample: InspectedSample | null = state.inspectedSample): string | null {
+  if (sample === null) return null;
+  const result: BrushExecution["results"][number] | undefined = state.regions.find((r: BrushRegion): boolean => r.id === sample.regionId)?.execution?.results[sample.index];
+  return result?.persisted === true ? result.candidate?.candidate_id ?? null : null;
+}
+
+/** First brush result (any region) whose persisted candidate is `candidateId`. */
+export function findSample(regions: readonly BrushRegion[], candidateId: string): InspectedSample | null {
+  for (const region of regions) {
+    const index: number = region.execution?.results.findIndex((r): boolean => r.persisted && r.candidate?.candidate_id === candidateId) ?? -1;
+    if (index >= 0) return { regionId: region.id, index };
+  }
+  return null;
+}
+
+function updateRegion(state: ExplorationState, regionId: string, update: (region: BrushRegion) => BrushRegion): ExplorationState {
+  const current: BrushRegion | undefined = state.regions.find((r: BrushRegion): boolean => r.id === regionId);
+  if (current === undefined) return state;
+  const next: BrushRegion = update(current);
+  if (next === current) return state;
+  return { ...state, regions: state.regions.map((r: BrushRegion): BrushRegion => r.id === regionId ? next : r) };
+}
 
 /** Index of the stored sample nearest to `utc` (ties go to the earlier sample); -1 without samples. */
 export function nearestSample(evaluation: ScientificEvaluation | null, utc: string | null): number {
@@ -137,9 +205,55 @@ export function reduce(state: ExplorationState, action: ExplorationAction): Expl
     case "catalog-focus":
       if (state.catalog.focus?.siteId === action.focus?.siteId) return state;
       return { ...state, catalog: { ...state.catalog, focus: action.focus } };
-    case "select-root":
-      if (state.rootId === action.rootId && state.revisionId === action.rootId) return state;
-      return { ...state, rootId: action.rootId, revisionId: action.rootId, evaluation: null, draft: null, cursorUtc: null, playing: false };
+    case "select-root": {
+      // A brush result stays inspected only while it is the selected candidate; otherwise follow the
+      // selection to a matching result in any region, or clear it (no stale highlight).
+      const inspected: InspectedSample | null = inspectedCandidateId(state) === action.rootId ? state.inspectedSample : findSample(state.regions, action.rootId);
+      if (state.rootId === action.rootId && state.revisionId === action.rootId) {
+        return inspected === state.inspectedSample ? state : { ...state, inspectedSample: inspected };
+      }
+      return { ...state, rootId: action.rootId, revisionId: action.rootId, evaluation: null, draft: null, cursorUtc: null, playing: false,
+        inspectedSample: inspected, activeRegionId: inspected?.regionId ?? state.activeRegionId };
+    }
+    case "region-create": {
+      if (state.regions.some((r: BrushRegion): boolean => r.id === action.id)) return state;
+      const number: number = Math.max(0, ...state.regions.map((r: BrushRegion): number => r.number)) + 1;
+      const region: BrushRegion = { id: action.id, number, vertices: [], closed: false, params: action.params, revision: 0, preview: null, execution: null };
+      return { ...state, regions: [...state.regions, region], activeRegionId: action.id, brushMode: "draw" };
+    }
+    case "region-select":
+      if (!state.regions.some((r: BrushRegion): boolean => r.id === action.regionId)) return state;
+      if (state.activeRegionId === action.regionId) return state;
+      return { ...state, activeRegionId: action.regionId, brushMode: "off" };
+    case "region-edit": {
+      const next: ExplorationState = updateRegion(state, action.regionId, (r: BrushRegion): BrushRegion =>
+        ({ ...r, ...action.patch, revision: r.revision + 1, preview: null, execution: null }));
+      if (next === state) return state;
+      // Results of the edited region no longer describe it.
+      return { ...next, inspectedSample: state.inspectedSample?.regionId === action.regionId ? null : state.inspectedSample };
+    }
+    case "region-delete": {
+      if (!state.regions.some((r: BrushRegion): boolean => r.id === action.regionId)) return state;
+      const regions: BrushRegion[] = state.regions.filter((r: BrushRegion): boolean => r.id !== action.regionId);
+      const active: string | null = state.activeRegionId === action.regionId ? regions.at(-1)?.id ?? null : state.activeRegionId;
+      // Only the drawn region is removed: persisted candidates, evaluations and the selection stay.
+      return { ...state, regions, activeRegionId: active, brushMode: state.activeRegionId === action.regionId ? "off" : state.brushMode,
+        inspectedSample: state.inspectedSample?.regionId === action.regionId ? null : state.inspectedSample };
+    }
+    case "brush-mode":
+      if (state.brushMode === action.mode) return state;
+      if (action.mode !== "off" && state.activeRegionId === null) return state;
+      return { ...state, brushMode: action.mode };
+    case "region-preview":
+      return updateRegion(state, action.regionId, (r: BrushRegion): BrushRegion =>
+        r.revision !== action.revision ? r : { ...r, preview: action.preview, execution: action.preview === null ? r.execution : null });
+    case "region-execution":
+      return updateRegion(state, action.regionId, (r: BrushRegion): BrushRegion =>
+        r.revision !== action.revision ? r : { ...r, execution: action.execution });
+    case "region-inspect":
+      if (action.sample !== null && !state.regions.some((r: BrushRegion): boolean => r.id === action.sample?.regionId)) return state;
+      if (action.sample?.regionId === state.inspectedSample?.regionId && action.sample?.index === state.inspectedSample?.index) return state;
+      return { ...state, inspectedSample: action.sample, activeRegionId: action.sample?.regionId ?? state.activeRegionId };
     case "select-revision":
       if (state.revisionId === action.revisionId && state.rootId === action.rootId) return state;
       // Same location: keep the inspected time so C0 and C1 can be compared at one instant.

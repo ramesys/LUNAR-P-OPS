@@ -41,7 +41,7 @@ async function open(page: Page, f: Fixture): Promise<void> {
   await page.goto(SCENARIO);
   await expect(page.getByRole("table", { name: /ranked by sunlit time/i })).toBeVisible();
   await expect(candidateCard(page)).toContainText(f.evaluationId.slice(0, 22));
-  await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Regional explore · 40 km" })).toHaveAttribute("aria-pressed", "true");
 }
 
 const candidateCard: (page: Page) => Locator = (page: Page): Locator => page.getByRole("button", { name: /^Candidate evaluation/ });
@@ -88,11 +88,11 @@ test.describe("desktop", (): void => {
     await page.getByRole("checkbox", { name: "Horizon guides" }).uncheck();
     const withoutGuides: Buffer = await canvas.screenshot();
     expect(withGuides.equals(withoutGuides)).toBe(false);
-    await page.getByRole("checkbox", { name: "Sun ray" }).uncheck();
-    await page.getByRole("checkbox", { name: "Earth ray" }).uncheck();
+    await page.getByRole("checkbox", { name: "Sun path & ray" }).uncheck();
+    await page.getByRole("checkbox", { name: "Earth path & ray" }).uncheck();
     expect((await canvas.screenshot()).equals(withoutGuides)).toBe(false);
-    await page.getByRole("checkbox", { name: "Sun ray" }).check();
-    await page.getByRole("checkbox", { name: "Earth ray" }).check();
+    await page.getByRole("checkbox", { name: "Sun path & ray" }).check();
+    await page.getByRole("checkbox", { name: "Earth path & ray" }).check();
     await page.getByRole("checkbox", { name: "Horizon guides" }).check();
 
     // Candidate timeline: Inspector, 3D time panel, graph Results node and context bar agree.
@@ -155,8 +155,8 @@ test.describe("desktop", (): void => {
     await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
     await expect(page.getByText("20 m LOLA DEM · 20 m display grid")).toBeVisible();
     expect(await scene.getAttribute("data-scene-builds")).toBe(builds);
-    await page.getByRole("button", { name: "Regional explore · 20 km" }).click();
-    await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Regional explore · 40 km" }).click();
+    await expect(page.getByRole("button", { name: "Regional explore · 40 km" })).toHaveAttribute("aria-pressed", "true");
     expect(await scene.getAttribute("data-scene-builds")).toBe(builds);
     expect(writes).toEqual([]);
     expect(scientificRequests).toEqual([]);

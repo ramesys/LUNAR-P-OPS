@@ -308,13 +308,19 @@ class RoiTerrainOut(BaseModel):
 
 
 class RegionalTerrainOut(BaseModel):
-    """Display-only far-field samples in the same projected ROI frame."""
+    """Display-only far-field samples (40 km x 40 km) in the same projected ROI frame.
+
+    `elevations_m` is row-major `size` x `size` like `RoiTerrainOut`: row 0 is the north edge,
+    column 0 the west edge, nodes every `spacing_m` in local east/north projected metres. Values
+    are bilinear samples of the 240 m DEM; they are never used for candidates or evaluations.
+    """
 
     half_width_m: float
     spacing_m: float
     size: int
     elevations_m: list[float]
     elevation_range_m: list[float]
+    corners: list[RoiCornerOut]
     dataset: RoiDatasetOut
 
 

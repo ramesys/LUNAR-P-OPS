@@ -2552,6 +2552,13 @@
             "type": "array",
             "title": "Elevation Range M"
           },
+          "corners": {
+            "items": {
+              "$ref": "#/components/schemas/RoiCornerOut"
+            },
+            "type": "array",
+            "title": "Corners"
+          },
           "dataset": {
             "$ref": "#/components/schemas/RoiDatasetOut"
           }
@@ -2563,10 +2570,11 @@
           "size",
           "elevations_m",
           "elevation_range_m",
+          "corners",
           "dataset"
         ],
         "title": "RegionalTerrainOut",
-        "description": "Display-only far-field samples in the same projected ROI frame."
+        "description": "Display-only far-field samples (40 km x 40 km) in the same projected ROI frame.\n\n`elevations_m` is row-major `size` x `size` like `RoiTerrainOut`: row 0 is the north edge,\ncolumn 0 the west edge, nodes every `spacing_m` in local east/north projected metres. Values\nare bilinear samples of the 240 m DEM; they are never used for candidates or evaluations."
       },
       "RoiCornerOut": {
         "properties": {

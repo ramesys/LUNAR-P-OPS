@@ -187,8 +187,13 @@ def _build(
     )
 
 
+REGIONAL_HALF_WIDTH_M: float = 20_000.0
+"""Half-width of the regional display grid: a 40 km x 40 km square centred on the ROI."""
+REGIONAL_SPACING_M: float = 250.0
+
+
 def regional_terrain(roi_id: str) -> RegionalTerrainOut | None:
-    """Return a bounded 20 km far-field display grid; never modify the science ROI."""
+    """Return a bounded 40 km far-field display grid; never modify the science ROI."""
     roi = ROIS.get(roi_id)
     if roi is None:
         return None
@@ -198,16 +203,32 @@ def regional_terrain(roi_id: str) -> RegionalTerrainOut | None:
     far = TerrainGrid.load(path)
     dataset = _dataset("far", far, file_hash(path))
     frame = local_frame(roi.center_latitude_deg, roi.center_longitude_deg)
-    offsets = np.linspace(-10_000.0, 10_000.0, 81)
+    half = REGIONAL_HALF_WIDTH_M
+    size = round(2 * half / REGIONAL_SPACING_M) + 1
+    offsets = np.linspace(-half, half, size)
     east, north = np.meshgrid(offsets, offsets[::-1])
     values = far.sample(*frame.to_projected(east, north))
     if not np.all(np.isfinite(values)):
         raise ValueError("Regional terrain contains missing or out-of-coverage DEM samples")
+    corners: list[RoiCornerOut] = []
+    for label, e, n in (
+        ("north-west", -half, half),
+        ("north-east", half, half),
+        ("south-east", half, -half),
+        ("south-west", -half, -half),
+    ):
+        lat, lon = polar_stereographic_south_inverse(*frame.to_projected(e, n))
+        corners.append(
+            RoiCornerOut(
+                label=label, east_m=e, north_m=n, latitude_deg=float(lat), longitude_deg=float(lon)
+            )
+        )
     return RegionalTerrainOut(
-        half_width_m=10_000.0,
-        spacing_m=250.0,
-        size=81,
+        half_width_m=half,
+        spacing_m=REGIONAL_SPACING_M,
+        size=size,
         elevations_m=[round(float(value), 2) for value in values.ravel()],
         elevation_range_m=[float(values.min()), float(values.max())],
+        corners=corners,
         dataset=dataset,
     )

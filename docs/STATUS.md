@@ -1,7 +1,8 @@
 # LUNA-P/OPS current status and handover
 
 Status date: 2026-11-07. Reviewed code: `main` at `06bda7cf6bb7249544960427d8fc68b1b6f03474`
-(plus the documentation and branding changes on the branch that added this file).
+(plus the documentation and branding changes on the branch that added this file). Section 6
+records the spatial workspace sprint built on top of that review.
 
 This file supersedes [LUNAR_OPS_SESSION_HANDOVER.md](LUNAR_OPS_SESSION_HANDOVER.md) (the
 Sprint 07 checkpoint) as the current handover. The sprint reports `LUNAR_OPS_SPRINT_0*.md` are
@@ -9,7 +10,7 @@ historical.
 
 ## 1. What works
 
-- Shackleton Rim B workspace: 20 km regional and 4 km detailed LOLA terrain in one Three.js scene,
+- Shackleton Rim B workspace: 40 km regional and 4 km detailed LOLA terrain in one Three.js scene,
   candidate creation inside the 4 km study area, markers, hover readout, compass, Sun/Earth rays
   and horizon guides driven by the stored evaluation.
 - Landing Graph (Rete.js): C0 parameters → Candidate → Scientific computation → Results; C1
@@ -76,10 +77,10 @@ Known limitations reported at the previous checkpoint, checked against the code:
 | Reported limitation | Confirmed? |
 | --- | --- |
 | Regional and detailed terrain are separate DEM meshes, not a blended surface | Yes: the grid is swapped in one scene (`RoiTerrain3D`); 240 m vs 20 m DEMs. |
-| Optional 40 km regional view not implemented | Yes: only 20 km and 4 km exist. |
+| Optional 40 km regional view not implemented | Was true at `06bda7c`; implemented in the spatial workspace sprint (§6). |
 | LROC imagery not integrated | Yes: no LROC code or data. |
 | Brush batch evaluation is synchronous | Yes (finding 2). |
-| Regional experiment state is transient; exported JSON is the recovery mechanism | Yes (finding 7). |
+| Regional experiment state is transient; exported JSON is the recovery mechanism | Yes at `06bda7c` (finding 7). Since §6, region definitions are restored after reload; previews and verdict lists are still session state. |
 | Persisted candidates remain in SQLite separately | Yes. |
 | Region-level executable Rete nodes not implemented | Yes: graph nodes are per candidate only. |
 | Timeline reload fix was unverified WIP | Now verified (§2). |
@@ -118,3 +119,31 @@ engine:
 4. Then begin independent comparison of horizon masks at a few Shackleton Rim B points against a
    published LOLA horizon or illumination product, and record the result separately from
    `COMPUTED_UNVERIFIED`.
+
+## 6. Spatial workspace sprint (2026-11-07, branch `feat/spatial-workspace`)
+
+Built on the reviewed code above; no change to the scientific engine, the candidate and
+evaluation records or the database schema.
+
+| Item | Implemented |
+| --- | --- |
+| 40 km terrain | `GET /api/rois/{id}/regional-terrain` returns 161 × 161 nodes at 250 m (±20 km) from the real 240 m LOLA window, plus corner coordinates. The 4 km study boundary is drawn on it, and the south pole, which lies inside the 40 km square (local 0 m E, −14.42 km N), is marked SP. |
+| Sun/Earth geometry | Whole-interval paths of every stored Sun and Earth sample, a trail up to the Timeline cursor, the cursor ray and body, the stored horizon silhouette, the local horizontal, a clearance arc and the candidate's local north, all on a symbolic dome (2.6 km / 12 km radius) labelled as not to scale. Built only from the stored evaluation; the cursor never computes. |
+| Region Brush dock | A compact horizontal dock fixed directly below the Timeline in the candidate context (inline in the catalog context), with a short drawer for parameters, preview/run and a horizontal results strip. |
+| Region management | Several regions with create, select, edit (drag, undo, remove vertex), clear and delete; clear and delete require confirmation; deleting removes only the drawing. Region definitions persist in `localStorage`. |
+| Synchronization and guards | Regions, active region, drawing mode and inspected result are in the shared store. Stale preview/execution responses are dropped by region revision. Selecting any candidate moves or clears the inspected brush result. Candidates are created only on the 4 km detail grid, never from the regional view or during a region evaluation. |
+
+Verification (isolated stack: kernels/terrain read-only, SQLite in `tmpfs`; Chrome 156):
+
+| Check | Result |
+| --- | --- |
+| Backend: ruff, format, mypy strict, pytest | pass; **148 passed**. The regional tests now check every node of the 161 × 161 grid against an exact synthetic plane (row/column order, axes, spacing), the 4 km corners on the regional lattice, the corner coordinates and the pole position, and the real Shackleton far window at five nodes. |
+| Frontend unit tests (Vitest) | **90 passed**: sky-path directions equal the stored azimuth/elevation (after the azimuth rotation) for every sample; horizon ring closure; frontend frame vs backend corner coordinates; store region lifecycle, stale-response guards and selection following; dock lifecycle with confirmation and no API writes. |
+| Lint, type checks, production build | pass; the three.js chunk warning remains. |
+| Browser tests (desktop + phone) | **23 passed**, plus the new spatial and brush specs 3× (18/18). New: hover coordinates on the 40 km view equal an independent projection of the API frame to 1e-9° and the displayed elevation equals the API grid to 0.01 m; drawn Sun/Earth directions equal the stored samples (to 0.002°) at three Timeline steps and on both scales; regions created, edited, executed, inspected, deselected, deleted (cancel then confirm) with the candidate list unchanged and no DELETE request; region definitions restored after reload; regional clicks refused without any write; on a phone the Timeline sits directly on the dock and moves up with its drawer, without horizontal scroll. |
+
+Remaining limitations after the sprint: region results are not persisted as one record; brush
+execution is still synchronous; the expanded Rete graph still does not zoom to fit; sky paths
+join stored samples with straight segments (no interpolation); the two terrain scales remain
+separate meshes. Item 2 of the milestone in §5 is therefore only partly addressed.
+
