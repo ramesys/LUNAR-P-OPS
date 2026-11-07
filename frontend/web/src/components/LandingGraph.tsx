@@ -1,15 +1,15 @@
 import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
-import { NodeEditor } from "rete";
+import { ClassicPreset, NodeEditor } from "rete";
 import { AreaExtensions, AreaPlugin } from "rete-area-plugin";
 import { ConnectionPlugin, Presets as ConnectionPresets } from "rete-connection-plugin";
 import { Cancelled, DataflowEngine } from "rete-engine";
 import { ReactPlugin, Presets, type ReactArea2D } from "rete-react-plugin";
-import type { ClassicPreset } from "rete";
 import {
   addScientificNodes,
   buildLandingNodes,
+  InfoControl,
   describeRef,
   type CandidatePreview,
   type EvaluationSettings,
@@ -94,6 +94,13 @@ type NodeProps = Parameters<typeof Presets.classic.Node<LandingScheme>>[0];
 function kindNode(kind: NodeKind): (props: NodeProps) => JSX.Element {
   return (props: NodeProps): JSX.Element => <div className={`node-kind node-kind-${kind}`}><Presets.classic.Node {...props} /></div>;
 }
+/** Wrapping read-only text for InfoControl (saved values, statuses, interval, cursor). */
+function ControlView({ data }: { data: ClassicPreset.Control }): JSX.Element | null {
+  if (data instanceof InfoControl) return <div className={`node-info tone-${data.tone}`} title={data.text}>{data.text}</div>;
+  if (data instanceof ClassicPreset.InputControl) return <Presets.classic.Control data={data as ClassicPreset.InputControl<"text">} />;
+  return null;
+}
+
 const KIND_NODES: Record<NodeKind, (props: NodeProps) => JSX.Element> = {
   parameter: kindNode("parameter"), candidate: kindNode("candidate"), compute: kindNode("compute"), result: kindNode("result"),
 };
@@ -264,7 +271,10 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     const connection: ConnectionPlugin<LandingScheme, Extra> = new ConnectionPlugin<LandingScheme, Extra>();
     const render: ReactPlugin<LandingScheme, Extra> = new ReactPlugin<LandingScheme, Extra>({ createRoot });
     connection.addPreset(ConnectionPresets.classic.setup());
-    render.addPreset(Presets.classic.setup({ customize: { node: (context) => KIND_NODES[kindOf(context.payload.label)] } }));
+    render.addPreset(Presets.classic.setup({ customize: {
+      node: (context) => KIND_NODES[kindOf(context.payload.label)],
+      control: (): typeof ControlView => ControlView,
+    } }));
     editor.use(engine); editor.use(area); area.use(connection); area.use(render);
     // Picking a node in the graph points the Inspector at the matching information.
     area.addPipe((context) => {
@@ -392,8 +402,8 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     const graph: Graph | null = graphRef.current;
     if (!graphReady || graph === null || selected === null) return;
     const label: string = revisionLabel(candidate, selected);
-    graph.landing.persistedHeight.setValue(`saved ${label}: ${selected.observer_height_m.toString()} m`);
-    graph.landing.persistedTime.setValue(`saved ${label}: ${selected.selected_time_utc}`);
+    graph.landing.persistedHeight.setValue(`draft above · saved ${label}: ${selected.observer_height_m.toString()} m`);
+    graph.landing.persistedTime.setValue(`draft above · saved ${label}: ${selected.selected_time_utc}`);
     void graph.area.update("control", graph.landing.persistedHeight.id);
     void graph.area.update("control", graph.landing.persistedTime.id);
   }, [graphReady, selected, candidate]);

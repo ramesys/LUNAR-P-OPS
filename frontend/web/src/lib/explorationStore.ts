@@ -21,7 +21,27 @@ export type EvaluationActivity =
   | { kind: "running"; candidateId: string }
   | { kind: "error"; message: string };
 
+/** Which scientific result the shared controls and labels currently refer to. */
+export type ScientificContext = "candidate" | "catalog";
+
+/**
+ * The catalog comparison (original CLPS analysis). It is recomputed from the URL scenario on load
+ * and on "Compare sites" (upstream behaviour, not persisted), so it is identified by a key derived
+ * from its exact request, never mixed with candidate evaluations.
+ */
+export interface CatalogState {
+  analysisKey: string | null;
+  label: string;
+  times: readonly string[];
+  stepMinutes: number;
+  cursorUtc: string | null;
+  playing: boolean;
+  focus: { siteId: string; name: string; latitude_deg: number; longitude_deg: number } | null;
+}
+
 export interface ExplorationState {
+  context: ScientificContext;
+  catalog: CatalogState;
   /** Root candidate (C0) whose graph is open; also the highlighted terrain marker. */
   rootId: string | null;
   /** Active committed candidate (C0 or C1) on the graph's candidate_ref. */
@@ -46,9 +66,17 @@ export type ExplorationAction =
   | { type: "draft"; draft: Draft | null }
   | { type: "settings"; settings: ExperimentSettings }
   | { type: "cursor"; utc: string | null }
-  | { type: "playing"; playing: boolean };
+  | { type: "playing"; playing: boolean }
+  | { type: "context"; context: ScientificContext }
+  | { type: "catalog-analysis"; analysisKey: string; label: string; times: readonly string[]; stepMinutes: number }
+  | { type: "catalog-cursor"; utc: string | null }
+  | { type: "catalog-playing"; playing: boolean }
+  | { type: "catalog-focus"; focus: CatalogState["focus"] };
+
+export const INITIAL_CATALOG: CatalogState = { analysisKey: null, label: "", times: [], stepMinutes: 0, cursorUtc: null, playing: false, focus: null };
 
 export const INITIAL: ExplorationState = {
+  context: "candidate", catalog: INITIAL_CATALOG,
   rootId: null, revisionId: null, evaluation: null, activity: { kind: "idle" }, draft: null,
   settings: { duration_hours: 24, step_minutes: 60 }, cursorUtc: null, playing: false,
 };
@@ -68,8 +96,47 @@ export function nearestSample(evaluation: ScientificEvaluation | null, utc: stri
   return best;
 }
 
+/** Index of the catalog time nearest to `utc` (the analysis' own sample grid); -1 without times. */
+export function nearestTime(times: readonly string[], utc: string | null): number {
+  if (times.length === 0) return -1;
+  if (utc === null) return 0;
+  const target: number = Date.parse(utc);
+  let best: number = 0;
+  let distance: number = Infinity;
+  times.forEach((time: string, index: number): void => {
+    const d: number = Math.abs(Date.parse(time) - target);
+    if (d < distance) { best = index; distance = d; }
+  });
+  return best;
+}
+
 export function reduce(state: ExplorationState, action: ExplorationAction): ExplorationState {
   switch (action.type) {
+    case "context":
+      if (state.context === action.context) return state;
+      // Switching context pauses both timelines; neither cursor is changed.
+      return { ...state, context: action.context, playing: false, catalog: { ...state.catalog, playing: false } };
+    case "catalog-analysis": {
+      const same: boolean = state.catalog.analysisKey === action.analysisKey;
+      const index: number = nearestTime(action.times, same ? state.catalog.cursorUtc : null);
+      // Same request (e.g. after reload): keep the snapped cursor; a new request starts at its first sample.
+      const cursor: string | null = index < 0 ? null : action.times[index] ?? null;
+      return { ...state, catalog: { ...state.catalog, analysisKey: action.analysisKey, label: action.label, times: action.times,
+        stepMinutes: action.stepMinutes, playing: false, cursorUtc: cursor } };
+    }
+    case "catalog-cursor": {
+      const index: number = nearestTime(state.catalog.times, action.utc);
+      const utc: string | null = index < 0 ? null : state.catalog.times[index] ?? null;
+      if (utc === state.catalog.cursorUtc && state.context === "catalog") return state;
+      return { ...state, context: "catalog", playing: false, catalog: { ...state.catalog, cursorUtc: utc } };
+    }
+    case "catalog-playing":
+      if (state.catalog.playing === action.playing && (!action.playing || state.context === "catalog")) return state;
+      return { ...state, context: action.playing ? "catalog" : state.context, playing: action.playing ? false : state.playing,
+        catalog: { ...state.catalog, playing: action.playing } };
+    case "catalog-focus":
+      if (state.catalog.focus?.siteId === action.focus?.siteId) return state;
+      return { ...state, catalog: { ...state.catalog, focus: action.focus } };
     case "select-root":
       if (state.rootId === action.rootId && state.revisionId === action.rootId) return state;
       return { ...state, rootId: action.rootId, revisionId: action.rootId, evaluation: null, draft: null, cursorUtc: null, playing: false };
@@ -103,10 +170,13 @@ export function reduce(state: ExplorationState, action: ExplorationAction): Expl
       if (state.evaluation === null) return state.cursorUtc === null ? state : { ...state, cursorUtc: null };
       const index: number = nearestSample(state.evaluation, action.utc);
       const utc: string | null = index < 0 ? null : state.evaluation.samples[index]?.time_utc ?? null;
-      return utc === state.cursorUtc ? state : { ...state, cursorUtc: utc };
+      if (utc === state.cursorUtc && state.context === "candidate") return state;
+      return { ...state, cursorUtc: utc, context: "candidate", catalog: { ...state.catalog, playing: false } };
     }
     case "playing":
-      return state.playing === action.playing ? state : { ...state, playing: action.playing };
+      if (state.playing === action.playing && (!action.playing || state.context === "candidate")) return state;
+      return { ...state, playing: action.playing, context: action.playing ? "candidate" : state.context,
+        catalog: action.playing ? { ...state.catalog, playing: false } : state.catalog };
   }
 }
 

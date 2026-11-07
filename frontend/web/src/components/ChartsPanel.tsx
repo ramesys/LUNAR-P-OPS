@@ -24,6 +24,9 @@ import {
 } from "../lib/playback.ts";
 import type { Mode } from "../lib/mode.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
+import { analysisKey, analysisLabel } from "../lib/analysisKey.ts";
+import { nearestTime, useExploration, useExplorationStore, type ExplorationStore } from "../lib/explorationStore.ts";
+import { ContextBadge } from "./ContextBar.tsx";
 import { HoverReadout } from "./HoverReadout.tsx";
 import { HowToReadSky, HowToReadTimeline } from "./Learn.tsx";
 import { SkyChart } from "./SkyChart.tsx";
@@ -59,14 +62,21 @@ interface ChartsPanelProps {
 }
 
 /**
- * Sky diagram + timeline sharing one instant (RF-12). Time state lives here, not in App, so
- * playback re-renders only the charts. Mount with a new `key` per result to reset it.
+ * Sky diagram + timeline sharing one instant (RF-12). The instant is the catalog cursor of the shared
+ * exploration store (Sprint 07), snapped to this analysis' own sample times; only subscribers
+ * re-render during playback. Mount with a new `key` per result.
  */
 export function ChartsPanel({ result, focused, onFocus, mode, apiClient, onCandidateSelected, onSelectionStarted }: ChartsPanelProps): JSX.Element {
   const expert: boolean = mode === "expert";
-  const [index, setIndex] = useState<number>(0);
+  const store: ExplorationStore = useExplorationStore();
+  const catalogCursor: string | null = useExploration((state): string | null => state.catalog.cursorUtc);
+  const playing: boolean = useExploration((state): boolean => state.catalog.playing);
+  const index: number = Math.max(0, nearestTime(result.times, catalogCursor));
+  const setIndex: (i: number) => void = (i: number): void => {
+    store.dispatch({ type: "catalog-cursor", utc: result.times[clampIndex(i, result.times.length)] ?? null });
+  };
+  const setPlaying: (next: boolean) => void = (next: boolean): void => { store.dispatch({ type: "catalog-playing", playing: next }); };
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [playing, setPlaying] = useState<boolean>(false);
   const [hoursPerSecond, setHoursPerSecond] = useState<number>(DEFAULT_SPEED);
   const position: RefObject<number> = useRef<number>(0);
   const chartsRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
@@ -78,6 +88,12 @@ export function ChartsPanel({ result, focused, onFocus, mode, apiClient, onCandi
   const chartWidth: number = Math.max(MIN_CHART_WIDTH, measuredWidth);
   const count: number = result.times.length;
   const stepMinutes: number = result.request.step_minutes;
+
+  // This panel always shows exactly one analysis: register it so labels and cursors refer to it.
+  useEffect((): void => {
+    store.dispatch({ type: "catalog-analysis", analysisKey: analysisKey(result.request), label: analysisLabel(result.request),
+      times: result.times, stepMinutes: result.request.step_minutes });
+  }, [store, result]);
 
   useEffect((): (() => void) | undefined => {
     if (!playing) {
@@ -175,9 +191,10 @@ export function ChartsPanel({ result, focused, onFocus, mode, apiClient, onCandi
   };
 
   return (
-    <section className="card" aria-labelledby="charts-title">
+    <section className="card" id="catalog-context" aria-labelledby="charts-title">
       <div className="charts-header">
         <h2 id="charts-title">Sky &amp; timeline</h2>
+        <ContextBadge of="catalog" />
         <div className="site-tabs" role="group" aria-label="Site shown in the charts">
           {result.sites.map(
             (s: SiteResult): JSX.Element => (

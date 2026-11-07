@@ -1518,6 +1518,11 @@
             "type": "object",
             "title": "Outputs"
           },
+          "consistency": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Consistency"
+          },
           "not_recorded": {
             "items": {
               "type": "string"
@@ -1543,6 +1548,7 @@
           "software",
           "status",
           "outputs",
+          "consistency",
           "not_recorded"
         ],
         "title": "ExperimentManifestOut",

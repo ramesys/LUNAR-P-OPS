@@ -55,6 +55,21 @@ export const SOCKETS: { candidateRef: ClassicPreset.Socket; evaluationRef: Class
   preview: new ClassicPreset.Socket("CandidatePreview"),
 };
 
+/**
+ * Read-only text in a node (saved values, statuses, interval, cursor). Rendered by a wrapping view
+ * instead of a single-line input, so long timestamps and identifiers stay readable.
+ */
+export class InfoControl extends ClassicPreset.Control {
+  text: string;
+  readonly tone: "saved" | "status" | "info";
+  constructor(text: string, tone: "saved" | "status" | "info" = "info") {
+    super();
+    this.text = text;
+    this.tone = tone;
+  }
+  setValue(text: string): void { this.text = text; }
+}
+
 export class LandingNode extends ClassicPreset.Node {
   value: unknown;
   contract: ScientificNodeContract;
@@ -86,9 +101,9 @@ export class LandingNode extends ClassicPreset.Node {
 }
 export type LandingConnection = ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>;
 export interface LandingNodes {
-  nodes: LandingNode[]; height: LandingNode; time: LandingNode; candidate: LandingNode; committed: ClassicPreset.InputControl<"text">;
+  nodes: LandingNode[]; height: LandingNode; time: LandingNode; candidate: LandingNode; committed: InfoControl;
   /** Read-only values of the committed revision, shown next to the editable draft. */
-  persistedHeight: ClassicPreset.InputControl<"text">; persistedTime: ClassicPreset.InputControl<"text">;
+  persistedHeight: InfoControl; persistedTime: InfoControl;
 }
 export type LandingScheme = GetSchemes<LandingNode, LandingConnection>;
 
@@ -128,18 +143,16 @@ export async function buildLandingNodes(editor: NodeEditor<LandingScheme>, candi
   }
   result.addOutput("preview", new ClassicPreset.Output(SOCKETS.preview, "Preview (unsaved)"));
   result.addOutput("candidate_ref", new ClassicPreset.Output(SOCKETS.candidateRef, "candidate_ref: CandidateRef"));
-  const committed: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: describeRef(null, "") });
+  const committed: InfoControl = new InfoControl(describeRef(null, ""), "status");
   result.addControl("committed", committed);
-  location.addControl("value", new ClassicPreset.InputControl("text", { readonly: true,
-    initial: `${candidate.latitude_deg.toFixed(5)}°, ${candidate.longitude_deg.toFixed(5)}° E` }));
-  terrain.addControl("value", new ClassicPreset.InputControl("text", { readonly: true,
-    initial: `${candidate.terrain_elevation_m.toFixed(2)} m` }));
+  location.addControl("value", new InfoControl(`${Math.abs(candidate.latitude_deg).toFixed(6)}°S, ${candidate.longitude_deg.toFixed(6)}°E`, "saved"));
+  terrain.addControl("value", new InfoControl(`${candidate.terrain_elevation_m.toFixed(2)} m (LOLA raster)`, "saved"));
   height.addControl("value", new ClassicPreset.InputControl("number", { initial: candidate.observer_height_m,
     change: (value: number): void => { height.value = value; onChange(); } }));
   time.addControl("value", new ClassicPreset.InputControl("text", { initial: candidate.selected_time_utc,
     change: (value: string): void => { time.value = value; onChange(); } }));
-  const persistedHeight: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: `saved: ${candidate.observer_height_m.toString()} m` });
-  const persistedTime: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: `saved: ${candidate.selected_time_utc}` });
+  const persistedHeight: InfoControl = new InfoControl(`saved: ${candidate.observer_height_m.toString()} m`, "saved");
+  const persistedTime: InfoControl = new InfoControl(`saved: ${candidate.selected_time_utc}`, "saved");
   height.addControl("persisted", persistedHeight);
   time.addControl("persisted", persistedTime);
   const nodes: LandingNode[] = [location, terrain, height, time, result];
@@ -270,13 +283,13 @@ export interface ScientificNodes {
   nodes: LandingNode[];
   compute: ScientificComputationNode;
   result: ResultsNode;
-  computeStatus: ClassicPreset.InputControl<"text">;
+  computeStatus: InfoControl;
   /** Settings the next explicit Evaluate will use (draft). */
-  nextRun: ClassicPreset.InputControl<"text">;
-  display: ClassicPreset.InputControl<"text">;
+  nextRun: InfoControl;
+  display: InfoControl;
   /** The stored evaluation's interval, and the inspected sample (display state only). */
-  interval: ClassicPreset.InputControl<"text">;
-  cursor: ClassicPreset.InputControl<"text">;
+  interval: InfoControl;
+  cursor: InfoControl;
 }
 
 export async function addScientificNodes(editor: NodeEditor<LandingScheme>, candidateNode: LandingNode, candidate: Candidate,
@@ -292,15 +305,15 @@ export async function addScientificNodes(editor: NodeEditor<LandingScheme>, cand
   compute.addInput("candidate_ref", new ClassicPreset.Input(SOCKETS.candidateRef, "candidate_ref: CandidateRef"));
   compute.addOutput("evaluation_ref", new ClassicPreset.Output(SOCKETS.evaluationRef, "evaluation_ref: EvaluationRef"));
   result.addInput("evaluation_ref", new ClassicPreset.Input(SOCKETS.evaluationRef, "evaluation_ref: EvaluationRef"));
-  const computeStatus: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "Waiting for Evaluate" });
+  const computeStatus: InfoControl = new InfoControl("Waiting for Evaluate", "status");
   compute.addControl("status", computeStatus);
-  const nextRun: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "next run: 24 h @ 60 min" });
+  const nextRun: InfoControl = new InfoControl("next run: 24 h @ 60 min", "info");
   compute.addControl("next", nextRun);
-  const display: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "Not evaluated" });
+  const display: InfoControl = new InfoControl("Not evaluated", "status");
   result.addControl("status", display);
-  const interval: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "interval: —" });
+  const interval: InfoControl = new InfoControl("interval: —", "info");
   result.addControl("interval", interval);
-  const cursor: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "cursor: —" });
+  const cursor: InfoControl = new InfoControl("cursor: —", "info");
   result.addControl("cursor", cursor);
   const nodes: LandingNode[] = [compute, result];
   for (const node of nodes) { if (!active()) throw new Error("Graph setup cancelled"); await editor.addNode(node); }

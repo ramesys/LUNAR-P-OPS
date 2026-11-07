@@ -6,6 +6,9 @@ x-api-build: &api-build
   context: ../backend
   dockerfile: ../infrastructure/docker/api.Dockerfile
   target: dev
+  args:
+    # Baked into the image as CLPS_BUILD_COMMIT; `make up` computes it (see the Makefile).
+    CLPS_GIT_COMMIT: ${CLPS_GIT_COMMIT:-}
 
 services:
   # One-shot: downloads SPICE kernels (required), LOLA terrain and the pole map relief (optional).
@@ -29,8 +32,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Optional: recorded in new evaluations' provenance, e.g.
-      # CLPS_GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d api
+      # Fallback only, used when the image carries no build commit (CLPS_BUILD_COMMIT).
       CLPS_GIT_COMMIT: ${CLPS_GIT_COMMIT:-}
     volumes:
       - ../data:/data

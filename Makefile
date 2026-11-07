@@ -11,6 +11,16 @@ export MSYS_NO_PATHCONV := 1
 
 PROD = docker compose -f infrastructure/docker-compose.prod.yml
 
+# Software provenance for new evaluations: full commit SHA, with "-dirty" when the working tree
+# has uncommitted or untracked (non-ignored) changes. Passed to the API image as a build arg.
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
+GIT_DIRTY := $(shell git status --porcelain 2>/dev/null | head -c 1 | sed 's/./-dirty/')
+export CLPS_GIT_COMMIT ?= $(GIT_COMMIT)$(GIT_DIRTY)
+
+.PHONY: provenance
+provenance:
+	@echo "CLPS_GIT_COMMIT=$(CLPS_GIT_COMMIT)"
+
 # Backend tasks: the whole backend/ is mounted, so they always see the current code.
 PY_RUN  = docker compose run --rm --no-deps -T -v ./backend:/workspace api
 # Frontend tasks: sources are mounted; node_modules stay inside the image.

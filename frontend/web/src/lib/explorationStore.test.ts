@@ -49,3 +49,43 @@ describe("exploration store", (): void => {
     stop();
   });
 });
+
+describe("scientific context", (): void => {
+  const times: string[] = ["2026-11-07T00:00:00Z", "2026-11-07T02:00:00Z", "2026-11-07T04:00:00Z"];
+  const withBoth: () => ExplorationState = (): ExplorationState => {
+    let state: ExplorationState = reduce(selected, { type: "evaluation", evaluation: e0 });
+    state = reduce(state, { type: "catalog-analysis", analysisKey: "analysis-1", label: "3 sites", times, stepMinutes: 120 });
+    return state;
+  };
+
+  it("keeps candidate and catalog cursors on their own sample grids", (): void => {
+    let state: ExplorationState = withBoth();
+    expect(state.catalog.cursorUtc).toBe(times[0]);
+    state = reduce(state, { type: "catalog-cursor", utc: "2026-11-07T02:59:00Z" });
+    expect(state.context).toBe("catalog");
+    expect(state.catalog.cursorUtc).toBe("2026-11-07T02:00:00Z");
+    // The candidate cursor is untouched by the catalog timeline, and vice versa.
+    expect(state.cursorUtc).toBe("2026-11-07T00:00:00Z");
+    state = reduce(state, { type: "cursor", utc: "2026-11-07T01:00:00Z" });
+    expect(state.context).toBe("candidate");
+    expect(state.catalog.cursorUtc).toBe("2026-11-07T02:00:00Z");
+  });
+
+  it("plays one context at a time and pauses both when switching", (): void => {
+    let state: ExplorationState = reduce(withBoth(), { type: "catalog-playing", playing: true });
+    expect(state).toMatchObject({ context: "catalog", playing: false, catalog: { playing: true } });
+    state = reduce(state, { type: "playing", playing: true });
+    expect(state).toMatchObject({ context: "candidate", playing: true, catalog: { playing: false } });
+    state = reduce(state, { type: "context", context: "catalog" });
+    expect(state).toMatchObject({ context: "catalog", playing: false, catalog: { playing: false } });
+  });
+
+  it("keeps the catalog cursor only for the same analysis request", (): void => {
+    let state: ExplorationState = reduce(withBoth(), { type: "catalog-cursor", utc: times[2] ?? null });
+    state = reduce(state, { type: "catalog-analysis", analysisKey: "analysis-1", label: "3 sites", times, stepMinutes: 120 });
+    expect(state.catalog.cursorUtc).toBe(times[2]);
+    state = reduce(state, { type: "catalog-analysis", analysisKey: "analysis-2", label: "other", times: ["2026-12-01T00:00:00Z"], stepMinutes: 60 });
+    expect(state.catalog).toMatchObject({ analysisKey: "analysis-2", cursorUtc: "2026-12-01T00:00:00Z", stepMinutes: 60 });
+    expect(state.evaluation).toBe(e0);
+  });
+});

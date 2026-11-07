@@ -705,6 +705,10 @@ export interface components {
             outputs: {
                 [key: string]: unknown;
             };
+            /** Consistency */
+            consistency: {
+                [key: string]: unknown;
+            };
             /** Not Recorded */
             not_recorded: string[];
         };

@@ -7,6 +7,7 @@ record are reported as not recorded; nothing is inferred from the current server
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from typing import Literal
@@ -107,13 +108,7 @@ def manifest(stored: EvaluationOut) -> ExperimentManifestOut:
             "max_distance_m": field("max_distance_m"),
             "visibility_rules": field("visibility_rules"),
         },
-        software={
-            "clps_api_version": field("clps_api_version"),
-            "lunar_core_version": field("lunar_core_version"),
-            "spiceypy_version": field("spiceypy_version"),
-            "numpy_version": field("numpy_version"),
-            "software_commit": field("software_commit"),
-        },
+        software=software(field),
         status={
             "execution_status": stored.status,
             "validation_status": "independently_validated"
@@ -138,8 +133,56 @@ def manifest(stored: EvaluationOut) -> ExperimentManifestOut:
             "horizon_azimuth_deg": stored.horizon_azimuth_deg,
             "horizon_elevation_deg": stored.horizon_elevation_deg,
         },
+        consistency=consistency(stored),
         not_recorded=missing,
     )
+
+
+def software(field: Callable[[str], object]) -> dict[str, object]:
+    commit = field("software_commit")
+    state = (
+        NOT_RECORDED
+        if commit == NOT_RECORDED
+        else "dirty"
+        if str(commit).endswith("-dirty")
+        else "clean"
+    )
+    return {
+        "clps_api_version": field("clps_api_version"),
+        "lunar_core_version": field("lunar_core_version"),
+        "spiceypy_version": field("spiceypy_version"),
+        "numpy_version": field("numpy_version"),
+        "software_commit": commit,
+        # "dirty": built from a working tree with uncommitted changes, so the commit alone does
+        # not identify the code. Derived from the recorded value only.
+        "software_commit_state": state,
+        # Sprint 06 records stored a commit without its source: reported as not recorded.
+        "software_commit_source": NOT_RECORDED
+        if commit == NOT_RECORDED
+        else field("software_commit_source"),
+    }
+
+
+def inputs_sha256(stored: EvaluationOut) -> str:
+    """SHA-256 of the exact scientific inputs: the stored candidate snapshot and the request."""
+    inputs = {
+        "candidate": stored.candidate.model_dump(mode="json"),
+        "request": stored.request.model_dump(mode="json"),
+    }
+    return hashlib.sha256(
+        json.dumps(inputs, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    ).hexdigest()
+
+
+def consistency(stored: EvaluationOut) -> dict[str, object]:
+    """Does the evaluated snapshot still equal the stored candidate record it came from?"""
+    current = candidate_store.get(stored.candidate_id)
+    return {
+        "inputs_sha256": inputs_sha256(stored),
+        "candidate_record_exists": current is not None,
+        "candidate_snapshot_matches_record": current == stored.candidate,
+        "evaluation_candidate_id_matches": stored.candidate.candidate_id == stored.candidate_id,
+    }
 
 
 def _max_abs(a: list[float], b: list[float]) -> float | None:

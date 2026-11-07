@@ -329,6 +329,7 @@ class ExperimentManifestOut(BaseModel):
     software: dict[str, object]
     status: dict[str, object]
     outputs: dict[str, object]
+    consistency: dict[str, object]
     not_recorded: list[str]
 
 

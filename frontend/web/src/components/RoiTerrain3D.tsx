@@ -468,6 +468,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
         </div>
         {evaluation !== null && <div className="terrain-time" aria-live="polite">
           {sample === undefined ? <span>No stored samples ({evaluation.status}) — nothing to show in time.</span> : <>
+            <span className="muted">Candidate evaluation context · {evaluation.evaluation_id.slice(0, 22)}…</span>
             <span><strong>{formatUtc(sample.time_utc)}</strong> · stored sample {((temporal?.index ?? 0) + 1).toString()}/{evaluation.samples.length.toString()} (every {evaluation.request.step_minutes.toString()} min)</span>
             <span><span className="sun-text">Sun</span> {sample.sun_elevation_deg.toFixed(2)}° vs horizon {sample.sun_horizon_deg.toFixed(2)}° → <strong>{sample.sun_visible ? "visible" : "blocked"}</strong></span>
             <span><span className="earth-text">Earth</span> {sample.earth_elevation_deg.toFixed(2)}° vs horizon {sample.earth_horizon_deg.toFixed(2)}° → <strong>{sample.earth_visible ? "in view" : "blocked"}</strong></span>

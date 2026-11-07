@@ -7,6 +7,8 @@ x-api-build: &api-build
   context: ../backend
   dockerfile: ../infrastructure/docker/api.Dockerfile
   target: prod
+  args:
+    CLPS_GIT_COMMIT: ${CLPS_GIT_COMMIT:-}
 
 services:
   data:

@@ -29,6 +29,10 @@ COPY lunar-core lunar-core
 COPY api api
 COPY pipelines pipelines
 RUN uv sync --frozen
+# Git commit of the repository this image was built from (Makefile: full SHA, "-dirty" when the
+# working tree had uncommitted changes). Recorded in new evaluations' provenance.
+ARG CLPS_GIT_COMMIT=""
+ENV CLPS_BUILD_COMMIT=${CLPS_GIT_COMMIT}
 EXPOSE 8000
 CMD ["uvicorn", "clps_api.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--reload", "--reload-dir", "api/src", "--reload-dir", "lunar-core/src"]
@@ -38,6 +42,8 @@ RUN uv sync --frozen --no-dev --no-install-workspace
 COPY lunar-core lunar-core
 COPY api api
 COPY pipelines pipelines
+ARG CLPS_GIT_COMMIT=""
+ENV CLPS_BUILD_COMMIT=${CLPS_GIT_COMMIT}
 RUN uv sync --frozen --no-dev --no-editable \
     && useradd --create-home --uid 10001 app \
     && mkdir -p /data && chown app /data

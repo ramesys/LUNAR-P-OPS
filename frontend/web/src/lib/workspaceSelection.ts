@@ -12,6 +12,29 @@ export interface WorkspaceSelection {
   cursorUtc?: string | null;
 }
 
+/** Display state that is restored even before any candidate exists. */
+export interface ContextSelection { context: "candidate" | "catalog"; catalogAnalysisKey: string | null; catalogCursorUtc: string | null }
+
+const CONTEXT_KEY: string = "lunar-ops-context";
+
+export function loadContext(): ContextSelection {
+  const fallback: ContextSelection = { context: "candidate", catalogAnalysisKey: null, catalogCursorUtc: null };
+  const raw: string | null = read(CONTEXT_KEY);
+  if (raw === null) return fallback;
+  try {
+    const parsed: Partial<ContextSelection> = JSON.parse(raw) as Partial<ContextSelection>;
+    return {
+      context: parsed.context === "catalog" ? "catalog" : "candidate",
+      catalogAnalysisKey: typeof parsed.catalogAnalysisKey === "string" ? parsed.catalogAnalysisKey : null,
+      catalogCursorUtc: typeof parsed.catalogCursorUtc === "string" && Number.isFinite(Date.parse(parsed.catalogCursorUtc)) ? parsed.catalogCursorUtc : null,
+    };
+  } catch { return fallback; }
+}
+
+export function saveContext(selection: ContextSelection): void {
+  try { localStorage.setItem(CONTEXT_KEY, JSON.stringify(selection)); } catch { /* not restored */ }
+}
+
 const KEY: string = "lunar-ops-selection";
 /** Sprint 02–04 pointer to the selected C0; still read so older sessions restore. */
 const LEGACY_KEY: string = "lunar-ops-c0";

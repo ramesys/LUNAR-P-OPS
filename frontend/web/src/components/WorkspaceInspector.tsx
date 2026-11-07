@@ -1,5 +1,6 @@
 import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
 import { ExperimentPanel } from "./ExperimentPanel.tsx";
+import { ContextBadge } from "./ContextBar.tsx";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { computationState, evaluationChart, horizonGap, visibleHours, type ComputationState, type EvaluationChart, type HorizonGap } from "../lib/evaluationCharts.ts";
 import { nearestSample, useExploration, useExplorationStore, type Draft, type ExplorationStore } from "../lib/explorationStore.ts";
@@ -102,7 +103,7 @@ export function WorkspaceInspector({ root, child, selected, selectedRef, evaluat
     </section>
 
     <section aria-label="Selected result" key={focus?.part === "result" ? focus.at : "result"} className={focus?.part === "result" ? "focus-flash" : undefined}>
-      <h3>Result for {label}</h3>
+      <h3>Result for {label} <ContextBadge of="candidate" /></h3>
       {evaluation === null ? <p className="muted">No stored evaluation for {label}.</p> : <EvaluationSummary evaluation={evaluation} label={label} />}
       {c0Result !== null && c1Result !== null && <ResultComparison c0={c0Result} c1={c1Result} />}
     </section>

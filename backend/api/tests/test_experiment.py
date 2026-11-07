@@ -55,6 +55,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     write_windows(terrain)
     monkeypatch.setenv("CLPS_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("CLPS_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("CLPS_BUILD_COMMIT", raising=False)
     monkeypatch.setattr(terrain_store, "terrain_dir", lambda: terrain)
     monkeypatch.setattr(evaluation, "kernel_hashes", lambda: {"test-kernel": "abc"})
     monkeypatch.setattr(evaluation, "_loaded_kernel_hashes", {"test-kernel": "abc"})
@@ -119,7 +120,11 @@ def test_manifest_contains_the_stored_inputs_and_outputs(client: TestClient, tmp
     assert len(m["outputs"]["output_sha256"]) == 64
     # No commit was provided to this deployment: reported, not invented.
     assert m["software"]["software_commit"] == "not_recorded"
+    assert m["software"]["software_commit_state"] == "not_recorded"
     assert m["not_recorded"] == ["software_commit"]
+    assert m["consistency"]["candidate_snapshot_matches_record"] is True
+    assert m["consistency"]["evaluation_candidate_id_matches"] is True
+    assert len(m["consistency"]["inputs_sha256"]) == 64
     assert client.get("/api/evaluations/missing/manifest").status_code == 404
 
 
@@ -128,7 +133,53 @@ def test_commit_is_recorded_when_provided(client: TestClient, monkeypatch: pytes
     _, result = evaluated(client)
     m = client.get(f"/api/evaluations/{result['evaluation_id']}/manifest").json()
     assert m["software"]["software_commit"] == "abc1234"
+    assert m["software"]["software_commit_state"] == "clean"
+    assert m["software"]["software_commit_source"] == "runtime environment"
     assert m["not_recorded"] == []
+
+
+def test_build_commit_wins_and_dirty_state_is_kept(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    sha = "b1de8d725a3929ae9b4fa0a050ec0e5198ea5ff5"
+    monkeypatch.setenv("CLPS_BUILD_COMMIT", f"{sha}-dirty")
+    monkeypatch.setenv("CLPS_GIT_COMMIT", "abc1234")
+    _, result = evaluated(client)
+    m = client.get(f"/api/evaluations/{result['evaluation_id']}/manifest").json()
+    assert m["software"]["software_commit"] == f"{sha}-dirty"
+    assert m["software"]["software_commit_state"] == "dirty"
+    assert m["software"]["software_commit_source"] == "image build"
+
+
+@pytest.mark.parametrize("value", ["", "not-a-commit", "ABCDEF1", "abc1234-modified"])
+def test_malformed_commits_are_not_recorded(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, value: str
+):
+    monkeypatch.setenv("CLPS_BUILD_COMMIT", value)
+    monkeypatch.setenv("CLPS_GIT_COMMIT", value)
+    _, result = evaluated(client)
+    assert "software_commit" not in result["provenance"]
+
+
+def test_manifest_reports_a_changed_candidate_record(client: TestClient, tmp_path: Path):
+    import sqlite3
+
+    c1, result = evaluated(client)
+    with sqlite3.connect(tmp_path / "candidates.sqlite3") as db:
+        payload = db.execute(
+            "SELECT payload FROM candidates WHERE id = ?", (c1["candidate_id"],)
+        ).fetchone()[0]
+        db.execute(
+            "UPDATE candidates SET payload = ? WHERE id = ?",
+            (
+                payload.replace('"observer_height_m":7.0', '"observer_height_m":8.0'),
+                c1["candidate_id"],
+            ),
+        )
+    m = client.get(f"/api/evaluations/{result['evaluation_id']}/manifest").json()
+    # The manifest keeps the evaluated inputs and flags that the record no longer matches.
+    assert m["candidate"]["observer_height_m"] == 7
+    assert m["consistency"]["candidate_snapshot_matches_record"] is False
 
 
 def test_legacy_records_mark_missing_provenance(client: TestClient):

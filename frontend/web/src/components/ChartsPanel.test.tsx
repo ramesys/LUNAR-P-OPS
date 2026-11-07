@@ -1,6 +1,7 @@
 import { createApiClient, type AnalysisResponse, type Site, type SiteResult } from "@clps/api-client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createExplorationStore, ExplorationContext } from "../lib/explorationStore.ts";
 import { ChartsPanel } from "./ChartsPanel.tsx";
 
 const HOURS: number = 48;
@@ -61,8 +62,9 @@ const RESULT: AnalysisResponse = {
 };
 
 function renderPanel(): void {
+  // Each test gets its own exploration store, as each App instance does.
   render(
-    <ChartsPanel
+    <ExplorationContext.Provider value={createExplorationStore()}><ChartsPanel
       result={RESULT}
       focused={FOCUSED}
       mode="expert"
@@ -72,7 +74,7 @@ function renderPanel(): void {
       onFocus={(): void => {
         /* no-op */
       }}
-    />,
+    /></ExplorationContext.Provider>,
   );
 }
 

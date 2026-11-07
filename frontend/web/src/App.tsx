@@ -4,8 +4,10 @@ import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { LandingGraph } from "./components/LandingGraph.tsx";
 import { ShackletonWorkspace } from "./components/ShackletonWorkspace.tsx";
 import { SelectionGuard } from "./lib/selectionGuard.ts";
-import { loadSelection, saveSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
-import { createExplorationStore, ExplorationContext, INITIAL, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
+import { loadContext, loadSelection, saveContext, saveSelection, type ContextSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
+import { analysisKey, analysisLabel } from "./lib/analysisKey.ts";
+import { ContextBar } from "./components/ContextBar.tsx";
+import { createExplorationStore, ExplorationContext, INITIAL, INITIAL_CATALOG, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
@@ -68,8 +70,11 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   // The single space–time exploration state (selection, active evaluation, draft, cursor).
   const [store] = useState<ExplorationStore>((): ExplorationStore => {
     const saved: WorkspaceSelection | null = loadSelection();
-    return createExplorationStore(saved === null ? INITIAL :
-      { ...INITIAL, rootId: saved.rootId, revisionId: saved.revisionId, cursorUtc: saved.cursorUtc ?? null });
+    const context: ContextSelection = loadContext();
+    const base: ExplorationState = { ...INITIAL, context: context.context,
+      catalog: { ...INITIAL_CATALOG, analysisKey: context.catalogAnalysisKey, cursorUtc: context.catalogCursorUtc } };
+    return createExplorationStore(saved === null ? base :
+      { ...base, rootId: saved.rootId, revisionId: saved.revisionId, cursorUtc: saved.cursorUtc ?? null });
   });
   const revisionId: string | null = useSyncExternalStore(store.subscribe, (): string | null => store.getState().revisionId);
   const [candidateError, setCandidateError] = useState<string | null>(null);
@@ -104,6 +109,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
       clearTimeout(timer);
       timer = setTimeout((): void => {
         const state: ExplorationState = store.getState();
+        saveContext({ context: state.context, catalogAnalysisKey: state.catalog.analysisKey, catalogCursorUtc: state.catalog.cursorUtc });
         if (state.rootId === null || state.revisionId === null) return;
         saveSelection({ rootId: state.rootId, revisionId: state.revisionId,
           evaluationId: state.evaluation?.evaluation_id ?? null, cursorUtc: state.cursorUtc });
@@ -153,6 +159,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         }
         setResult(data);
         setResultVersion((v: number): number => v + 1);
+        store.dispatch({ type: "catalog-analysis", analysisKey: analysisKey(data.request), label: analysisLabel(data.request),
+          times: data.times, stepMinutes: data.request.step_minutes });
         setFocusedId((previous: string | null): string | null => {
           const ids: string[] = data.sites.map((s: SiteResult): string => s.site.id);
           return previous !== null && ids.includes(previous) ? previous : (ids[0] ?? null);
@@ -164,7 +172,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         }
       }
     },
-    [apiClient],
+    [apiClient, store],
   );
 
   useEffect((): void => {
@@ -249,9 +257,15 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   );
   const focused: SiteResult | undefined =
     result?.sites.find((s: SiteResult): boolean => s.site.id === focusedId) ?? result?.sites[0];
+  const focusedSite: Site | undefined = focused?.site;
+  useEffect((): void => {
+    store.dispatch({ type: "catalog-focus", focus: focusedSite === undefined ? null :
+      { siteId: focusedSite.id, name: focusedSite.name, latitude_deg: focusedSite.latitude_deg, longitude_deg: focusedSite.longitude_deg } });
+  }, [store, focusedSite]);
 
   return (
     <ExplorationContext.Provider value={store}>
+    <div className="context-bar-wrap"><ContextBar /></div>
     <div className="page">
       <header className="page-header">
         <div className="title-row">
@@ -277,7 +291,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         <li>Compare and read the results in the Inspector</li>
       </ol>
 
-      <section className="workspace" aria-label="Landing workspace">
+      <section className="workspace" id="candidate-context" aria-label="Landing workspace">
         <ShackletonWorkspace
           apiClient={apiClient}
           selectedCandidateId={candidate?.candidate_id ?? null}

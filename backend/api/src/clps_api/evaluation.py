@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from contextlib import closing
 from datetime import UTC, timedelta
 from importlib.metadata import version
@@ -130,10 +131,23 @@ def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationO
     return save(compute(candidate, request))
 
 
-def software_commit() -> str | None:
-    """Git commit of the running code when the deployment provides it (CLPS_GIT_COMMIT)."""
-    commit = os.environ.get("CLPS_GIT_COMMIT", "").strip()
-    return commit or None
+COMMIT_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-f]{7,40}(-dirty)?$")
+
+
+def software_commit() -> tuple[str, str] | None:
+    """(commit, source) of the running code, or None when unknown.
+
+    The image build argument (CLPS_BUILD_COMMIT) describes the code baked into the image and wins;
+    the runtime CLPS_GIT_COMMIT is only a fallback. Malformed values are ignored, never recorded.
+    """
+    for variable, source in (
+        ("CLPS_BUILD_COMMIT", "image build"),
+        ("CLPS_GIT_COMMIT", "runtime environment"),
+    ):
+        value = os.environ.get(variable, "").strip()
+        if COMMIT_PATTERN.match(value):
+            return value, source
+    return None
 
 
 def compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
@@ -168,7 +182,7 @@ def compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOu
     }
     commit = software_commit()
     if commit is not None:
-        provenance["software_commit"] = commit
+        provenance["software_commit"], provenance["software_commit_source"] = commit
     warnings = [
         "Independent scientific validation has not been established for this candidate.",
         "Geometric Earth visibility is not communication performance; "
