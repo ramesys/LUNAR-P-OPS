@@ -168,6 +168,17 @@ runtime env:   CLPS_GIT_COMMIT (fallback only)
   b1de8d725a3929ae9b4fa0a050ec0e5198ea5ff5-dirty`, source `image build`. That is honest: the image
   was built from `b1de8d7` plus the uncommitted Sprint 07 work.
 
+- Clean-state check after committing `9dc8ba3`. `make provenance` printed the bare SHA; `make up`
+  baked `CLPS_BUILD_COMMIT=9dc8ba3f733890fa00fe2eaaa9792e7237721451`; the E2E suite passed again
+  (14). The fixture now has two evaluations, and the earlier one keeps its own commit:
+
+  | evaluation | software_commit | state | source |
+  | --- | --- | --- | --- |
+  | `evaluation-3303c56f…` | `b1de8d72…ff5-dirty` | dirty | image build |
+  | `evaluation-bd9185d9…` | `9dc8ba3f…1451` | clean | image build |
+
+  Both manifests report `candidate_snapshot_matches_record: true`.
+
 Screenshots: `docs/screenshots/sprint07-context-catalog.jpg` and
 `sprint07-landing-graph-readable.jpg`.
 
