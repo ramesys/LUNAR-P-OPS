@@ -25,3 +25,4 @@ export function createApiClient(options: ClientOptions): ApiClient {
   return createClient<paths>(options);
 }
 export type Candidate = Schemas["CandidateOut"];
+export type ScientificEvaluation = Schemas["EvaluationOut"];

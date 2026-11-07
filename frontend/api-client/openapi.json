@@ -413,6 +413,135 @@
           }
         }
       }
+    },
+    "/api/candidates/{candidate_id}/evaluations": {
+      "post": {
+        "summary": "Evaluate Candidate",
+        "operationId": "evaluateCandidate",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Candidate Evaluations",
+        "operationId": "listCandidateEvaluations",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EvaluationOut"
+                  },
+                  "title": "Response Listcandidateevaluations"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluations/{evaluation_id}": {
+      "get": {
+        "summary": "Get Evaluation",
+        "operationId": "getEvaluation",
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -763,6 +892,210 @@
           "url"
         ],
         "title": "DataSourceOut"
+      },
+      "EvaluationInterval": {
+        "properties": {
+          "start_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Utc"
+          },
+          "end_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Utc"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_utc",
+          "end_utc",
+          "duration_seconds",
+          "truncated"
+        ],
+        "title": "EvaluationInterval"
+      },
+      "EvaluationOut": {
+        "properties": {
+          "evaluation_id": {
+            "type": "string",
+            "title": "Evaluation Id"
+          },
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "COMPUTED_UNVERIFIED",
+              "VALIDATED",
+              "UNAVAILABLE",
+              "ERROR"
+            ],
+            "title": "Status"
+          },
+          "request": {
+            "$ref": "#/components/schemas/EvaluationRequest"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateOut"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "horizon_azimuth_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Horizon Azimuth Deg",
+            "default": []
+          },
+          "horizon_elevation_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Horizon Elevation Deg",
+            "default": []
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationSample"
+            },
+            "type": "array",
+            "title": "Samples",
+            "default": []
+          },
+          "intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/EvaluationInterval"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Intervals",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluation_id",
+          "candidate_id",
+          "status",
+          "request",
+          "candidate",
+          "provenance",
+          "warnings",
+          "errors"
+        ],
+        "title": "EvaluationOut"
+      },
+      "EvaluationRequest": {
+        "properties": {
+          "duration_hours": {
+            "type": "number",
+            "maximum": 168.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Hours",
+            "default": 24
+          },
+          "step_minutes": {
+            "type": "integer",
+            "maximum": 360.0,
+            "minimum": 1.0,
+            "title": "Step Minutes",
+            "default": 60
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EvaluationRequest"
+      },
+      "EvaluationSample": {
+        "properties": {
+          "time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time Utc"
+          },
+          "sun_azimuth_deg": {
+            "type": "number",
+            "title": "Sun Azimuth Deg"
+          },
+          "sun_elevation_deg": {
+            "type": "number",
+            "title": "Sun Elevation Deg"
+          },
+          "sun_horizon_deg": {
+            "type": "number",
+            "title": "Sun Horizon Deg"
+          },
+          "sun_visible": {
+            "type": "boolean",
+            "title": "Sun Visible"
+          },
+          "earth_azimuth_deg": {
+            "type": "number",
+            "title": "Earth Azimuth Deg"
+          },
+          "earth_elevation_deg": {
+            "type": "number",
+            "title": "Earth Elevation Deg"
+          },
+          "earth_horizon_deg": {
+            "type": "number",
+            "title": "Earth Horizon Deg"
+          },
+          "earth_visible": {
+            "type": "boolean",
+            "title": "Earth Visible"
+          },
+          "simultaneous_visible": {
+            "type": "boolean",
+            "title": "Simultaneous Visible"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time_utc",
+          "sun_azimuth_deg",
+          "sun_elevation_deg",
+          "sun_horizon_deg",
+          "sun_visible",
+          "earth_azimuth_deg",
+          "earth_elevation_deg",
+          "earth_horizon_deg",
+          "earth_visible",
+          "simultaneous_visible"
+        ],
+        "title": "EvaluationSample"
       },
       "HTTPValidationError": {
         "properties": {

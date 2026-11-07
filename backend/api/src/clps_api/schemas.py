@@ -172,3 +172,44 @@ class CandidateEvolutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     observer_height_m: float = Field(ge=0, le=100)
     selected_time_utc: AwareDatetime
+
+
+class EvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    duration_hours: float = Field(default=24, gt=0, le=168)
+    step_minutes: int = Field(default=60, ge=1, le=360)
+
+
+class EvaluationSample(BaseModel):
+    time_utc: AwareDatetime
+    sun_azimuth_deg: float
+    sun_elevation_deg: float
+    sun_horizon_deg: float
+    sun_visible: bool
+    earth_azimuth_deg: float
+    earth_elevation_deg: float
+    earth_horizon_deg: float
+    earth_visible: bool
+    simultaneous_visible: bool
+
+
+class EvaluationInterval(BaseModel):
+    start_utc: AwareDatetime
+    end_utc: AwareDatetime
+    duration_seconds: float
+    truncated: bool
+
+
+class EvaluationOut(BaseModel):
+    evaluation_id: str
+    candidate_id: str
+    status: Literal["COMPUTED_UNVERIFIED", "VALIDATED", "UNAVAILABLE", "ERROR"]
+    request: EvaluationRequest
+    candidate: CandidateOut
+    provenance: dict[str, object]
+    warnings: list[str]
+    errors: list[str]
+    horizon_azimuth_deg: list[float] = []
+    horizon_elevation_deg: list[float] = []
+    samples: list[EvaluationSample] = []
+    intervals: dict[str, list[EvaluationInterval]] = {}

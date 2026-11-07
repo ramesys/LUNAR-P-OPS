@@ -12,13 +12,15 @@ from lunar_core.kernels import load_kernels
 from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import candidate, candidate_store, pole_map, terrain_store
+from clps_api import candidate, candidate_store, evaluation, pole_map, terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     CandidateEvolutionRequest,
     CandidateOut,
     CandidateRequest,
+    EvaluationOut,
+    EvaluationRequest,
     HealthResponse,
     PoleMapOut,
     SiteOut,
@@ -29,7 +31,11 @@ from clps_api.service import CATALOG, resolve_site, run_analysis, site_out
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    before = evaluation.kernel_hashes()
     load_kernels(Path(os.environ.get("CLPS_DATA_DIR", "data")) / "kernels")
+    if before != evaluation.kernel_hashes():
+        raise RuntimeError("SPICE kernels changed while loading")
+    evaluation.record_loaded_kernel_hashes()
     yield
 
 
@@ -177,3 +183,26 @@ def evolve_candidate(candidate_id: str, request: CandidateEvolutionRequest) -> C
     if parent is None:
         raise HTTPException(status_code=404, detail="candidate not found")
     return candidate_store.evolve(parent, request)
+
+
+@app.post("/api/candidates/{candidate_id}/evaluations", operation_id="evaluateCandidate")
+def evaluate_candidate(candidate_id: str, request: EvaluationRequest) -> EvaluationOut:
+    found = candidate_store.get(candidate_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return evaluation.evaluate(found, request)
+
+
+@app.get("/api/candidates/{candidate_id}/evaluations", operation_id="listCandidateEvaluations")
+def list_candidate_evaluations(candidate_id: str) -> list[EvaluationOut]:
+    if candidate_store.get(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return evaluation.list_for(candidate_id)
+
+
+@app.get("/api/evaluations/{evaluation_id}", operation_id="getEvaluation")
+def get_evaluation(evaluation_id: str) -> EvaluationOut:
+    found = evaluation.get(evaluation_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="evaluation not found")
+    return found

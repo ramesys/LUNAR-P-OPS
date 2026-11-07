@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NodeEditor } from "rete";
 import { DataflowEngine } from "rete-engine";
-import { buildLandingNodes, type LandingNodes, type LandingScheme } from "./landingGraph.ts";
+import { buildLandingNodes, type LandingNodes, type LandingScheme, type ScientificNodes } from "./landingGraph.ts";
 import type { Candidate } from "@clps/api-client";
 
 const candidate: Candidate = { terrain_dataset_sha256: "hash", terrain_nodata: "NaN", coverage_bounds_m: [0, 0, 1, 1], candidate_id: "c0", site_id: "site", latitude_deg: -89.5,
@@ -33,4 +33,17 @@ it("stops constructing a graph after its host is disposed", async () => {
   await expect(buildLandingNodes(editor, candidate, (): void => { /* no UI */ }, (): boolean => ++checks < 2))
     .rejects.toThrow("Graph setup cancelled");
   expect(editor.getNodes()).toHaveLength(1);
+});
+
+it("runs the saved candidate through scientific and result nodes", async () => {
+  const { addScientificNodes } = await import("./landingGraph.ts");
+  const editor: NodeEditor<LandingScheme> = new NodeEditor<LandingScheme>();
+  const engine: DataflowEngine<LandingScheme> = new DataflowEngine<LandingScheme>();
+  editor.use(engine);
+  const science: ScientificNodes = await addScientificNodes(editor, candidate, (id: string): Promise<unknown> => Promise.resolve({ candidate_id: id, status: "COMPUTED_UNVERIFIED" }));
+  const value: Record<string, unknown> = await engine.fetch(science.result.id);
+  expect(value["value"]).toEqual({ candidate_id: "c0", status: "COMPUTED_UNVERIFIED" });
+  science.saved.value = "c1";
+  engine.reset();
+  expect((await engine.fetch(science.result.id))["value"]).toEqual({ candidate_id: "c1", status: "COMPUTED_UNVERIFIED" });
 });

@@ -17,12 +17,14 @@ export interface ScientificNodeContract {
 export class LandingNode extends ClassicPreset.Node {
   value: unknown;
   contract: ScientificNodeContract;
+  execute?: (inputs: Record<string, unknown[]>) => Promise<Record<string, unknown>>;
   constructor(label: string, value: unknown, contract: ScientificNodeContract) {
     super(label);
     this.value = value;
     this.contract = contract;
   }
-  data(inputs: Record<string, unknown[]>): Record<string, unknown> {
+  data(inputs: Record<string, unknown[]>): Record<string, unknown> | Promise<Record<string, unknown>> {
+    if (this.execute !== undefined) return this.execute(inputs);
     if (this.label !== "Candidate") return { value: this.value };
     const location: unknown = inputs["location"]?.[0];
     const terrain: unknown = inputs["terrain"]?.[0];
@@ -84,4 +86,46 @@ export async function buildLandingNodes(editor: NodeEditor<LandingScheme>, candi
     await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(spec.node, "value", result, spec.key));
   }
   return { nodes, height, result };
+}
+
+
+export interface ScientificNodes { nodes: LandingNode[]; saved: LandingNode; compute: LandingNode; result: LandingNode; display: ClassicPreset.InputControl<"text"> }
+
+export async function addScientificNodes(editor: NodeEditor<LandingScheme>, candidate: Candidate,
+  evaluate: (id: string) => Promise<unknown>, active: () => boolean = (): boolean => true): Promise<ScientificNodes> {
+  const base: ScientificNodeContract = { input_types: {}, output_types: {}, units: "UTC, degrees, metres, seconds",
+    reference_frame: candidate.coordinate_reference, data_sources: [candidate.terrain_source_url],
+    algorithm: "candidate-horizon-spice-v1", execution_status: "unavailable", validation_status: "unverified",
+    errors: [], warnings: ["No scientific evaluation has been executed."] };
+  const saved: LandingNode = new LandingNode("Saved Candidate", candidate.candidate_id, { ...base,
+    output_types: { value: "candidate_id" }, algorithm: "candidate-snapshot/v1", execution_status: "succeeded" });
+  const compute: LandingNode = new LandingNode("Scientific computation", null, { ...base,
+    input_types: { candidate: "candidate_id" }, output_types: { value: "evaluation" } });
+  const result: LandingNode = new LandingNode("Scientific result", null, { ...base,
+    input_types: { evaluation: "evaluation" }, output_types: { value: "evaluation" }, algorithm: "result-inspector/v1" });
+  const candidateSocket: ClassicPreset.Socket = new ClassicPreset.Socket("saved-candidate-id");
+  const evaluationSocket: ClassicPreset.Socket = new ClassicPreset.Socket("scientific-evaluation");
+  saved.addOutput("value", new ClassicPreset.Output(candidateSocket, "Candidate ID"));
+  compute.addInput("candidate", new ClassicPreset.Input(candidateSocket, "Candidate ID"));
+  compute.addOutput("value", new ClassicPreset.Output(evaluationSocket, "Evaluation"));
+  result.addInput("evaluation", new ClassicPreset.Input(evaluationSocket, "Evaluation"));
+  const display: ClassicPreset.InputControl<"text"> = new ClassicPreset.InputControl("text", { readonly: true, initial: "Not evaluated" });
+  result.addControl("status", display);
+  compute.execute = async (inputs: Record<string, unknown[]>): Promise<Record<string, unknown>> => {
+    const id: unknown = inputs["candidate"]?.[0];
+    if (typeof id !== "string") throw new Error("Saved candidate is not connected");
+    return { value: await evaluate(id) };
+  };
+  result.execute = (inputs: Record<string, unknown[]>): Promise<Record<string, unknown>> => {
+    const evaluation: unknown = inputs["evaluation"]?.[0];
+    if (evaluation === undefined) throw new Error("Scientific evaluation is not connected");
+    return Promise.resolve({ value: evaluation });
+  };
+  const nodes: LandingNode[] = [saved, compute, result];
+  for (const node of nodes) { if (!active()) throw new Error("Graph setup cancelled"); await editor.addNode(node); }
+  for (const [source, target, key] of [[saved, compute, "candidate"], [compute, result, "evaluation"]] as const) {
+    if (!active()) throw new Error("Graph setup cancelled");
+    await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(source, "value", target, key));
+  }
+  return { nodes, saved, compute, result, display };
 }

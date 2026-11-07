@@ -211,6 +211,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates/{candidate_id}/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Candidate Evaluations */
+        get: operations["listCandidateEvaluations"];
+        put?: never;
+        /** Evaluate Candidate */
+        post: operations["evaluateCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/evaluations/{evaluation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Evaluation */
+        get: operations["getEvaluation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -374,6 +409,106 @@ export interface components {
             description: string;
             /** Url */
             url: string;
+        };
+        /** EvaluationInterval */
+        EvaluationInterval: {
+            /**
+             * Start Utc
+             * Format: date-time
+             */
+            start_utc: string;
+            /**
+             * End Utc
+             * Format: date-time
+             */
+            end_utc: string;
+            /** Duration Seconds */
+            duration_seconds: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** EvaluationOut */
+        EvaluationOut: {
+            /** Evaluation Id */
+            evaluation_id: string;
+            /** Candidate Id */
+            candidate_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "COMPUTED_UNVERIFIED" | "VALIDATED" | "UNAVAILABLE" | "ERROR";
+            request: components["schemas"]["EvaluationRequest"];
+            candidate: components["schemas"]["CandidateOut"];
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Warnings */
+            warnings: string[];
+            /** Errors */
+            errors: string[];
+            /**
+             * Horizon Azimuth Deg
+             * @default []
+             */
+            horizon_azimuth_deg: number[];
+            /**
+             * Horizon Elevation Deg
+             * @default []
+             */
+            horizon_elevation_deg: number[];
+            /**
+             * Samples
+             * @default []
+             */
+            samples: components["schemas"]["EvaluationSample"][];
+            /**
+             * Intervals
+             * @default {}
+             */
+            intervals: {
+                [key: string]: components["schemas"]["EvaluationInterval"][];
+            };
+        };
+        /** EvaluationRequest */
+        EvaluationRequest: {
+            /**
+             * Duration Hours
+             * @default 24
+             */
+            duration_hours: number;
+            /**
+             * Step Minutes
+             * @default 60
+             */
+            step_minutes: number;
+        };
+        /** EvaluationSample */
+        EvaluationSample: {
+            /**
+             * Time Utc
+             * Format: date-time
+             */
+            time_utc: string;
+            /** Sun Azimuth Deg */
+            sun_azimuth_deg: number;
+            /** Sun Elevation Deg */
+            sun_elevation_deg: number;
+            /** Sun Horizon Deg */
+            sun_horizon_deg: number;
+            /** Sun Visible */
+            sun_visible: boolean;
+            /** Earth Azimuth Deg */
+            earth_azimuth_deg: number;
+            /** Earth Elevation Deg */
+            earth_elevation_deg: number;
+            /** Earth Horizon Deg */
+            earth_horizon_deg: number;
+            /** Earth Visible */
+            earth_visible: boolean;
+            /** Simultaneous Visible */
+            simultaneous_visible: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -888,6 +1023,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listCandidateEvaluations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    evaluateCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvaluationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evaluation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvaluationOut"];
                 };
             };
             /** @description Validation Error */
