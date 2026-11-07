@@ -118,17 +118,22 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   // Persist identifiers only (debounced: playback moves the cursor many times per second).
   useEffect((): (() => void) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe: () => void = store.subscribe((): void => {
-      clearTimeout(timer);
-      timer = setTimeout((): void => {
+    const persist: () => void = (): void => {
+        clearTimeout(timer);
+        timer = undefined;
         const state: ExplorationState = store.getState();
         saveContext({ context: state.context, catalogAnalysisKey: state.catalog.analysisKey, catalogCursorUtc: state.catalog.cursorUtc });
         if (state.rootId === null || state.revisionId === null) return;
         saveSelection({ rootId: state.rootId, revisionId: state.revisionId,
           evaluationId: state.evaluation?.evaluation_id ?? null, cursorUtc: state.cursorUtc });
-      }, 300);
+    };
+    const unsubscribe: () => void = store.subscribe((): void => {
+      clearTimeout(timer);
+      timer = setTimeout(persist, 300);
     });
-    return (): void => { clearTimeout(timer); unsubscribe(); };
+    const flush: () => void = (): void => { if (timer !== undefined) persist(); };
+    window.addEventListener("pagehide", flush);
+    return (): void => { window.removeEventListener("pagehide", flush); clearTimeout(timer); unsubscribe(); };
   }, [store]);
   useEffect((): (() => void) => {
     const guard: SelectionGuard = candidateGuard.current;

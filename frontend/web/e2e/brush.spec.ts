@@ -81,6 +81,33 @@ test("draws, previews, evaluates and inspects a brush candidate", async ({ page,
   await expect(page.locator(".terrain-time")).toContainText("centre clearance");
   await expect(page.locator(".node-kind-result")).toContainText("cursor 2/2");
   await expect(page.getByRole("heading", { name: "Experiment results" })).toBeVisible();
+  // Persist the selected older evaluation and sample, then verify a genuine browser reload.
+  await expect.poll(async (): Promise<string | null> => page.evaluate((): string | null => {
+    const raw: string | null = localStorage.getItem("lunar-ops-selection");
+    return raw === null ? null : (JSON.parse(raw) as { evaluationId?: string }).evaluationId ?? null;
+  })).toBe(item.evaluation.evaluation_id);
+  const expectedUtc: string = /2026-\d\d-\d\d \d\d:\d\d UTC/.exec(await page.locator(".terrain-time").innerText())?.[0] ?? "";
+  expect(expectedUtc).not.toBe("");
+  const writes: string[] = [];
+  page.on("request", (r): void => { if (r.method() !== "GET" && new URL(r.url()).pathname.startsWith("/api/") && !r.url().endsWith("/api/analysis")) writes.push(r.url()); });
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Candidate evaluation/ })).toContainText(item.evaluation.evaluation_id.slice(0, 22));
+  await expect(page.locator(".terrain-time")).toContainText("stored sample 2/2");
+  await expect(page.locator(".terrain-time")).toContainText(expectedUtc);
+  await expect(page.locator(".node-kind-result")).toContainText("cursor 2/2");
+  const saved: { candidate_id: string; evaluation_id: string } = await (await request.get(`/api/evaluations/${item.evaluation.evaluation_id}`)).json() as { candidate_id: string; evaluation_id: string };
+  expect(saved.candidate_id).toBe(item.candidate.candidate_id);
+  expect(saved.evaluation_id).toBe(item.evaluation.evaluation_id);
+  expect(writes).toEqual([]);
+  // Reload in the same browser task as a timeline action, before the debounce can fire.
+  await page.evaluate((): void => {
+    const button: HTMLButtonElement | null = document.querySelector('.candidate-time-dock button[aria-label="Step back"]');
+    if (button === null) throw new Error("Timeline step control missing");
+    button.click();
+    window.location.reload();
+  });
+  await expect(page.locator(".terrain-time")).toContainText("stored sample 1/2");
+  await expect(page.getByRole("button", { name: /^Candidate evaluation/ })).toContainText(item.evaluation.evaluation_id.slice(0, 22));
 });
 
 test("@phone draws and clears a brush without creating a candidate", async ({ page, request }): Promise<void> => {

@@ -151,6 +151,78 @@ def test_real_brush_preview_execution_and_retry_are_isolated(
     assert after_retry["new_count"] == 0 and after_retry["existing_count"] == 1
     assert after_retry["preview_token"] == preview["preview_token"]
 
+    # Duration and step belong to the evaluation; location, time, height and DEM identify the C0.
+    temporal = {**definition, "duration_hours": 3}
+    temporal_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=temporal).json()
+    assert temporal_preview["existing_count"] == 1
+    assert temporal_preview["samples"][0]["candidate_id"] == item["candidate"]["candidate_id"]
+    temporal_body = {
+        "definition": temporal,
+        "preview_token": temporal_preview["preview_token"],
+        "confirmed": True,
+    }
+    temporal_result = client.post(
+        "/api/rois/shackleton-rim-b/brush/execute", json=temporal_body
+    ).json()["results"][0]
+    assert temporal_result["candidate"]["candidate_id"] == item["candidate"]["candidate_id"]
+    assert temporal_result["evaluation"]["evaluation_id"] != item["evaluation"]["evaluation_id"]
+    assert len(evaluation.list_for(item["candidate"]["candidate_id"])) == 2
+    finer = {**definition, "step_minutes": 30}
+    finer_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=finer).json()
+    assert finer_preview["existing_count"] == 1
+    finer_body = {
+        "definition": finer,
+        "preview_token": finer_preview["preview_token"],
+        "confirmed": True,
+    }
+    finer_result = client.post("/api/rois/shackleton-rim-b/brush/execute", json=finer_body).json()[
+        "results"
+    ][0]
+    assert finer_result["candidate"]["candidate_id"] == item["candidate"]["candidate_id"]
+    assert finer_result["evaluation"]["evaluation_id"] not in {
+        item["evaluation"]["evaluation_id"],
+        temporal_result["evaluation"]["evaluation_id"],
+    }
+    assert len(evaluation.list_for(item["candidate"]["candidate_id"])) == 3
+    # A filter is a judgment on the same stored science, not a new evaluation input.
+    filtered = {**definition, "constraints": {"min_sun_fraction": 1}}
+    filtered_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=filtered).json()
+    filtered_body = {
+        "definition": filtered,
+        "preview_token": filtered_preview["preview_token"],
+        "confirmed": True,
+    }
+    filtered_result = client.post(
+        "/api/rois/shackleton-rim-b/brush/execute", json=filtered_body
+    ).json()["results"][0]
+    assert filtered_result["evaluation"]["evaluation_id"] == item["evaluation"]["evaluation_id"]
+    assert len(evaluation.list_for(item["candidate"]["candidate_id"])) == 3
+    equivalent = {**definition, "start_utc": "2026-11-07T02:00:00+02:00"}
+    equivalent_preview = client.post(
+        "/api/rois/shackleton-rim-b/brush/preview", json=equivalent
+    ).json()
+    assert equivalent_preview["existing_count"] == 1
+    assert equivalent_preview["samples"][0]["candidate_id"] == item["candidate"]["candidate_id"]
+    later = {**definition, "start_utc": "2026-11-08T00:00:00Z"}
+    later_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=later).json()
+    assert later_preview["new_count"] == 1
+    assert later_preview["samples"][0]["candidate_id"] != item["candidate"]["candidate_id"]
+
+    # A forced same-ID, different-payload collision cannot change either persisted snapshot.
+    original_candidate = candidate_store.get(item["candidate"]["candidate_id"])
+    original_evaluation = evaluation.get(item["evaluation"]["evaluation_id"])
+    assert original_candidate is not None and original_evaluation is not None
+    assert original_evaluation.candidate == original_candidate
+    assert (
+        original_evaluation.provenance["near_sha256"] == original_candidate.terrain_dataset_sha256
+    )
+    with pytest.raises(ValueError, match="candidate identity collision"):
+        candidate_store.save(original_candidate.model_copy(update={"observer_height_m": 99}))
+    with pytest.raises(ValueError, match="evaluation identity collision"):
+        evaluation.save(original_evaluation.model_copy(update={"candidate_id": "different"}))
+    assert candidate_store.get(original_candidate.candidate_id) == original_candidate
+    assert evaluation.get(original_evaluation.evaluation_id) == original_evaluation
+
     # A failure after saving a new C0 is explicit; retry reuses that C0 and saves its result.
     changed = {**definition, "observer_height_m": 4}
     second_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=changed).json()
@@ -250,6 +322,93 @@ def test_real_brush_preview_execution_and_retry_are_isolated(
     assert all(r["verdict"] == "PASS" for r in completed)
     assert len(candidate_store.roots("shackleton-rim-b")) == 7
     assert all(len(evaluation.list_for(r["candidate"]["candidate_id"])) == 1 for r in completed)
+
+    # Simulate an abrupt process interruption after the first committed evaluation and
+    # the second committed candidate. Retrying the same preview must complete safely.
+    from clps_api.schemas import BrushDefinition
+
+    interrupted_definition = {**multiple, "observer_height_m": 7}
+    interrupted_preview = client.post(
+        "/api/rois/shackleton-rim-b/brush/preview", json=interrupted_definition
+    ).json()
+    parsed = BrushDefinition.model_validate(interrupted_definition)
+    calls = 0
+
+    class AbruptInterruption(BaseException):
+        pass
+
+    def interrupted(c: CandidateOut, req: EvaluationRequest) -> EvaluationOut:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise AbruptInterruption()
+        return original_compute(c, req)
+
+    monkeypatch.setattr(evaluation, "compute", interrupted)
+    with pytest.raises(AbruptInterruption):
+        brush.execute(parsed, interrupted_preview["preview_token"])
+    first_id = interrupted_preview["samples"][0]["candidate_id"]
+    second_id = interrupted_preview["samples"][1]["candidate_id"]
+    assert candidate_store.get(first_id) is not None and candidate_store.get(second_id) is not None
+    assert len(evaluation.list_for(first_id)) == 1 and evaluation.list_for(second_id) == []
+    assert len(candidate_store.roots("shackleton-rim-b")) == 9
+    monkeypatch.setattr(evaluation, "compute", original_compute)
+    resumed = brush.execute(parsed, interrupted_preview["preview_token"])
+    assert all(r.verdict == "PASS" and r.persisted for r in resumed.results)
+    assert len(candidate_store.roots("shackleton-rim-b")) == 11
+    assert all(len(evaluation.list_for(s.candidate_id or "")) == 1 for s in resumed.preview.samples)
+
+    # Two simultaneous retries of the same approved definition must converge on one
+    # candidate and one evaluation, even when both start before either has saved.
+    from concurrent.futures import ThreadPoolExecutor
+
+    concurrent_definition = {**definition, "observer_height_m": 8}
+    concurrent_preview = client.post(
+        "/api/rois/shackleton-rim-b/brush/preview", json=concurrent_definition
+    ).json()
+    concurrent_parsed = BrushDefinition.model_validate(concurrent_definition)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(brush.execute, concurrent_parsed, concurrent_preview["preview_token"])
+            for _ in range(2)
+        ]
+        concurrent_results = [future.result().results[0] for future in futures]
+    assert all(r.verdict == "PASS" and r.persisted for r in concurrent_results)
+    assert (
+        concurrent_results[0].candidate is not None and concurrent_results[1].candidate is not None
+    )
+    assert (
+        concurrent_results[0].evaluation is not None
+        and concurrent_results[1].evaluation is not None
+    )
+    assert (
+        concurrent_results[0].candidate.candidate_id == concurrent_results[1].candidate.candidate_id
+    )
+    assert (
+        concurrent_results[0].evaluation.evaluation_id
+        == concurrent_results[1].evaluation.evaluation_id
+    )
+    assert len(candidate_store.roots("shackleton-rim-b")) == 12
+    assert len(evaluation.list_for(concurrent_results[0].candidate.candidate_id)) == 1
+
+    # Changing only the DEM window identity must not reuse the old C0.
+    import shutil
+
+    from lunar_core.terrain import TerrainGrid
+
+    alternate_dir = tmp_path / "alternate-terrain"
+    alternate_dir.mkdir()
+    copied_near, copied_far = terrain_files(alternate_dir, "shackleton-rim-b")
+    shutil.copy2(near, copied_near)
+    shutil.copy2(far, copied_far)
+    changed_grid = TerrainGrid.load(copied_near)
+    changed_grid.heights[0, 0] += 1
+    changed_grid.save(copied_near)
+    monkeypatch.setattr(terrain_store, "terrain_dir", lambda: alternate_dir)
+    changed_dem = client.post("/api/rois/shackleton-rim-b/brush/preview", json=definition).json()
+    assert changed_dem["new_count"] == 1
+    assert changed_dem["samples"][0]["elevation_m"] == preview["samples"][0]["elevation_m"]
+    assert changed_dem["samples"][0]["candidate_id"] != item["candidate"]["candidate_id"]
 
 
 def test_constraint_verdict_uses_inclusive_thresholds():
