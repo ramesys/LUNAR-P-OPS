@@ -6,11 +6,13 @@ import math
 from datetime import timedelta
 from typing import Literal
 
-from lunar_core.roi import ROIS
+from lunar_core.roi import ROIS, local_frame
+from lunar_core.terrain import polar_stereographic_south_inverse
 from lunar_core.windows import build_windows
 
 from clps_api import candidate, candidate_store, evaluation
 from clps_api.schemas import (
+    BrushConstraints,
     BrushDefinition,
     BrushExecutionOut,
     BrushMetrics,
@@ -167,12 +169,29 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
                 )
             )
         except (ValueError, FileNotFoundError) as exc:
+            roi = ROIS["shackleton-rim-b"]
+            frame = local_frame(roi.center_latitude_deg, roi.center_longitude_deg)
+            lat, lon = polar_stereographic_south_inverse(*frame.to_projected(east, north))
             samples.append(
-                BrushSampleOut(east_m=east, north_m=north, status="UNAVAILABLE", error=str(exc))
+                BrushSampleOut(
+                    east_m=east,
+                    north_m=north,
+                    latitude_deg=float(lat),
+                    longitude_deg=float(lon),
+                    status="UNAVAILABLE",
+                    error=str(exc),
+                )
             )
+    existing = candidate_store.existing_ids(
+        [s.candidate_id for s in samples if s.candidate_id is not None]
+    )
+    samples = [
+        s.model_copy(update={"already_persisted": s.candidate_id in existing}) for s in samples
+    ]
+    # Existence can change after preview; retries retain the same scientific identity.
     identity = {
         "definition": definition.model_dump(mode="json"),
-        "samples": [s.model_dump(mode="json") for s in samples],
+        "samples": [s.model_dump(mode="json", exclude={"already_persisted"}) for s in samples],
     }
     token = hashlib.sha256(
         json.dumps(identity, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -186,9 +205,27 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
         tolerance_m=TOLERANCE_M,
         samples=samples,
         ready_count=sum(s.status == "READY" for s in samples),
+        new_count=sum(s.status == "READY" and not s.already_persisted for s in samples),
+        existing_count=sum(s.status == "READY" and s.already_persisted for s in samples),
         temporal_samples_per_point=per_point,
         estimated_total_samples=per_point * len(points),
         preview_token=token,
+    )
+
+
+def meets_constraints(metrics: BrushMetrics, rules: BrushConstraints) -> bool:
+    return (
+        metrics.sun_fraction >= rules.min_sun_fraction
+        and metrics.earth_fraction >= rules.min_earth_fraction
+        and metrics.simultaneous_fraction >= rules.min_simultaneous_fraction
+        and (
+            rules.max_darkness_hours is None
+            or metrics.longest_darkness_hours <= rules.max_darkness_hours
+        )
+        and (
+            rules.max_earth_gap_hours is None
+            or metrics.longest_earth_gap_hours <= rules.max_earth_gap_hours
+        )
     )
 
 
@@ -224,21 +261,7 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
             if metrics is None:
                 verdict = "UNAVAILABLE" if result.status == "UNAVAILABLE" else "ERROR"
             else:
-                rules = definition.constraints
-                passed = (
-                    metrics.sun_fraction >= rules.min_sun_fraction
-                    and metrics.earth_fraction >= rules.min_earth_fraction
-                    and metrics.simultaneous_fraction >= rules.min_simultaneous_fraction
-                    and (
-                        rules.max_darkness_hours is None
-                        or metrics.longest_darkness_hours <= rules.max_darkness_hours
-                    )
-                    and (
-                        rules.max_earth_gap_hours is None
-                        or metrics.longest_earth_gap_hours <= rules.max_earth_gap_hours
-                    )
-                )
-                verdict = "PASS" if passed else "FAIL"
+                verdict = "PASS" if meets_constraints(metrics, definition.constraints) else "FAIL"
             if definition.retention == "passing" and verdict == "PASS":
                 saved = candidate_store.save(c)
             if saved is not None:

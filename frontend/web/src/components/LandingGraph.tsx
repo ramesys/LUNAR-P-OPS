@@ -111,11 +111,12 @@ interface LandingGraphProps {
   candidate: Candidate;
   /** Committed revision (C0 or a C1) chosen in the app-level selection. */
   selectedRevisionId: string;
+  preferredEvaluation?: { evaluationId: string; sequence: number } | null;
   onSelectRevision: (revision: Candidate) => void;
   mode: Mode;
 }
 
-export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelectRevision, mode }: LandingGraphProps): JSX.Element {
+export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelectRevision, mode, preferredEvaluation = null }: LandingGraphProps): JSX.Element {
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const [preview, setPreview] = useState<CandidatePreview | null>(null);
   const [expanded, setExpanded] = useState<boolean>(false);
@@ -348,7 +349,8 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       if (disposed) return;
       // Restore the evaluation inspected before reload (read-only; falls back to the latest).
       const saved: ReturnType<typeof loadSelection> = loadSelection();
-      if (saved?.rootId === candidate.candidate_id && typeof saved.evaluationId === "string") science.compute.prefer(saved.revisionId, saved.evaluationId);
+      if (preferredEvaluation !== null) science.compute.prefer(candidate.candidate_id, preferredEvaluation.evaluationId);
+      else if (saved?.rootId === candidate.candidate_id && typeof saved.evaluationId === "string") science.compute.prefer(saved.revisionId, saved.evaluationId);
       graphRef.current = { engine, area, landing: built, science, refresh };
       setContracts([...built.nodes, ...science.nodes]);
       for (const [index, node] of built.nodes.entries()) {
@@ -379,6 +381,10 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       return undefined;
     }
     let active: boolean = true;
+    if (preferredEvaluation !== null && selected.candidate_id === candidate.candidate_id) {
+      graph.science.compute.prefer(selected.candidate_id, preferredEvaluation.evaluationId);
+      graph.engine.reset(graph.science.compute.id);
+    }
     applyDraft(graph, { observer_height_m: selected.observer_height_m, selected_time_utc: selected.selected_time_utc });
     void selectOutput(graph, selected).then(async (current: boolean): Promise<void> => {
       if (!current || !active) return;
@@ -390,7 +396,7 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     return (): void => { active = false; };
     // selectOutput/showOutcome read refs; rerun only when the selection or graph changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphReady, selectedId, children, childrenLoaded]);
+  }, [graphReady, selectedId, children, childrenLoaded, preferredEvaluation]);
 
   const active: ScientificEvaluation | null = selected === null ? null : selected.candidate_id === candidate.candidate_id ? c0Result : c1Result;
   // Publish the selected revision's displayed (persisted) evaluation as the shared active one.

@@ -406,6 +406,7 @@ class BrushSampleOut(BaseModel):
     elevation_m: float | None = None
     candidate_id: str | None = None
     status: Literal["READY", "UNAVAILABLE"]
+    already_persisted: bool = False
     error: str | None = None
 
 
@@ -416,6 +417,8 @@ class BrushPreviewOut(BaseModel):
     tolerance_m: float
     samples: list[BrushSampleOut]
     ready_count: int
+    new_count: int
+    existing_count: int
     temporal_samples_per_point: int
     estimated_total_samples: int
     preview_token: str

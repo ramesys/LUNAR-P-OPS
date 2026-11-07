@@ -211,6 +211,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rois/{roi_id}/brush/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Brush */
+        post: operations["previewBrush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rois/{roi_id}/brush/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute Brush */
+        post: operations["executeBrush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rois/{roi_id}/candidates": {
         parameters: {
             query?: never;
@@ -447,6 +481,199 @@ export interface components {
             elevation_deg: number[];
             /** Horizon Deg */
             horizon_deg: number[];
+        };
+        /** BrushConstraints */
+        BrushConstraints: {
+            /**
+             * Min Sun Fraction
+             * @default 0
+             */
+            min_sun_fraction: number;
+            /**
+             * Min Earth Fraction
+             * @default 0
+             */
+            min_earth_fraction: number;
+            /**
+             * Min Simultaneous Fraction
+             * @default 0
+             */
+            min_simultaneous_fraction: number;
+            /** Max Darkness Hours */
+            max_darkness_hours?: number | null;
+            /** Max Earth Gap Hours */
+            max_earth_gap_hours?: number | null;
+        };
+        /** BrushDefinition */
+        BrushDefinition: {
+            /** Polygon */
+            polygon: components["schemas"]["BrushPoint"][];
+            /**
+             * Spacing M
+             * @default 100
+             */
+            spacing_m: number;
+            /**
+             * Max Points
+             * @default 16
+             */
+            max_points: number;
+            /**
+             * Observer Height M
+             * @default 3
+             */
+            observer_height_m: number;
+            /**
+             * Start Utc
+             * Format: date-time
+             */
+            start_utc: string;
+            /**
+             * Duration Hours
+             * @default 168
+             */
+            duration_hours: number;
+            /**
+             * Step Minutes
+             * @default 60
+             */
+            step_minutes: number;
+            /**
+             * @default {
+             *       "min_sun_fraction": 0,
+             *       "min_earth_fraction": 0,
+             *       "min_simultaneous_fraction": 0
+             *     }
+             */
+            constraints: components["schemas"]["BrushConstraints"];
+            /**
+             * Retention
+             * @default all
+             * @enum {string}
+             */
+            retention: "all" | "passing";
+        };
+        /** BrushExecuteRequest */
+        BrushExecuteRequest: {
+            definition: components["schemas"]["BrushDefinition"];
+            /** Preview Token */
+            preview_token: string;
+            /**
+             * Confirmed
+             * @constant
+             */
+            confirmed: true;
+        };
+        /** BrushExecutionOut */
+        BrushExecutionOut: {
+            /**
+             * Schema Version
+             * @default lunar-ops-brush/1
+             * @constant
+             */
+            schema_version: "lunar-ops-brush/1";
+            preview: components["schemas"]["BrushPreviewOut"];
+            /** Results */
+            results: components["schemas"]["BrushResultOut"][];
+            /** Notes */
+            notes: string[];
+        };
+        /** BrushMetrics */
+        BrushMetrics: {
+            /** Sample Count */
+            sample_count: number;
+            /** Duration Hours */
+            duration_hours: number;
+            /** Sun Fraction */
+            sun_fraction: number;
+            /** Earth Fraction */
+            earth_fraction: number;
+            /** Simultaneous Fraction */
+            simultaneous_fraction: number;
+            /** Longest Darkness Hours */
+            longest_darkness_hours: number;
+            /** Longest Earth Gap Hours */
+            longest_earth_gap_hours: number;
+        };
+        /** BrushPoint */
+        BrushPoint: {
+            /** East M */
+            east_m: number;
+            /** North M */
+            north_m: number;
+        };
+        /** BrushPreviewOut */
+        BrushPreviewOut: {
+            definition: components["schemas"]["BrushDefinition"];
+            /** Coordinate Reference */
+            coordinate_reference: string;
+            /** Alignment */
+            alignment: string;
+            /** Tolerance M */
+            tolerance_m: number;
+            /** Samples */
+            samples: components["schemas"]["BrushSampleOut"][];
+            /** Ready Count */
+            ready_count: number;
+            /** New Count */
+            new_count: number;
+            /** Existing Count */
+            existing_count: number;
+            /** Temporal Samples Per Point */
+            temporal_samples_per_point: number;
+            /** Estimated Total Samples */
+            estimated_total_samples: number;
+            /** Preview Token */
+            preview_token: string;
+        };
+        /** BrushResultOut */
+        BrushResultOut: {
+            sample: components["schemas"]["BrushSampleOut"];
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED";
+            metrics?: components["schemas"]["BrushMetrics"] | null;
+            candidate?: components["schemas"]["CandidateOut"] | null;
+            evaluation?: components["schemas"]["EvaluationOut"] | null;
+            /**
+             * Persisted
+             * @default false
+             */
+            persisted: boolean;
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
+        };
+        /** BrushSampleOut */
+        BrushSampleOut: {
+            /** East M */
+            east_m: number;
+            /** North M */
+            north_m: number;
+            /** Latitude Deg */
+            latitude_deg?: number | null;
+            /** Longitude Deg */
+            longitude_deg?: number | null;
+            /** Elevation M */
+            elevation_m?: number | null;
+            /** Candidate Id */
+            candidate_id?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "READY" | "UNAVAILABLE";
+            /**
+             * Already Persisted
+             * @default false
+             */
+            already_persisted: boolean;
+            /** Error */
+            error?: string | null;
         };
         /** CandidateEvolutionRequest */
         CandidateEvolutionRequest: {
@@ -1460,6 +1687,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    previewBrush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrushDefinition"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrushPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    executeBrush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrushExecuteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrushExecutionOut"];
+                };
             };
             /** @description Validation Error */
             422: {

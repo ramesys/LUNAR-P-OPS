@@ -1,4 +1,5 @@
 import type { Candidate, RegionalTerrain, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
+import type { BrushOverlay, BrushVerdict } from "../lib/brushTypes.ts";
 import { formatUtc } from "../lib/format.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import {
@@ -47,6 +48,7 @@ export interface RoiTerrain3DProps {
   selectedId: string | null;
   onPick: (point: LocalPoint) => void;
   onSelectMarker: (candidateId: string) => void;
+  brush?: BrushOverlay;
   /** Active stored evaluation and the inspected sample index (display only). */
   temporal?: { evaluation: ScientificEvaluation; index: number } | null;
   /** Unsaved observer height of the active candidate, shown as a preview label only. */
@@ -62,6 +64,7 @@ interface SceneParts {
   markers: Group;
   overlay: Group;
   bodies: Group;
+  brush: Group;
   light: DirectionalLight;
   ambient: AmbientLight;
 }
@@ -121,7 +124,8 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   scene.add(bodies);
   const markers: Group = new Group();
   const overlay: Group = new Group();
-  scene.add(markers, overlay);
+  const brush: Group = new Group();
+  scene.add(markers, overlay, brush);
   const controls: OrbitControls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
@@ -129,7 +133,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   controls.minDistance = 0.2;
   controls.maxDistance = 80;
   controls.update();
-  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, light, ambient };
+  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, brush, light, ambient };
 }
 
 function applyHeights(parts: SceneParts, terrain: RoiTerrain, exaggeration: number): void {
@@ -199,6 +203,49 @@ function drawMarkers(parts: SceneParts, terrain: RoiTerrain, candidates: Candida
     marker.traverse((object: Object3D): void => { object.userData["candidateId"] = candidate.candidate_id; });
     parts.markers.add(marker);
   }
+}
+
+
+const BRUSH_COLORS: Record<BrushVerdict, string> = {
+  PASS: "#5ee3a3", FAIL: "#ff856e", UNAVAILABLE: "#bca8ff", ERROR: "#ff4874", NOT_EVALUATED: "#72d8ed",
+};
+
+/** Brush geometry uses the active DEM surface for display; all plan coordinates stay in ROI metres. */
+function drawBrush(parts: SceneParts, terrain: RoiTerrain, exaggeration: number, brush: BrushOverlay | undefined): void {
+  for (const child of [...parts.brush.children]) { disposeObject(child); parts.brush.remove(child); }
+  if (brush === undefined) return;
+  const scale: number = terrain.roi.half_width_m > 2000 ? 2.5 : 1;
+  const linePoints: number[] = [];
+  const vertices: LocalPoint[] = brush.vertices;
+  const segmentCount: number = brush.closed ? vertices.length : Math.max(0, vertices.length - 1);
+  for (let index: number = 0; index < segmentCount; index++) {
+    const a: LocalPoint | undefined = vertices[index];
+    const b: LocalPoint | undefined = vertices[(index + 1) % vertices.length];
+    if (a === undefined || b === undefined) continue;
+    const count: number = Math.max(1, Math.ceil(Math.hypot(b.east_m - a.east_m, b.north_m - a.north_m) / terrain.spacing_m));
+    for (let step: number = 0; step < count; step++) {
+      const point: (t: number) => LocalPoint = (t: number): LocalPoint => ({ east_m: a.east_m + (b.east_m - a.east_m) * t,
+        north_m: a.north_m + (b.north_m - a.north_m) * t });
+      const p: LocalPoint = point(step / count);
+      const q: LocalPoint = point((step + 1) / count);
+      if (displayElevation(terrain, p) === null || displayElevation(terrain, q) === null) continue;
+      linePoints.push(p.east_m / 1000, heightKm(terrain, p, exaggeration) + 0.025 * scale, -p.north_m / 1000,
+        q.east_m / 1000, heightKm(terrain, q, exaggeration) + 0.025 * scale, -q.north_m / 1000);
+    }
+  }
+  if (linePoints.length > 0) {
+    const geometry: BufferGeometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(linePoints), 3));
+    parts.brush.add(new LineSegments(geometry, new LineBasicMaterial({ color: "#f7d472", depthTest: false })));
+  }
+  function dot(point: LocalPoint, color: string, radius: number, key: string, index: number): void {
+    if (displayElevation(terrain, point) === null) return;
+    const marker: Mesh = new Mesh(new SphereGeometry(radius * scale, 12, 8), new MeshBasicMaterial({ color, depthTest: false }));
+    marker.position.set(point.east_m / 1000, heightKm(terrain, point, exaggeration) + 0.045 * scale, -point.north_m / 1000);
+    marker.userData[key] = index; marker.renderOrder = 4; parts.brush.add(marker);
+  }
+  vertices.forEach((point: LocalPoint, index: number): void => { dot(point, "#f7d472", 0.045, "brushVertex", index); });
+  brush.samples.forEach((point): void => { dot(point, BRUSH_COLORS[point.verdict], 0.04, "brushSample", point.index); });
 }
 
 
@@ -347,7 +394,7 @@ function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: Scientif
   }
 }
 
-export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId, onPick, onSelectMarker, temporal = null, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
+export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId, onPick, onSelectMarker, temporal = null, brush, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
   const hostRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const canvasRef: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const partsRef: RefObject<SceneParts | null> = useRef<SceneParts | null>(null);
@@ -374,6 +421,8 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
   const evaluation: ScientificEvaluation | null = temporal?.evaluation ?? null;
   const sample: Sample | undefined = temporal === null ? undefined : evaluation?.samples[temporal.index];
   const builds: RefObject<number> = useRef<number>(0);
+  const brushRef: RefObject<BrushOverlay | undefined> = useRef<BrushOverlay | undefined>(brush);
+  useEffect((): void => { brushRef.current = brush; }, [brush]);
 
   useEffect((): void => { callbacks.current = { onPick, onSelectMarker }; }, [onPick, onSelectMarker]);
 
@@ -409,17 +458,35 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
     parts.controls.addEventListener("change", onChange);
     const canvas: HTMLCanvasElement = parts.renderer.domElement;
     let down: { x: number; y: number } | null = null;
-    const onDown: (event: PointerEvent) => void = (event: PointerEvent): void => { down = { x: event.clientX, y: event.clientY }; };
+    let dragging: number | null = null;
+    function pointer(event: PointerEvent): Vector2 {
+      const rect: DOMRect = canvas.getBoundingClientRect();
+      return new Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    }
+    const onDown: (event: PointerEvent) => void = (event: PointerEvent): void => {
+      down = { x: event.clientX, y: event.clientY };
+      if (brushRef.current?.mode !== "edit") return;
+      const ray: Raycaster = new Raycaster(); ray.setFromCamera(pointer(event), parts.camera);
+      const vertex: unknown = ray.intersectObject(parts.brush, true).find((hit): boolean => typeof hit.object.userData["brushVertex"] === "number")?.object.userData["brushVertex"];
+      if (typeof vertex === "number") { dragging = vertex; parts.controls.enabled = false; canvas.setPointerCapture(event.pointerId); }
+    };
     const onUp: (event: PointerEvent) => void = (event: PointerEvent): void => {
-      if (down === null || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
+      if (dragging !== null) { dragging = null; parts.controls.enabled = true; down = null; return; }
+      if (down === null || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) { down = null; return; }
       down = null;
       const rect: DOMRect = canvas.getBoundingClientRect();
       const mouse: Vector2 = new Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1);
       const ray: Raycaster = new Raycaster();
       ray.setFromCamera(mouse, parts.camera);
-      const marker: unknown = ray.intersectObject(parts.markers, true)[0]?.object.userData["candidateId"];
-      if (typeof marker === "string") { callbacks.current.onSelectMarker(marker); return; }
+      const activeBrush: BrushOverlay | undefined = brushRef.current;
+      if (activeBrush?.mode === "edit") return;
+      if (activeBrush?.mode !== "draw") {
+        const sample: unknown = ray.intersectObject(parts.brush, true).find((hit): boolean => typeof hit.object.userData["brushSample"] === "number")?.object.userData["brushSample"];
+        if (typeof sample === "number") { activeBrush?.onSelect(sample); return; }
+        const marker: unknown = ray.intersectObject(parts.markers, true)[0]?.object.userData["candidateId"];
+        if (typeof marker === "string") { callbacks.current.onSelectMarker(marker); return; }
+      }
       const hit: TerrainPick | null = pickTerrain(parts.camera, parts.terrain, mouse);
       if (hit !== null) {
         if (Math.abs(hit.east_m) > terrain.roi.half_width_m || Math.abs(hit.north_m) > terrain.roi.half_width_m) {
@@ -427,12 +494,21 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
           return;
         }
         setPickNotice(null);
-        callbacks.current.onPick({ east_m: hit.east_m, north_m: hit.north_m });
+        const point: LocalPoint = { east_m: hit.east_m, north_m: hit.north_m };
+        if (activeBrush?.mode === "draw") activeBrush.onAdd(point);
+        else callbacks.current.onPick(point);
       }
     };
     let frame: number = 0;
     let pending: PointerEvent | null = null;
     const onMove: (event: PointerEvent) => void = (event: PointerEvent): void => {
+      if (dragging !== null) {
+        const hit: TerrainPick | null = pickTerrain(parts.camera, parts.terrain, pointer(event));
+        if (hit !== null && Math.abs(hit.east_m) <= terrain.roi.half_width_m && Math.abs(hit.north_m) <= terrain.roi.half_width_m) {
+          brushRef.current?.onMove(dragging, { east_m: hit.east_m, north_m: hit.north_m });
+        }
+        return;
+      }
       pending = event;
       if (frame !== 0) return;
       frame = requestAnimationFrame((): void => {
@@ -449,12 +525,15 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
       });
     };
     const onLeave: () => void = (): void => { pending = null; setHover(null); };
+    const onCancel: () => void = (): void => { dragging = null; down = null; parts.controls.enabled = true; };
+    canvas.addEventListener("pointercancel", onCancel);
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointerup", onUp);
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerleave", onLeave);
     return (): void => {
       cancelAnimationFrame(frame);
+      canvas.removeEventListener("pointercancel", onCancel);
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointermove", onMove);
@@ -500,6 +579,13 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
     drawMarkers(parts, displayTerrain, candidates, selectedId, exaggeration);
     renderRef.current();
   }, [displayTerrain, candidates, selectedId, exaggeration, failed]);
+
+  useEffect((): void => {
+    const parts: SceneParts | null = partsRef.current;
+    if (parts === null) return;
+    drawBrush(parts, displayTerrain, exaggeration, brush);
+    renderRef.current();
+  }, [displayTerrain, exaggeration, brush, failed]);
 
   // The timeline cursor moves only these display objects; the camera and the scene stay as they are.
   useEffect((): void => {
@@ -558,8 +644,8 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
             <span className="muted">Candidate evaluation context · {evaluation.evaluation_id.slice(0, 22)}…</span>
             <span><strong>{formatUtc(sample.time_utc)}</strong> · stored sample {((temporal?.index ?? 0) + 1).toString()}/{evaluation.samples.length.toString()} (every {evaluation.request.step_minutes.toString()} min)</span>
             <span>Observer: {evaluation.candidate.observer_height_m.toFixed(1)} m above terrain (saved)</span>
-            <span><span className="sun-text">Sun</span> az {sample.sun_azimuth_deg.toFixed(1)}° · elevation {sample.sun_elevation_deg.toFixed(2)}° vs horizon {sample.sun_horizon_deg.toFixed(2)}° → <strong>{sample.sun_visible ? "visible" : "blocked"}</strong></span>
-            <span><span className="earth-text">Earth</span> az {sample.earth_azimuth_deg.toFixed(1)}° · elevation {sample.earth_elevation_deg.toFixed(2)}° vs horizon {sample.earth_horizon_deg.toFixed(2)}° → <strong>{sample.earth_visible ? "in view" : "blocked"}</strong></span>
+            <span><span className="sun-text">Sun</span> az {sample.sun_azimuth_deg.toFixed(1)}° · elevation {sample.sun_elevation_deg.toFixed(2)}° vs horizon {sample.sun_horizon_deg.toFixed(2)}° · centre clearance {(sample.sun_elevation_deg - sample.sun_horizon_deg).toFixed(2)}° → <strong>{sample.sun_visible ? "visible" : "blocked"}</strong></span>
+            <span><span className="earth-text">Earth</span> az {sample.earth_azimuth_deg.toFixed(1)}° · elevation {sample.earth_elevation_deg.toFixed(2)}° vs horizon {sample.earth_horizon_deg.toFixed(2)}° · centre clearance {(sample.earth_elevation_deg - sample.earth_horizon_deg).toFixed(2)}° → <strong>{sample.earth_visible ? "in view" : "blocked"}</strong></span>
           </>}
           {draftHeightM !== null && draftHeightM !== evaluation.candidate.observer_height_m && <span className="draft-text">Draft observer height {draftHeightM.toString()} m (unsaved; result above is for {evaluation.candidate.observer_height_m.toString()} m)</span>}
         </div>}
@@ -597,7 +683,7 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
         Grid lines every {isRegional ? "5" : "1"} km; {isRegional && "Select Regional explore again to reset its view. "} {isRegional && "Gold outline: supported 4 km candidate study area. Regional terrain is display only; click within the outline to create a candidate. "} <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
         {sample !== undefined && <>White pin: evaluated observer (symbolic height). Orange Sun and blue Earth rays show stored directions; solid/filled means visible, dashed/open means blocked.
           Azimuths are measured clockwise from north at the candidate. Fine coloured dashed lines and small rings show the stored horizon angle in each body's direction; grey dashed lines mark the local horizontal. These are angular guides, not distant terrain or body distances.
-          Visibility uses the stored 200 km terrain horizon; the Sun's upper limb and Earth's centre are tested. </>}
+          Clearance is centre elevation minus stored horizon; visibility uses the stored 200 km horizon and tests the Sun's upper limb and Earth's centre. </>}
         {sunLighting && sample !== undefined ? "Sun lighting and shadows cover only the displayed mesh and do not represent distant occlusion." : "Lighting is fixed for relief and is not the Sun."}
         {" "}The two scales switch between separate LOLA grids; surface and marker heights can differ between resolutions.
         {" "}Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.

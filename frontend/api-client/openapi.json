@@ -389,6 +389,104 @@
         }
       }
     },
+    "/api/rois/{roi_id}/brush/preview": {
+      "post": {
+        "summary": "Preview Brush",
+        "operationId": "previewBrush",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrushDefinition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrushPreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rois/{roi_id}/brush/execute": {
+      "post": {
+        "summary": "Execute Brush",
+        "operationId": "executeBrush",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrushExecuteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrushExecutionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rois/{roi_id}/candidates": {
       "post": {
         "summary": "Create Roi Candidate",
@@ -1023,6 +1121,480 @@
         ],
         "title": "BodySeries",
         "description": "Columnar series aligned with `AnalysisResponse.times`."
+      },
+      "BrushConstraints": {
+        "properties": {
+          "min_sun_fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Sun Fraction",
+            "default": 0
+          },
+          "min_earth_fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Earth Fraction",
+            "default": 0
+          },
+          "min_simultaneous_fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Simultaneous Fraction",
+            "default": 0
+          },
+          "max_darkness_hours": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 168.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Darkness Hours"
+          },
+          "max_earth_gap_hours": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 168.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Earth Gap Hours"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BrushConstraints"
+      },
+      "BrushDefinition": {
+        "properties": {
+          "polygon": {
+            "items": {
+              "$ref": "#/components/schemas/BrushPoint"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 3,
+            "title": "Polygon"
+          },
+          "spacing_m": {
+            "type": "number",
+            "maximum": 4000.0,
+            "minimum": 20.0,
+            "title": "Spacing M",
+            "default": 100
+          },
+          "max_points": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Points",
+            "default": 16
+          },
+          "observer_height_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Observer Height M",
+            "default": 3
+          },
+          "start_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Utc"
+          },
+          "duration_hours": {
+            "type": "number",
+            "maximum": 168.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Hours",
+            "default": 168
+          },
+          "step_minutes": {
+            "type": "integer",
+            "maximum": 360.0,
+            "minimum": 1.0,
+            "title": "Step Minutes",
+            "default": 60
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/BrushConstraints",
+            "default": {
+              "min_sun_fraction": 0.0,
+              "min_earth_fraction": 0.0,
+              "min_simultaneous_fraction": 0.0
+            }
+          },
+          "retention": {
+            "type": "string",
+            "enum": [
+              "all",
+              "passing"
+            ],
+            "title": "Retention",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "polygon",
+          "start_utc"
+        ],
+        "title": "BrushDefinition"
+      },
+      "BrushExecuteRequest": {
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/BrushDefinition"
+          },
+          "preview_token": {
+            "type": "string",
+            "title": "Preview Token"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "definition",
+          "preview_token",
+          "confirmed"
+        ],
+        "title": "BrushExecuteRequest"
+      },
+      "BrushExecutionOut": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "lunar-ops-brush/1",
+            "title": "Schema Version",
+            "default": "lunar-ops-brush/1"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/BrushPreviewOut"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BrushResultOut"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview",
+          "results",
+          "notes"
+        ],
+        "title": "BrushExecutionOut"
+      },
+      "BrushMetrics": {
+        "properties": {
+          "sample_count": {
+            "type": "integer",
+            "title": "Sample Count"
+          },
+          "duration_hours": {
+            "type": "number",
+            "title": "Duration Hours"
+          },
+          "sun_fraction": {
+            "type": "number",
+            "title": "Sun Fraction"
+          },
+          "earth_fraction": {
+            "type": "number",
+            "title": "Earth Fraction"
+          },
+          "simultaneous_fraction": {
+            "type": "number",
+            "title": "Simultaneous Fraction"
+          },
+          "longest_darkness_hours": {
+            "type": "number",
+            "title": "Longest Darkness Hours"
+          },
+          "longest_earth_gap_hours": {
+            "type": "number",
+            "title": "Longest Earth Gap Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample_count",
+          "duration_hours",
+          "sun_fraction",
+          "earth_fraction",
+          "simultaneous_fraction",
+          "longest_darkness_hours",
+          "longest_earth_gap_hours"
+        ],
+        "title": "BrushMetrics"
+      },
+      "BrushPoint": {
+        "properties": {
+          "east_m": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": -2000.0,
+            "title": "East M"
+          },
+          "north_m": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": -2000.0,
+            "title": "North M"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "east_m",
+          "north_m"
+        ],
+        "title": "BrushPoint"
+      },
+      "BrushPreviewOut": {
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/BrushDefinition"
+          },
+          "coordinate_reference": {
+            "type": "string",
+            "title": "Coordinate Reference"
+          },
+          "alignment": {
+            "type": "string",
+            "title": "Alignment"
+          },
+          "tolerance_m": {
+            "type": "number",
+            "title": "Tolerance M"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/BrushSampleOut"
+            },
+            "type": "array",
+            "title": "Samples"
+          },
+          "ready_count": {
+            "type": "integer",
+            "title": "Ready Count"
+          },
+          "new_count": {
+            "type": "integer",
+            "title": "New Count"
+          },
+          "existing_count": {
+            "type": "integer",
+            "title": "Existing Count"
+          },
+          "temporal_samples_per_point": {
+            "type": "integer",
+            "title": "Temporal Samples Per Point"
+          },
+          "estimated_total_samples": {
+            "type": "integer",
+            "title": "Estimated Total Samples"
+          },
+          "preview_token": {
+            "type": "string",
+            "title": "Preview Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "definition",
+          "coordinate_reference",
+          "alignment",
+          "tolerance_m",
+          "samples",
+          "ready_count",
+          "new_count",
+          "existing_count",
+          "temporal_samples_per_point",
+          "estimated_total_samples",
+          "preview_token"
+        ],
+        "title": "BrushPreviewOut"
+      },
+      "BrushResultOut": {
+        "properties": {
+          "sample": {
+            "$ref": "#/components/schemas/BrushSampleOut"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "UNAVAILABLE",
+              "ERROR",
+              "NOT_EVALUATED"
+            ],
+            "title": "Verdict"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrushMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvaluationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "persisted": {
+            "type": "boolean",
+            "title": "Persisted",
+            "default": false
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "sample",
+          "verdict"
+        ],
+        "title": "BrushResultOut"
+      },
+      "BrushSampleOut": {
+        "properties": {
+          "east_m": {
+            "type": "number",
+            "title": "East M"
+          },
+          "north_m": {
+            "type": "number",
+            "title": "North M"
+          },
+          "latitude_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude Deg"
+          },
+          "elevation_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevation M"
+          },
+          "candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "UNAVAILABLE"
+            ],
+            "title": "Status"
+          },
+          "already_persisted": {
+            "type": "boolean",
+            "title": "Already Persisted",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "east_m",
+          "north_m",
+          "status"
+        ],
+        "title": "BrushSampleOut"
       },
       "CandidateEvolutionRequest": {
         "properties": {

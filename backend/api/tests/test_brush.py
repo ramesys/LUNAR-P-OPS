@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from clps_api.brush import sample_polygon, summarize
-from clps_api.schemas import EvaluationOut, EvaluationRequest, EvaluationSample
+from clps_api.schemas import CandidateOut, EvaluationOut, EvaluationRequest, EvaluationSample
 
 
 def test_sampling_is_deterministic_and_includes_boundary():
@@ -116,6 +116,8 @@ def test_real_brush_preview_execution_and_retry_are_isolated(
     assert response.status_code == 200, response.text
     preview = response.json()
     assert preview["ready_count"] == 1 and preview["estimated_total_samples"] == 2
+    assert preview["new_count"] == 1 and preview["existing_count"] == 0
+    assert not (tmp_path / "candidates.sqlite3").exists()
     assert candidate_store.roots("shackleton-rim-b") == []
     body = {"definition": definition, "preview_token": preview["preview_token"], "confirmed": True}
     assert (
@@ -145,3 +147,158 @@ def test_real_brush_preview_execution_and_retry_are_isolated(
     assert retry["evaluation"]["evaluation_id"] == item["evaluation"]["evaluation_id"]
     assert len(candidate_store.roots("shackleton-rim-b")) == 1
     assert len(evaluation.list_for(item["candidate"]["candidate_id"])) == 1
+    after_retry = client.post("/api/rois/shackleton-rim-b/brush/preview", json=definition).json()
+    assert after_retry["new_count"] == 0 and after_retry["existing_count"] == 1
+    assert after_retry["preview_token"] == preview["preview_token"]
+
+    # A failure after saving a new C0 is explicit; retry reuses that C0 and saves its result.
+    changed = {**definition, "observer_height_m": 4}
+    second_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=changed).json()
+    second_body = {
+        "definition": changed,
+        "preview_token": second_preview["preview_token"],
+        "confirmed": True,
+    }
+    original_compute = evaluation.compute
+
+    def fail_once(*_args: object, **_kwargs: object) -> EvaluationOut:
+        raise RuntimeError("simulated interruption")
+
+    monkeypatch.setattr(evaluation, "compute", fail_once)
+    failed = client.post("/api/rois/shackleton-rim-b/brush/execute", json=second_body).json()[
+        "results"
+    ][0]
+    assert failed["verdict"] == "ERROR" and failed["persisted"] is True
+    assert failed["evaluation"] is None and "simulated interruption" in failed["errors"][0]
+    assert len(candidate_store.roots("shackleton-rim-b")) == 2
+    monkeypatch.setattr(evaluation, "compute", original_compute)
+    recovered = client.post("/api/rois/shackleton-rim-b/brush/execute", json=second_body).json()[
+        "results"
+    ][0]
+    assert recovered["candidate"]["candidate_id"] == failed["candidate"]["candidate_id"]
+    assert recovered["evaluation"]["status"] == "COMPUTED_UNVERIFIED"
+    assert len(candidate_store.roots("shackleton-rim-b")) == 2
+    assert len(evaluation.list_for(recovered["candidate"]["candidate_id"])) == 1
+
+    # Passing-only mode computes the same science but saves no failing location.
+    from clps_api import brush
+
+    passing_definition = {**definition, "observer_height_m": 5, "retention": "passing"}
+    passing_preview = client.post(
+        "/api/rois/shackleton-rim-b/brush/preview", json=passing_definition
+    ).json()
+    passing_body = {
+        "definition": passing_definition,
+        "preview_token": passing_preview["preview_token"],
+        "confirmed": True,
+    }
+    original_rules = brush.meets_constraints
+    monkeypatch.setattr(brush, "meets_constraints", lambda *_args: False)
+    failed_filter = client.post(
+        "/api/rois/shackleton-rim-b/brush/execute", json=passing_body
+    ).json()["results"][0]
+    assert failed_filter["verdict"] == "FAIL" and failed_filter["persisted"] is False
+    assert failed_filter["evaluation"]["status"] == "COMPUTED_UNVERIFIED"
+    assert candidate_store.get(passing_preview["samples"][0]["candidate_id"]) is None
+    assert len(candidate_store.roots("shackleton-rim-b")) == 2
+    monkeypatch.setattr(brush, "meets_constraints", lambda *_args: True)
+    kept = client.post("/api/rois/shackleton-rim-b/brush/execute", json=passing_body).json()[
+        "results"
+    ][0]
+    assert kept["verdict"] == "PASS" and kept["persisted"] is True
+    assert len(candidate_store.roots("shackleton-rim-b")) == 3
+
+    # A per-location failure does not prevent other samples from being evaluated.
+    monkeypatch.setattr(brush, "meets_constraints", original_rules)
+    multiple = {
+        **definition,
+        "observer_height_m": 6,
+        "polygon": [
+            {"east_m": -50, "north_m": -50},
+            {"east_m": 150, "north_m": -50},
+            {"east_m": 150, "north_m": 150},
+            {"east_m": -50, "north_m": 150},
+        ],
+    }
+    multiple_preview = client.post("/api/rois/shackleton-rim-b/brush/preview", json=multiple).json()
+    assert multiple_preview["ready_count"] == 4
+    multiple_body = {
+        "definition": multiple,
+        "preview_token": multiple_preview["preview_token"],
+        "confirmed": True,
+    }
+    count_calls = 0
+
+    def second_fails(c: CandidateOut, req: EvaluationRequest) -> EvaluationOut:
+        nonlocal count_calls
+        count_calls += 1
+        if count_calls == 2:
+            raise RuntimeError("location failure")
+        return original_compute(c, req)
+
+    monkeypatch.setattr(evaluation, "compute", second_fails)
+    partial = client.post("/api/rois/shackleton-rim-b/brush/execute", json=multiple_body).json()[
+        "results"
+    ]
+    assert [r["verdict"] for r in partial].count("ERROR") == 1
+    assert [r["verdict"] for r in partial].count("PASS") == 3
+    assert all(r["persisted"] for r in partial)
+    monkeypatch.setattr(evaluation, "compute", original_compute)
+    completed = client.post("/api/rois/shackleton-rim-b/brush/execute", json=multiple_body).json()[
+        "results"
+    ]
+    assert all(r["verdict"] == "PASS" for r in completed)
+    assert len(candidate_store.roots("shackleton-rim-b")) == 7
+    assert all(len(evaluation.list_for(r["candidate"]["candidate_id"])) == 1 for r in completed)
+
+
+def test_constraint_verdict_uses_inclusive_thresholds():
+    from clps_api.brush import meets_constraints
+    from clps_api.schemas import BrushConstraints, BrushMetrics
+
+    metrics = BrushMetrics(
+        sample_count=10,
+        duration_hours=10,
+        sun_fraction=0.2,
+        earth_fraction=0.5,
+        simultaneous_fraction=0.1,
+        longest_darkness_hours=4,
+        longest_earth_gap_hours=6,
+    )
+    assert meets_constraints(
+        metrics,
+        BrushConstraints(
+            min_sun_fraction=0.2,
+            min_earth_fraction=0.5,
+            min_simultaneous_fraction=0.1,
+            max_darkness_hours=4,
+            max_earth_gap_hours=6,
+        ),
+    )
+    assert not meets_constraints(metrics, BrushConstraints(min_sun_fraction=0.21))
+    assert not meets_constraints(metrics, BrushConstraints(max_earth_gap_hours=5.9))
+
+
+def test_preview_retains_geographic_coordinates_for_unavailable_dem(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from clps_api import brush
+    from clps_api.schemas import BrushDefinition, BrushPoint
+
+    def missing(*_args: object, **_kwargs: object) -> CandidateOut:
+        raise ValueError("missing DEM")
+
+    monkeypatch.setattr(brush, "_candidate", missing)
+    definition = BrushDefinition(
+        polygon=[
+            BrushPoint(east_m=-50, north_m=-50),
+            BrushPoint(east_m=50, north_m=-50),
+            BrushPoint(east_m=50, north_m=50),
+            BrushPoint(east_m=-50, north_m=50),
+        ],
+        start_utc=datetime(2026, 11, 7, tzinfo=UTC),
+    )
+    point = brush.preview(definition).samples[0]
+    assert point.status == "UNAVAILABLE" and point.error == "missing DEM"
+    assert point.latitude_deg == pytest.approx(-89.5244)
+    assert point.longitude_deg == pytest.approx(56.30993)

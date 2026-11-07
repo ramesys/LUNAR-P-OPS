@@ -186,7 +186,7 @@ test.describe("desktop", (): void => {
     const candidate: { candidate_id: string } = await candidateResponse.json() as { candidate_id: string };
     await expect(page.getByRole("region", { name: "Landing graph" })).toContainText(candidate.candidate_id.slice(0, 22));
     await page.getByLabel("Duration (h, max 168)").fill("6");
-    await page.getByLabel("Step (min)").fill("60");
+    await page.getByRole("region", { name: "Landing graph" }).getByLabel("Step (min)").fill("60");
     await page.getByRole("button", { name: "Evaluate C0" }).click();
     await expect(page.locator(".terrain-time")).toContainText("stored sample 1/6", { timeout: 30_000 });
     await inspectorTime(page).getByRole("button", { name: "Step forward" }).click();

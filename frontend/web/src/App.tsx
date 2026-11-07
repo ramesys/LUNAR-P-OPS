@@ -87,6 +87,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
       { ...base, rootId: saved.rootId, revisionId: saved.revisionId, cursorUtc: saved.cursorUtc ?? null });
   });
   const revisionId: string | null = useSyncExternalStore(store.subscribe, (): string | null => store.getState().revisionId);
+  const [preferredEvaluation, setPreferredEvaluation] = useState<{ candidateId: string; evaluationId: string; sequence: number } | null>(null);
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const candidateGuard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
   const [sites, setSites] = useState<Site[]>([]);
@@ -103,10 +104,12 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const onSelectionStarted: () => void = useCallback((): void => {
     candidateGuard.current.invalidate();
   }, []);
-  const onCandidateSelected: (value: Candidate) => void = useCallback((value: Candidate): void => {
+  const onCandidateSelected: (value: Candidate, evaluationId?: string) => void = useCallback((value: Candidate, evaluationId?: string): void => {
     candidateGuard.current.invalidate();
     setCandidateError(null);
     setCandidate(value);
+    setPreferredEvaluation((previous): { candidateId: string; evaluationId: string; sequence: number } | null => evaluationId === undefined ? null :
+      { candidateId: value.candidate_id, evaluationId, sequence: (previous?.sequence ?? 0) + 1 });
     store.dispatch({ type: "select-root", rootId: value.candidate_id });
   }, [store]);
   const onSelectRevision: (revision: Candidate) => void = useCallback((revision: Candidate): void => {
@@ -283,6 +286,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           <a href="#candidate-context" aria-current="location">Terrain</a>
           <a href="#catalog-title">South pole overview</a>
           <a href="#geometry-controls">Geometry</a>
+          <a href="#constraint-brush">Constraint brush</a>
         </nav>
         <ModeToggle mode={mode} onChange={changeMode} />
       </header>
@@ -300,7 +304,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           <section className="ws-graph card" aria-label="Landing graph"><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></section>
           <aside className="ws-inspector card" aria-label="Inspector"><h2>Inspector</h2><p className="muted">No candidate selected. Click the Shackleton terrain, pick a marker, or click the Sample A 3D view below.</p></aside>
         </> : <LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate}
-            selectedRevisionId={revisionId ?? candidate.candidate_id} onSelectRevision={onSelectRevision} mode={mode} />}
+            selectedRevisionId={revisionId ?? candidate.candidate_id} onSelectRevision={onSelectRevision} mode={mode}
+            preferredEvaluation={preferredEvaluation?.candidateId === candidate.candidate_id ? preferredEvaluation : null} />}
         {candidateError !== null && <p role="alert" className="ws-alert">{candidateError}</p>}
       </section>
 
@@ -309,7 +314,6 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         <p>Explore the terrain and click a point or marker. A terrain click saves Candidate C0 from the LOLA DEM; edit height or time in the graph to create C1, then evaluate the selected revision and inspect the result.</p>
         <p>Catalog sample sites are placeholders, not official CLPS landing sites. The shared address retains the catalog scenario.</p>
       </details>
-      <div className="brush-status" role="note"><strong>◌ &nbsp; REGION / CONSTRAINT BRUSH</strong><span>Not available in this build · point selection is active</span></div>
       <h2 className="section-title" id="catalog-title">Catalog site comparison</h2>
       <p className="muted section-lede">The original CLPS browser: compare 2–4 sites over a date range with terrain horizons, sky diagrams and timelines.</p>
       <div className="setup">

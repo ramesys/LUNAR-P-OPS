@@ -33,3 +33,8 @@ export type ExperimentManifest = Schemas["ExperimentManifestOut"];
 export type RecomputeReport = Schemas["RecomputeReportOut"];
 
 export type RegionalTerrain = Schemas["RegionalTerrainOut"];
+export type BrushDefinition = Schemas["BrushDefinition"];
+export type BrushPreview = Schemas["BrushPreviewOut"];
+export type BrushExecution = Schemas["BrushExecutionOut"];
+export type BrushResult = Schemas["BrushResultOut"];
+export type BrushSample = Schemas["BrushSampleOut"];

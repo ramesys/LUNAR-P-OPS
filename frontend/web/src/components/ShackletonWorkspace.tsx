@@ -14,6 +14,7 @@ import {
   type LazyExoticComponent,
   type RefObject,
 } from "react";
+import { ConstraintBrush } from "./ConstraintBrush.tsx";
 import { describeApiError } from "../lib/apiError.ts";
 import type { LocalPoint } from "../lib/roiFrame.ts";
 import { SelectionGuard } from "../lib/selectionGuard.ts";
@@ -33,7 +34,7 @@ type TerrainState = { kind: "loading" } | { kind: "ready"; terrain: RoiTerrain }
 interface Props {
   apiClient: ApiClient;
   selectedCandidateId: string | null;
-  onCandidateSelected: (candidate: Candidate) => void;
+  onCandidateSelected: (candidate: Candidate, evaluationId?: string) => void;
   defaultTimeUtc: string;
   defaultObserverHeightM: number;
 }
@@ -132,10 +133,13 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     {terrain.kind === "error" && <p role="alert">ROI terrain unavailable: {terrain.message}</p>}
 
     {terrain.kind === "ready" &&
-      <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
-        <RoiTerrain3D terrain={terrain.terrain} regional={regional} candidates={candidates} selectedId={selectedCandidateId}
-          onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
-      </Suspense>}
+      <ConstraintBrush apiClient={apiClient} defaultTimeUtc={defaultTimeUtc} onInspect={onCandidateSelected}
+        onCandidatesCreated={(created: Candidate[]): void => { setCandidates((current: Candidate[]): Candidate[] =>
+          [...current, ...created.filter((item: Candidate): boolean => !current.some((existing: Candidate): boolean => existing.candidate_id === item.candidate_id))]); }}
+        renderTerrain={(brush): JSX.Element => <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
+          <RoiTerrain3D terrain={terrain.terrain} regional={regional} candidates={candidates} selectedId={selectedCandidateId}
+            onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} brush={brush} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
+        </Suspense>} />}
     {regionalError !== null && <p role="status">{regionalError}</p>}
     <fieldset className="new-candidate">
       <legend>Settings for the next terrain click</legend>

@@ -99,3 +99,23 @@ def evolve(parent: CandidateOut, request: CandidateEvolutionRequest) -> Candidat
             }
         )
     )
+
+
+def existing_ids(candidate_ids: list[str]) -> set[str]:
+    """Read existing IDs without creating or modifying a database during a preview."""
+    path = Path(os.environ.get("CLPS_DATA_DIR", "data")) / "candidates.sqlite3"
+    if not path.is_file() or not candidate_ids:
+        return set()
+    with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as db:
+        table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'candidates'"
+        ).fetchone()
+        if table is None:
+            return set()
+        placeholders = ",".join("?" for _ in candidate_ids)
+        return {
+            row[0]
+            for row in db.execute(
+                f"SELECT id FROM candidates WHERE id IN ({placeholders})", candidate_ids
+            )
+        }
