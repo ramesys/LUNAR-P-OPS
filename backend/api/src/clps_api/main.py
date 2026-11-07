@@ -14,6 +14,7 @@ from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
 from clps_api import (
+    brush,
     candidate,
     candidate_store,
     evaluation,
@@ -25,6 +26,10 @@ from clps_api import (
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
+    BrushDefinition,
+    BrushExecuteRequest,
+    BrushExecutionOut,
+    BrushPreviewOut,
     CandidateEvolutionRequest,
     CandidateOut,
     CandidateRefOut,
@@ -214,6 +219,26 @@ def get_regional_terrain(roi_id: str) -> RegionalTerrainOut:
     if found is None:
         raise HTTPException(status_code=404, detail=f"unknown ROI: {roi_id}")
     return found
+
+
+@app.post("/api/rois/{roi_id}/brush/preview", operation_id="previewBrush")
+def preview_brush(roi_id: str, definition: BrushDefinition) -> BrushPreviewOut:
+    if roi_id != "shackleton-rim-b":
+        raise HTTPException(status_code=404, detail="Brush is available only in Shackleton Rim B")
+    try:
+        return brush.preview(definition)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/rois/{roi_id}/brush/execute", operation_id="executeBrush")
+def execute_brush(roi_id: str, request: BrushExecuteRequest) -> BrushExecutionOut:
+    if roi_id != "shackleton-rim-b":
+        raise HTTPException(status_code=404, detail="Brush is available only in Shackleton Rim B")
+    try:
+        return brush.execute(request.definition, request.preview_token)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @app.post(

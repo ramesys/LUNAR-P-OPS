@@ -368,3 +368,88 @@ class RecomputeReportOut(BaseModel):
     differences: dict[str, float | int | None]
     validation_status: Literal["not_independently_validated", "independently_validated"]
     notes: list[str]
+
+
+class BrushPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    east_m: float = Field(ge=-2000, le=2000)
+    north_m: float = Field(ge=-2000, le=2000)
+
+
+class BrushConstraints(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    min_sun_fraction: float = Field(default=0, ge=0, le=1)
+    min_earth_fraction: float = Field(default=0, ge=0, le=1)
+    min_simultaneous_fraction: float = Field(default=0, ge=0, le=1)
+    max_darkness_hours: float | None = Field(default=None, ge=0, le=168)
+    max_earth_gap_hours: float | None = Field(default=None, ge=0, le=168)
+
+
+class BrushDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    polygon: list[BrushPoint] = Field(min_length=3, max_length=64)
+    spacing_m: float = Field(default=100, ge=20, le=4000)
+    max_points: int = Field(default=16, ge=1, le=64)
+    observer_height_m: float = Field(default=3, ge=0, le=100)
+    start_utc: AwareDatetime
+    duration_hours: float = Field(default=168, gt=0, le=168)
+    step_minutes: int = Field(default=60, ge=1, le=360)
+    constraints: BrushConstraints = BrushConstraints()
+    retention: Literal["all", "passing"] = "all"
+
+
+class BrushSampleOut(BaseModel):
+    east_m: float
+    north_m: float
+    latitude_deg: float | None = None
+    longitude_deg: float | None = None
+    elevation_m: float | None = None
+    candidate_id: str | None = None
+    status: Literal["READY", "UNAVAILABLE"]
+    error: str | None = None
+
+
+class BrushPreviewOut(BaseModel):
+    definition: BrushDefinition
+    coordinate_reference: str
+    alignment: str
+    tolerance_m: float
+    samples: list[BrushSampleOut]
+    ready_count: int
+    temporal_samples_per_point: int
+    estimated_total_samples: int
+    preview_token: str
+
+
+class BrushMetrics(BaseModel):
+    sample_count: int
+    duration_hours: float
+    sun_fraction: float
+    earth_fraction: float
+    simultaneous_fraction: float
+    longest_darkness_hours: float
+    longest_earth_gap_hours: float
+
+
+class BrushResultOut(BaseModel):
+    sample: BrushSampleOut
+    verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"]
+    metrics: BrushMetrics | None = None
+    candidate: CandidateOut | None = None
+    evaluation: EvaluationOut | None = None
+    persisted: bool = False
+    errors: list[str] = []
+
+
+class BrushExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    definition: BrushDefinition
+    preview_token: str
+    confirmed: Literal[True]
+
+
+class BrushExecutionOut(BaseModel):
+    schema_version: Literal["lunar-ops-brush/1"] = "lunar-ops-brush/1"
+    preview: BrushPreviewOut
+    results: list[BrushResultOut]
+    notes: list[str]
