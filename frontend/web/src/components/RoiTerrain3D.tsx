@@ -1,5 +1,5 @@
 import type { Candidate, RegionalTerrain, RoiTerrain, ScientificEvaluation } from "@clps/api-client";
-import type { BrushOverlay, BrushVerdict } from "../lib/brushTypes.ts";
+import type { BrushOverlay, BrushVerdict, RegionOverlay } from "../lib/brushTypes.ts";
 import { formatUtc } from "../lib/format.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import {
@@ -33,7 +33,7 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { pickTerrain, type TerrainPick } from "../lib/terrainPicking.ts";
 import { displayElevation, displayHeightM, validTriangleIndices, toGeographic, toLocal, type LocalPoint } from "../lib/roiFrame.ts";
-import { bodyDirection, directionalGuides, roiAzimuth } from "../lib/sceneGeometry.ts";
+import { bodyDirection, directionAngles, directionalGuides, horizonRing, roiAzimuth, skyPath, skyRadiusKm, symbolScale, type SkyPoint } from "../lib/sceneGeometry.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
 
 /**
@@ -64,6 +64,8 @@ interface SceneParts {
   markers: Group;
   overlay: Group;
   bodies: Group;
+  /** Whole-interval Sun/Earth paths and the horizon silhouette; rebuilt per evaluation, not per cursor. */
+  paths: Group;
   brush: Group;
   light: DirectionalLight;
   ambient: AmbientLight;
@@ -121,7 +123,8 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   light.shadow.bias = -0.0004;
   scene.add(light, light.target);
   const bodies: Group = new Group();
-  scene.add(bodies);
+  const paths: Group = new Group();
+  scene.add(bodies, paths);
   const markers: Group = new Group();
   const overlay: Group = new Group();
   const brush: Group = new Group();
@@ -133,7 +136,7 @@ function buildScene(host: HTMLDivElement, terrain: RoiTerrain, width: number): S
   controls.minDistance = 0.2;
   controls.maxDistance = 80;
   controls.update();
-  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, brush, light, ambient };
+  return { renderer, scene, camera, controls, terrain: mesh, markers, overlay, bodies, paths, brush, light, ambient };
 }
 
 function applyHeights(parts: SceneParts, terrain: RoiTerrain, exaggeration: number): void {
@@ -192,7 +195,7 @@ function drawMarkers(parts: SceneParts, terrain: RoiTerrain, candidates: Candida
     const selected: boolean = candidate.candidate_id === selectedId;
     const color: string = selected ? SELECTED : OTHER;
     const marker: Group = new Group();
-    const markerScale: number = terrain.roi.half_width_m > 2000 ? 2.5 : 1;
+    const markerScale: number = symbolScale(terrain.roi.half_width_m);
     const pinHeight: number = (selected ? 0.3 : 0.22) * markerScale;
     const pin: Mesh = new Mesh(new CylinderGeometry(0.008, 0.008, pinHeight, 8), new MeshBasicMaterial({ color }));
     pin.position.y = pinHeight / 2;
@@ -210,42 +213,69 @@ const BRUSH_COLORS: Record<BrushVerdict, string> = {
   PASS: "#5ee3a3", FAIL: "#ff856e", UNAVAILABLE: "#bca8ff", ERROR: "#ff4874", NOT_EVALUATED: "#72d8ed",
 };
 
-/** Brush geometry uses the active DEM surface for display; all plan coordinates stay in ROI metres. */
+/** Region geometry uses the active DEM surface for display; all plan coordinates stay in ROI metres. */
 function drawBrush(parts: SceneParts, terrain: RoiTerrain, exaggeration: number, brush: BrushOverlay | undefined): void {
   for (const child of [...parts.brush.children]) { disposeObject(child); parts.brush.remove(child); }
   if (brush === undefined) return;
-  const scale: number = terrain.roi.half_width_m > 2000 ? 2.5 : 1;
-  const linePoints: number[] = [];
-  const vertices: LocalPoint[] = brush.vertices;
-  const segmentCount: number = brush.closed ? vertices.length : Math.max(0, vertices.length - 1);
+  const scale: number = symbolScale(terrain.roi.half_width_m);
+  function dot(point: LocalPoint, color: string, radius: number, data: Record<string, unknown>, opacity: number = 1): void {
+    if (displayElevation(terrain, point) === null) return;
+    const marker: Mesh = new Mesh(new SphereGeometry(radius * scale, 12, 8),
+      new MeshBasicMaterial({ color, depthTest: false, transparent: opacity < 1, opacity }));
+    marker.position.set(point.east_m / 1000, heightKm(terrain, point, exaggeration) + 0.045 * scale, -point.north_m / 1000);
+    Object.assign(marker.userData, data); marker.renderOrder = 4; parts.brush.add(marker);
+  }
+  for (const region of brush.regions) {
+    const color: string = region.active ? "#f7d472" : "#9d8a52";
+    const linePoints: number[] = outlinePoints(terrain, exaggeration, region, 0.025 * scale);
+    if (linePoints.length > 0) {
+      const geometry: BufferGeometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(new Float32Array(linePoints), 3));
+      const outline: LineSegments = new LineSegments(geometry, new LineBasicMaterial({ color, depthTest: false, transparent: !region.active, opacity: region.active ? 1 : 0.7 }));
+      outline.renderOrder = 3; parts.brush.add(outline);
+    }
+    if (region.active) region.vertices.forEach((point: LocalPoint, index: number): void => { dot(point, "#f7d472", 0.045, { brushVertex: index }); });
+    for (const sample of region.samples) {
+      dot(sample, BRUSH_COLORS[sample.verdict], sample.selected ? 0.07 : 0.04, { brushSample: sample.index, brushRegion: region.id }, region.active || sample.selected ? 1 : 0.6);
+      if (sample.selected) dot(sample, "#ffffff", 0.095, { brushSample: sample.index, brushRegion: region.id }, 0.35);
+    }
+    const centre: LocalPoint | null = centroid(region.vertices);
+    if (centre !== null && displayElevation(terrain, centre) !== null) {
+      const sprite: Sprite = label(region.label, region.active ? "#f7d472" : "#d5c690");
+      sprite.scale.multiplyScalar(scale * 0.8);
+      sprite.position.set(centre.east_m / 1000, heightKm(terrain, centre, exaggeration) + 0.16 * scale, -centre.north_m / 1000);
+      parts.brush.add(sprite);
+    }
+  }
+}
+
+/** Draped polygon edges (open while drawing, closed once finished). */
+function outlinePoints(terrain: RoiTerrain, exaggeration: number, region: RegionOverlay, lift: number): number[] {
+  const points: number[] = [];
+  const vertices: LocalPoint[] = region.vertices;
+  const segmentCount: number = region.closed ? vertices.length : Math.max(0, vertices.length - 1);
   for (let index: number = 0; index < segmentCount; index++) {
     const a: LocalPoint | undefined = vertices[index];
     const b: LocalPoint | undefined = vertices[(index + 1) % vertices.length];
     if (a === undefined || b === undefined) continue;
     const count: number = Math.max(1, Math.ceil(Math.hypot(b.east_m - a.east_m, b.north_m - a.north_m) / terrain.spacing_m));
     for (let step: number = 0; step < count; step++) {
-      const point: (t: number) => LocalPoint = (t: number): LocalPoint => ({ east_m: a.east_m + (b.east_m - a.east_m) * t,
+      const at: (t: number) => LocalPoint = (t: number): LocalPoint => ({ east_m: a.east_m + (b.east_m - a.east_m) * t,
         north_m: a.north_m + (b.north_m - a.north_m) * t });
-      const p: LocalPoint = point(step / count);
-      const q: LocalPoint = point((step + 1) / count);
+      const p: LocalPoint = at(step / count);
+      const q: LocalPoint = at((step + 1) / count);
       if (displayElevation(terrain, p) === null || displayElevation(terrain, q) === null) continue;
-      linePoints.push(p.east_m / 1000, heightKm(terrain, p, exaggeration) + 0.025 * scale, -p.north_m / 1000,
-        q.east_m / 1000, heightKm(terrain, q, exaggeration) + 0.025 * scale, -q.north_m / 1000);
+      points.push(p.east_m / 1000, heightKm(terrain, p, exaggeration) + lift, -p.north_m / 1000,
+        q.east_m / 1000, heightKm(terrain, q, exaggeration) + lift, -q.north_m / 1000);
     }
   }
-  if (linePoints.length > 0) {
-    const geometry: BufferGeometry = new BufferGeometry();
-    geometry.setAttribute("position", new BufferAttribute(new Float32Array(linePoints), 3));
-    parts.brush.add(new LineSegments(geometry, new LineBasicMaterial({ color: "#f7d472", depthTest: false })));
-  }
-  function dot(point: LocalPoint, color: string, radius: number, key: string, index: number): void {
-    if (displayElevation(terrain, point) === null) return;
-    const marker: Mesh = new Mesh(new SphereGeometry(radius * scale, 12, 8), new MeshBasicMaterial({ color, depthTest: false }));
-    marker.position.set(point.east_m / 1000, heightKm(terrain, point, exaggeration) + 0.045 * scale, -point.north_m / 1000);
-    marker.userData[key] = index; marker.renderOrder = 4; parts.brush.add(marker);
-  }
-  vertices.forEach((point: LocalPoint, index: number): void => { dot(point, "#f7d472", 0.045, "brushVertex", index); });
-  brush.samples.forEach((point): void => { dot(point, BRUSH_COLORS[point.verdict], 0.04, "brushSample", point.index); });
+  return points;
+}
+
+function centroid(vertices: LocalPoint[]): LocalPoint | null {
+  if (vertices.length === 0) return null;
+  return { east_m: vertices.reduce((sum: number, v: LocalPoint): number => sum + v.east_m, 0) / vertices.length,
+    north_m: vertices.reduce((sum: number, v: LocalPoint): number => sum + v.north_m, 0) / vertices.length };
 }
 
 
@@ -253,15 +283,16 @@ function defaultCameraPosition(extentKm: number): Vector3 {
   return new Vector3(extentKm * 0.42, extentKm * 0.55, extentKm * 0.7);
 }
 
-function label(text: string): Sprite {
+function label(text: string, color?: string): Sprite {
   const canvas: HTMLCanvasElement = document.createElement("canvas");
   canvas.width = 64; canvas.height = 64;
   const context: CanvasRenderingContext2D | null = canvas.getContext("2d");
   if (context !== null) {
     context.fillStyle = "rgba(5, 6, 10, 0.7)";
     context.beginPath(); context.arc(32, 32, 28, 0, Math.PI * 2); context.fill();
-    context.fillStyle = text === "N" ? "#ff8a5c" : "#e8edf5";
-    context.font = "bold 36px system-ui, sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillStyle = color ?? (text === "N" ? "#ff8a5c" : "#e8edf5");
+    const size: number = text.length <= 1 ? 36 : text.length === 2 ? 28 : 20;
+    context.font = `bold ${size.toString()}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle";
     context.fillText(text, 32, 34);
   }
   const sprite: Sprite = new Sprite(new SpriteMaterial({ map: new CanvasTexture(canvas), depthTest: false }));
@@ -316,11 +347,25 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
     outline.setAttribute("position", new BufferAttribute(new Float32Array(boundary), 3));
     parts.overlay.add(new LineSegments(outline, new LineBasicMaterial({ color: "#f2c14e", depthTest: false })));
   }
-  const edge: number = half / 1000 + 0.2;
+  const scale: number = symbolScale(half);
+  const edge: number = half / 1000 + 0.2 * scale;
   for (const [text, x, z, e, n] of [["N", 0, -edge, 0, half], ["S", 0, edge, 0, -half], ["E", edge, 0, half, 0], ["W", -edge, 0, -half, 0]] as const) {
     if (displayElevation(terrain, { east_m: e, north_m: n }) === null) continue;
     const sprite: Sprite = label(text);
-    sprite.position.set(x, heightKm(terrain, { east_m: e, north_m: n }, exaggeration) + 0.12, z);
+    sprite.scale.multiplyScalar(scale);
+    sprite.position.set(x, heightKm(terrain, { east_m: e, north_m: n }, exaggeration) + 0.12 * scale, z);
+    parts.overlay.add(sprite);
+  }
+  // The geographic south pole, placed with the same projection as every other point.
+  const pole: LocalPoint = toLocal(terrain, -90, 0);
+  if (displayElevation(terrain, pole) !== null) {
+    const ground: Vector3 = new Vector3(pole.east_m / 1000, heightKm(terrain, pole, exaggeration), -pole.north_m / 1000);
+    const top: Vector3 = ground.clone().add(new Vector3(0, 0.35 * scale, 0));
+    parts.overlay.add(new LineSegments(new BufferGeometry().setFromPoints([ground, top]), new LineBasicMaterial({ color: "#e8edf5", depthTest: false })));
+    const sprite: Sprite = label("SP", "#e8edf5");
+    sprite.scale.multiplyScalar(scale);
+    sprite.position.copy(top);
+    sprite.userData["southPole"] = true;
     parts.overlay.add(sprite);
   }
 }
@@ -329,69 +374,181 @@ function drawOverlay(parts: SceneParts, terrain: RoiTerrain, exaggeration: numbe
 const RELIEF_LIGHT: Vector3 = new Vector3(-3, 2.2, -1.5);
 const SUN_COLOR: string = "#eb6834";
 const EARTH_COLOR: string = "#3987e5";
-const BODY_DISTANCE_KM: number = 2.2;
-
 type Sample = ScientificEvaluation["samples"][number];
 
-/** Stored SPICE Sun/Earth directions at one sample, drawn from the evaluated candidate's position. */
-function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: ScientificEvaluation | null, sample: Sample | undefined,
-  exaggeration: number, sunLighting: boolean, showSun: boolean, showEarth: boolean, showHorizon: boolean): void {
+/** What the sky geometry currently shows, exposed on the canvas for verification. */
+export interface SkyReadout { radiusKm: number; sunPath: number; earthPath: number; horizonPoints: number;
+  cursor: number; sun: [number, number] | null; earth: [number, number] | null }
+
+/** The evaluated observer, lifted by a symbolic pin so it stays visible at every scale. */
+function observerOrigin(terrain: RoiTerrain, evaluation: ScientificEvaluation, exaggeration: number): { ground: Vector3; origin: Vector3 } | null {
+  const point: LocalPoint = toLocal(terrain, evaluation.candidate.latitude_deg, evaluation.candidate.longitude_deg);
+  if (displayElevation(terrain, point) === null) return null;
+  const ground: Vector3 = new Vector3(point.east_m / 1000, heightKm(terrain, point, exaggeration), -point.north_m / 1000);
+  return { ground, origin: ground.clone().add(new Vector3(0, 0.12 * symbolScale(terrain.roi.half_width_m), 0)) };
+}
+
+function segments(points: Vector3[], closed: boolean): BufferGeometry {
+  const values: number[] = [];
+  for (let i: number = 0; i + 1 < points.length; i++) {
+    const a: Vector3 | undefined = points[i];
+    const b: Vector3 | undefined = points[i + 1];
+    if (a !== undefined && b !== undefined) values.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  }
+  const first: Vector3 | undefined = points[0];
+  const last: Vector3 | undefined = points.at(-1);
+  if (closed && first !== undefined && last !== undefined && points.length > 2) values.push(last.x, last.y, last.z, first.x, first.y, first.z);
+  const geometry: BufferGeometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(values), 3));
+  return geometry;
+}
+
+/**
+ * Whole-interval paths of the stored Sun and Earth directions and the stored terrain-horizon
+ * silhouette, all on a symbolic dome of radius R around the observer. Visible stretches are solid,
+ * blocked stretches faint. Directions are the stored SPICE/horizon values; R is not a distance.
+ */
+function drawPaths(parts: SceneParts, terrain: RoiTerrain, evaluation: ScientificEvaluation | null, exaggeration: number,
+  showSun: boolean, showEarth: boolean, showHorizon: boolean): { sun: number; earth: number; horizon: number } {
+  for (const child of [...parts.paths.children]) { disposeObject(child); parts.paths.remove(child); }
+  const counts: { sun: number; earth: number; horizon: number } = { sun: 0, earth: 0, horizon: 0 };
+  if (evaluation === null || evaluation.samples.length === 0) return counts;
+  const place: ReturnType<typeof observerOrigin> = observerOrigin(terrain, evaluation, exaggeration);
+  if (place === null) return counts;
+  const radius: number = skyRadiusKm((2 * terrain.roi.half_width_m) / 1000);
+  const scale: number = symbolScale(terrain.roi.half_width_m);
+  const at: (direction: Vector3) => Vector3 = (direction: Vector3): Vector3 => place.origin.clone().add(direction.clone().multiplyScalar(radius));
+  const lon: number = evaluation.candidate.longitude_deg;
+  const centre: number = terrain.roi.center_longitude_deg;
+  if (showHorizon) {
+    const ring: Vector3[] = horizonRing(evaluation.horizon_azimuth_deg, evaluation.horizon_elevation_deg, lon, centre).map(at);
+    counts.horizon = Math.max(0, ring.length - 1);
+    const silhouette: LineSegments = new LineSegments(segments(ring, false), new LineBasicMaterial({ color: "#d9c58f", transparent: true, opacity: 0.85, depthTest: false }));
+    silhouette.renderOrder = 1; parts.paths.add(silhouette);
+    const level: Vector3[] = Array.from({ length: 145 }, (_: unknown, i: number): Vector3 => at(bodyDirection(i * 2.5, 0)));
+    const horizontal: LineSegments = new LineSegments(segments(level, false), new LineDashedMaterial({ color: "#8c97a3", dashSize: 0.05 * scale, gapSize: 0.06 * scale, transparent: true, opacity: 0.5, depthTest: false }));
+    horizontal.computeLineDistances(); horizontal.renderOrder = 1; parts.paths.add(horizontal);
+    // Local north of the candidate (not the ROI centre's), from the same azimuth rotation as the bodies.
+    const north: Sprite = label("N");
+    north.scale.multiplyScalar(scale * 0.8);
+    north.position.copy(at(bodyDirection(roiAzimuth(0, lon, centre), 0)));
+    parts.paths.add(north);
+  }
+  for (const [enabled, body, color] of [[showSun, "sun", SUN_COLOR], [showEarth, "earth", EARTH_COLOR]] as const) {
+    if (!enabled) continue;
+    const path: SkyPoint[] = skyPath(evaluation.samples, body, lon, centre);
+    counts[body] = path.length;
+    const visible: number[] = [];
+    const blocked: number[] = [];
+    for (let i: number = 0; i + 1 < path.length; i++) {
+      const a: SkyPoint | undefined = path[i];
+      const b: SkyPoint | undefined = path[i + 1];
+      if (a === undefined || b === undefined) continue;
+      const p: Vector3 = at(a.direction);
+      const q: Vector3 = at(b.direction);
+      // A stretch takes the state of its starting sample (each sample holds until the next).
+      (a.visible ? visible : blocked).push(p.x, p.y, p.z, q.x, q.y, q.z);
+    }
+    for (const [values, opacity] of [[visible, 1], [blocked, 0.35]] as const) {
+      if (values.length === 0) continue;
+      const geometry: BufferGeometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(new Float32Array(values), 3));
+      const line: LineSegments = new LineSegments(geometry, new LineBasicMaterial({ color, transparent: opacity < 1, opacity, depthTest: false }));
+      line.renderOrder = 2; parts.paths.add(line);
+    }
+    // Sample ticks (thinned for long series) mark the discrete stored times.
+    const every: number = Math.max(1, Math.ceil(path.length / 96));
+    for (const point of path) {
+      if (point.index % every !== 0 && point.index !== path.length - 1) continue;
+      const tick: Mesh = new Mesh(new SphereGeometry(0.018 * scale, 8, 6), new MeshBasicMaterial({ color, transparent: true, opacity: point.visible ? 0.95 : 0.4, depthTest: false }));
+      tick.position.copy(at(point.direction)); tick.renderOrder = 2; parts.paths.add(tick);
+    }
+  }
+  return counts;
+}
+
+/** Stored SPICE Sun/Earth directions at the cursor sample, drawn from the evaluated candidate's position. */
+function drawBodies(parts: SceneParts, terrain: RoiTerrain, evaluation: ScientificEvaluation | null, index: number,
+  exaggeration: number, sunLighting: boolean, showSun: boolean, showEarth: boolean, showHorizon: boolean): Pick<SkyReadout, "sun" | "earth"> {
   const old: Object3D[] = [...parts.bodies.children];
   old.forEach((child: Object3D): void => { disposeObject(child); parts.bodies.remove(child); });
+  const sample: Sample | undefined = evaluation?.samples[index];
+  const extent: number = (2 * terrain.roi.half_width_m) / 1000;
   const useSun: boolean = sunLighting && evaluation !== null && sample !== undefined;
   parts.light.castShadow = useSun;
+  parts.light.shadow.camera.far = Math.max(40, extent * 4);
+  parts.light.shadow.camera.updateProjectionMatrix();
   if (!useSun || evaluation === null || sample === undefined) {
-    parts.light.position.copy(RELIEF_LIGHT);
+    parts.light.position.copy(RELIEF_LIGHT).multiplyScalar(Math.max(1, extent / 4));
     parts.light.intensity = 1.45;
     parts.ambient.intensity = 0.28;
   }
-  if (evaluation === null || sample === undefined) return;
-  const point: LocalPoint = toLocal(terrain, evaluation.candidate.latitude_deg, evaluation.candidate.longitude_deg);
-  if (displayElevation(terrain, point) === null) return;
-  // Observer height is represented by a fixed-size pin so it remains visible at 4 km scale.
-  const ground: Vector3 = new Vector3(point.east_m / 1000, heightKm(terrain, point, exaggeration), -point.north_m / 1000);
-  const origin: Vector3 = ground.clone().add(new Vector3(0, 0.12, 0));
-  const observer: Mesh = new Mesh(new SphereGeometry(0.045, 16, 12), new MeshBasicMaterial({ color: "#ffffff", depthTest: false }));
+  const readout: Pick<SkyReadout, "sun" | "earth"> = { sun: null, earth: null };
+  if (evaluation === null || sample === undefined) return readout;
+  const place: ReturnType<typeof observerOrigin> = observerOrigin(terrain, evaluation, exaggeration);
+  if (place === null) return readout;
+  const { ground, origin } = place;
+  const scale: number = symbolScale(terrain.roi.half_width_m);
+  const radius: number = skyRadiusKm(extent);
+  const size: number = radius / 2.2;
+  const observer: Mesh = new Mesh(new SphereGeometry(0.045 * scale, 16, 12), new MeshBasicMaterial({ color: "#ffffff", depthTest: false }));
   observer.position.copy(origin); observer.renderOrder = 3; parts.bodies.add(observer);
   const stem: BufferGeometry = new BufferGeometry().setFromPoints([ground, origin]);
   parts.bodies.add(new LineSegments(stem, new LineBasicMaterial({ color: "#ffffff", depthTest: false })));
-  for (const [enabled, color, az, el, horizon, visible] of [[showSun, SUN_COLOR, sample.sun_azimuth_deg, sample.sun_elevation_deg, sample.sun_horizon_deg, sample.sun_visible],
-    [showEarth, EARTH_COLOR, sample.earth_azimuth_deg, sample.earth_elevation_deg, sample.earth_horizon_deg, sample.earth_visible]] as const) {
+  const lon: number = evaluation.candidate.longitude_deg;
+  const centre: number = terrain.roi.center_longitude_deg;
+  for (const [body, enabled, color, az, el, horizon, visible] of [["sun", showSun, SUN_COLOR, sample.sun_azimuth_deg, sample.sun_elevation_deg, sample.sun_horizon_deg, sample.sun_visible],
+    ["earth", showEarth, EARTH_COLOR, sample.earth_azimuth_deg, sample.earth_elevation_deg, sample.earth_horizon_deg, sample.earth_visible]] as const) {
     if (!enabled) continue;
-    const guides: ReturnType<typeof directionalGuides> = directionalGuides(origin, roiAzimuth(az, evaluation.candidate.longitude_deg, terrain.roi.center_longitude_deg), el, horizon, BODY_DISTANCE_KM);
+    const displayAz: number = roiAzimuth(az, lon, centre);
+    const guides: ReturnType<typeof directionalGuides> = directionalGuides(origin, displayAz, el, horizon, radius);
+    readout[body] = directionAngles(guides.body.clone().sub(origin));
     const end: Vector3 = guides.body;
     if (showHorizon) {
-      // This is an angular guide, not a reconstruction of the distant terrain profile.
+      // An angular guide to the stored horizon in this azimuth, not a reconstruction of distant terrain.
       const threshold: BufferGeometry = new BufferGeometry().setFromPoints([origin, guides.horizon]);
-      const thresholdLine: LineSegments = new LineSegments(threshold, new LineDashedMaterial({ color, dashSize: 0.025, gapSize: 0.025, transparent: true, opacity: 0.75, depthTest: false }));
+      const thresholdLine: LineSegments = new LineSegments(threshold, new LineDashedMaterial({ color, dashSize: 0.025 * size, gapSize: 0.025 * size, transparent: true, opacity: 0.75, depthTest: false }));
       thresholdLine.computeLineDistances(); thresholdLine.renderOrder = 1; parts.bodies.add(thresholdLine);
       const horizontal: BufferGeometry = new BufferGeometry().setFromPoints([origin, guides.horizontal]);
-      const horizontalLine: LineSegments = new LineSegments(horizontal, new LineDashedMaterial({ color: "#d6dbe3", dashSize: 0.025, gapSize: 0.04, transparent: true, opacity: 0.5, depthTest: false }));
+      const horizontalLine: LineSegments = new LineSegments(horizontal, new LineDashedMaterial({ color: "#d6dbe3", dashSize: 0.025 * size, gapSize: 0.04 * size, transparent: true, opacity: 0.5, depthTest: false }));
       horizontalLine.computeLineDistances(); horizontalLine.renderOrder = 1; parts.bodies.add(horizontalLine);
-      const thresholdMarker: Mesh = new Mesh(new SphereGeometry(0.045, 12, 8), new MeshBasicMaterial({ color, wireframe: true, depthTest: false }));
+      const thresholdMarker: Mesh = new Mesh(new SphereGeometry(0.045 * size, 12, 8), new MeshBasicMaterial({ color, wireframe: true, depthTest: false }));
       thresholdMarker.position.copy(guides.horizon); thresholdMarker.renderOrder = 2; parts.bodies.add(thresholdMarker);
+      // Clearance arc between the stored horizon angle and the body: green clear, red blocked.
+      const arc: Vector3[] = Array.from({ length: 17 }, (_: unknown, i: number): Vector3 =>
+        origin.clone().add(bodyDirection(displayAz, horizon + ((el - horizon) * i) / 16).multiplyScalar(radius)));
+      const clearance: LineSegments = new LineSegments(segments(arc, false), new LineBasicMaterial({ color: el > horizon ? "#5ee3a3" : "#ff6b5e", depthTest: false }));
+      clearance.renderOrder = 3; parts.bodies.add(clearance);
+    }
+    // The path from the first stored sample up to the cursor (time already elapsed).
+    const trail: Vector3[] = skyPath(evaluation.samples.slice(0, index + 1), body, lon, centre)
+      .map((point: SkyPoint): Vector3 => origin.clone().add(point.direction.multiplyScalar(radius)));
+    if (trail.length > 1) {
+      const trailLine: LineSegments = new LineSegments(segments(trail, false), new LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.55, depthTest: false }));
+      trailLine.renderOrder = 3; parts.bodies.add(trailLine);
     }
     const geometry: BufferGeometry = new BufferGeometry().setFromPoints([origin, end]);
     // Solid when the stored terrain-horizon test says visible; dashed when it says blocked.
     const line: LineSegments = new LineSegments(geometry, visible
       ? new LineBasicMaterial({ color, depthTest: false })
-      : new LineDashedMaterial({ color, dashSize: 0.06, gapSize: 0.04, depthTest: false }));
+      : new LineDashedMaterial({ color, dashSize: 0.06 * size, gapSize: 0.04 * size, depthTest: false }));
     line.computeLineDistances();
     line.renderOrder = 2;
     parts.bodies.add(line);
-    const marker: Mesh = new Mesh(new SphereGeometry(0.09, 20, 14),
+    const marker: Mesh = new Mesh(new SphereGeometry(0.09 * size, 20, 14),
       new MeshBasicMaterial({ color, wireframe: !visible, depthTest: false }));
     marker.renderOrder = 2;
     marker.position.copy(end);
     parts.bodies.add(marker);
   }
   if (useSun) {
-    const sun: Vector3 = bodyDirection(roiAzimuth(sample.sun_azimuth_deg, evaluation.candidate.longitude_deg, terrain.roi.center_longitude_deg), sample.sun_elevation_deg);
-    parts.light.position.copy(sun.multiplyScalar(12));
+    const sun: Vector3 = bodyDirection(roiAzimuth(sample.sun_azimuth_deg, lon, centre), sample.sun_elevation_deg);
+    parts.light.position.copy(sun.multiplyScalar(Math.max(12, extent * 1.5)));
     // Lit while the Sun's upper limb is above the astronomical horizon; terrain blocking is separate.
     parts.light.intensity = sample.sun_elevation_deg > -0.27 ? 2.6 : 0;
     parts.ambient.intensity = 0.55;
   }
+  return readout;
 }
 
 export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId, onPick, onSelectMarker, temporal = null, brush, draftHeightM = null }: RoiTerrain3DProps): JSX.Element {
@@ -419,7 +576,9 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
   const [showEarth, setShowEarth] = useState<boolean>(true);
   const [showHorizon, setShowHorizon] = useState<boolean>(true);
   const evaluation: ScientificEvaluation | null = temporal?.evaluation ?? null;
-  const sample: Sample | undefined = temporal === null ? undefined : evaluation?.samples[temporal.index];
+  const cursorIndex: number = temporal?.index ?? 0;
+  const sample: Sample | undefined = temporal === null ? undefined : evaluation?.samples[cursorIndex];
+  const [pathCounts, setPathCounts] = useState<{ sun: number; earth: number; horizon: number }>({ sun: 0, earth: 0, horizon: 0 });
   const builds: RefObject<number> = useRef<number>(0);
   const brushRef: RefObject<BrushOverlay | undefined> = useRef<BrushOverlay | undefined>(brush);
   useEffect((): void => { brushRef.current = brush; }, [brush]);
@@ -482,8 +641,11 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
       const activeBrush: BrushOverlay | undefined = brushRef.current;
       if (activeBrush?.mode === "edit") return;
       if (activeBrush?.mode !== "draw") {
-        const sample: unknown = ray.intersectObject(parts.brush, true).find((hit): boolean => typeof hit.object.userData["brushSample"] === "number")?.object.userData["brushSample"];
-        if (typeof sample === "number") { activeBrush?.onSelect(sample); return; }
+        const sampleHit: Record<string, unknown> | undefined = ray.intersectObject(parts.brush, true)
+          .find((hit): boolean => typeof hit.object.userData["brushSample"] === "number")?.object.userData;
+        const sampleIndex: unknown = sampleHit?.["brushSample"];
+        const sampleRegion: unknown = sampleHit?.["brushRegion"];
+        if (typeof sampleIndex === "number" && typeof sampleRegion === "string") { activeBrush?.onSelectSample(sampleRegion, sampleIndex); return; }
         const marker: unknown = ray.intersectObject(parts.markers, true)[0]?.object.userData["candidateId"];
         if (typeof marker === "string") { callbacks.current.onSelectMarker(marker); return; }
       }
@@ -493,10 +655,20 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
           setPickNotice("Outside the outlined 4 × 4 km study area; candidate creation is unavailable here.");
           return;
         }
-        setPickNotice(null);
         const point: LocalPoint = { east_m: hit.east_m, north_m: hit.north_m };
-        if (activeBrush?.mode === "draw") activeBrush.onAdd(point);
-        else callbacks.current.onPick(point);
+        if (activeBrush?.mode === "draw") { setPickNotice(null); activeBrush.onAdd(point); return; }
+        // Guards against accidental records: candidates are created only on the 20 m detail grid,
+        // and never while a region evaluation is writing results.
+        if (displayRef.current.roi.half_width_m > terrain.roi.half_width_m) {
+          setPickNotice("Regional terrain is for exploration only. Switch to Scientific detail · 4 km to create a candidate.");
+          return;
+        }
+        if (activeBrush?.busy === true) {
+          setPickNotice("A region evaluation is running; terrain clicks do not create candidates until it finishes.");
+          return;
+        }
+        setPickNotice(null);
+        callbacks.current.onPick(point);
       }
     };
     let frame: number = 0;
@@ -521,7 +693,10 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
         if (hit === null) { setHover(null); return; }
         const point: LocalPoint = { east_m: hit.east_m, north_m: hit.north_m };
         const [latitude, longitude] = toGeographic(displayRef.current, point);
-        setHover({ point, latitude, longitude, elevation: displayElevation(displayRef.current, point) });
+        const elevation: number | null = displayElevation(displayRef.current, point);
+        // Full-precision readout for verification of the geographic alignment (display values only).
+        host.setAttribute("data-hover", [point.east_m, point.north_m, latitude, longitude, elevation ?? NaN].map((v: number): string => v.toString()).join(","));
+        setHover({ point, latitude, longitude, elevation });
       });
     };
     const onLeave: () => void = (): void => { pending = null; setHover(null); };
@@ -591,9 +766,29 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
     if (parts === null) return;
-    drawBodies(parts, displayTerrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon);
+    const readout: Pick<SkyReadout, "sun" | "earth"> = drawBodies(parts, displayTerrain, evaluation, cursorIndex, exaggeration, sunLighting, showSun, showEarth, showHorizon);
+    const host: HTMLDivElement | null = canvasRef.current;
+    const format: (value: [number, number] | null) => string = (value: [number, number] | null): string => value === null ? "" : `${value[0].toFixed(4)},${value[1].toFixed(4)}`;
+    host?.setAttribute("data-cursor-index", sample === undefined ? "" : cursorIndex.toString());
+    host?.setAttribute("data-sun-direction", format(readout.sun));
+    host?.setAttribute("data-earth-direction", format(readout.earth));
     renderRef.current();
-  }, [displayTerrain, evaluation, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon, failed]);
+  }, [displayTerrain, evaluation, cursorIndex, sample, exaggeration, sunLighting, showSun, showEarth, showHorizon, failed]);
+
+  // Whole-interval paths depend on the stored evaluation and the scale only, not on the cursor.
+  useEffect((): void => {
+    const parts: SceneParts | null = partsRef.current;
+    if (parts === null) return;
+    const counts: { sun: number; earth: number; horizon: number } = drawPaths(parts, displayTerrain, evaluation, exaggeration, showSun, showEarth, showHorizon);
+    setPathCounts((previous): { sun: number; earth: number; horizon: number } =>
+      previous.sun === counts.sun && previous.earth === counts.earth && previous.horizon === counts.horizon ? previous : counts);
+    const host: HTMLDivElement | null = canvasRef.current;
+    host?.setAttribute("data-sky-radius-km", skyRadiusKm((2 * displayTerrain.roi.half_width_m) / 1000).toString());
+    host?.setAttribute("data-sun-path", counts.sun.toString());
+    host?.setAttribute("data-earth-path", counts.earth.toString());
+    host?.setAttribute("data-horizon-points", counts.horizon.toString());
+    renderRef.current();
+  }, [displayTerrain, evaluation, exaggeration, showSun, showEarth, showHorizon, failed]);
 
   useEffect((): void => {
     const parts: SceneParts | null = partsRef.current;
@@ -647,6 +842,7 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
             <span><span className="sun-text">Sun</span> az {sample.sun_azimuth_deg.toFixed(1)}° · elevation {sample.sun_elevation_deg.toFixed(2)}° vs horizon {sample.sun_horizon_deg.toFixed(2)}° · centre clearance {(sample.sun_elevation_deg - sample.sun_horizon_deg).toFixed(2)}° → <strong>{sample.sun_visible ? "visible" : "blocked"}</strong></span>
             <span><span className="earth-text">Earth</span> az {sample.earth_azimuth_deg.toFixed(1)}° · elevation {sample.earth_elevation_deg.toFixed(2)}° vs horizon {sample.earth_horizon_deg.toFixed(2)}° · centre clearance {(sample.earth_elevation_deg - sample.earth_horizon_deg).toFixed(2)}° → <strong>{sample.earth_visible ? "in view" : "blocked"}</strong></span>
           </>}
+          {sample !== undefined && <span className="sky-scale" data-testid="sky-scale">Sky dome (symbolic): radius {skyRadiusKm((2 * displayTerrain.roi.half_width_m) / 1000).toFixed(1)} km around the observer · {pathCounts.sun.toString()} Sun and {pathCounts.earth.toString()} Earth samples · directions are stored SPICE values; distances are not to scale (Sun ≈ 1 AU, Earth ≈ 384,000 km)</span>}
           {draftHeightM !== null && draftHeightM !== evaluation.candidate.observer_height_m && <span className="draft-text">Draft observer height {draftHeightM.toString()} m (unsaved; result above is for {evaluation.candidate.observer_height_m.toString()} m)</span>}
         </div>}
         <div className="terrain-compass" title="North arrow (follows the camera)" aria-label={`North is ${heading.toString()}° clockwise from screen up`}>
@@ -656,7 +852,7 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
         </div>
       </div>
       <div className="terrain-scale" role="group" aria-label="Terrain scale">
-        <button type="button" aria-pressed={isRegional} disabled={regional === null} onClick={(): void => { if (isRegional) view("reset"); else setRegionalMode(true); setPickNotice(null); }}>Regional explore · 20 km</button>
+        <button type="button" aria-pressed={isRegional} disabled={regional === null} onClick={(): void => { if (isRegional) view("reset"); else setRegionalMode(true); setPickNotice(null); }}>Regional explore · 40 km</button>
         <button type="button" aria-pressed={!isRegional} onClick={(): void => { setRegionalMode(false); setPickNotice(null); }}>Scientific detail · 4 km</button>
         <span>{isRegional ? "240 m LOLA DEM · 250 m display grid" : "20 m LOLA DEM · 20 m display grid"}</span>
       </div>
@@ -668,8 +864,8 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
         <button type="button" aria-label="Zoom out" onClick={(): void => { view("out"); }}>－</button>
         <button type="button" disabled={selectedId === null || !candidates.some((c: Candidate): boolean => c.candidate_id === selectedId)}
           onClick={(): void => { view("selected"); }}>Centre on selected</button>
-        <label><input type="checkbox" checked={showSun} disabled={sample === undefined} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setShowSun(event.target.checked); }} /> Sun ray</label>
-        <label><input type="checkbox" checked={showEarth} disabled={sample === undefined} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setShowEarth(event.target.checked); }} /> Earth ray</label>
+        <label><input type="checkbox" checked={showSun} disabled={sample === undefined} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setShowSun(event.target.checked); }} /> Sun path &amp; ray</label>
+        <label><input type="checkbox" checked={showEarth} disabled={sample === undefined} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setShowEarth(event.target.checked); }} /> Earth path &amp; ray</label>
         <label><input type="checkbox" checked={showHorizon} disabled={sample === undefined} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setShowHorizon(event.target.checked); }} /> Horizon guides</label>
         <label><input type="checkbox" checked={sunLighting} disabled={evaluation === null} onChange={(event: ChangeEvent<HTMLInputElement>): void => { setSunLighting(event.target.checked); }} /> Light from stored Sun direction</label>
         <label>Vertical exaggeration{" "}
@@ -680,10 +876,10 @@ export function RoiTerrain3D({ terrain, regional = null, candidates, selectedId,
       </div>
       <p className="muted small">
         Left-drag rotates, right-drag pans, scroll zooms. <strong>Click the terrain</strong> to save a new candidate there; click a marker to select it.
-        Grid lines every {isRegional ? "5" : "1"} km; {isRegional && "Select Regional explore again to reset its view. "} {isRegional && "Gold outline: supported 4 km candidate study area. Regional terrain is display only; click within the outline to create a candidate. "} <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
-        {sample !== undefined && <>White pin: evaluated observer (symbolic height). Orange Sun and blue Earth rays show stored directions; solid/filled means visible, dashed/open means blocked.
-          Azimuths are measured clockwise from north at the candidate. Fine coloured dashed lines and small rings show the stored horizon angle in each body's direction; grey dashed lines mark the local horizontal. These are angular guides, not distant terrain or body distances.
-          Clearance is centre elevation minus stored horizon; visibility uses the stored 200 km horizon and tests the Sun's upper limb and Earth's centre. </>}
+        Grid lines every {isRegional ? "5" : "1"} km; {isRegional && "Select Regional explore again to reset its view. "} {isRegional && "Gold outline: supported 4 km candidate study area; SP marks the geographic south pole. Regional terrain (40 × 40 km, 240 m DEM) is for exploration only: switch to Scientific detail to create candidates. "} <span className="legend-dot selected" /> selected, <span className="legend-dot other" /> other candidates.
+        {sample !== undefined && <>White pin: evaluated observer (symbolic height). Orange Sun and blue Earth paths show every stored sample of the evaluation on a symbolic sky dome (solid stretches visible, faint stretches blocked); the white trail is the time elapsed up to the Timeline cursor, and the ray and sphere mark the cursor sample (dashed/open when blocked).
+          Azimuths are measured clockwise from north at the candidate (the dome's N label). The tan line is the stored 200 km terrain-horizon silhouette, the grey dashed ring the local horizontal; the short green/red arc spans from the stored horizon angle to the body (clear/blocked).
+          These are angular guides, not distant terrain or body distances. Visibility tests the Sun's upper limb and Earth's centre against the stored horizon. </>}
         {sunLighting && sample !== undefined ? "Sun lighting and shadows cover only the displayed mesh and do not represent distant occlusion." : "Lighting is fixed for relief and is not the Sun."}
         {" "}The two scales switch between separate LOLA grids; surface and marker heights can differ between resolutions.
         {" "}Heights, exaggeration and the hover elevation are for display; saved candidates use the original raster sample.

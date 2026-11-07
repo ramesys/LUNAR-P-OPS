@@ -58,3 +58,29 @@ describe("ROI frame", (): void => {
     expect(displayHeightM(100, 40, { east_m: 2000, north_m: 2000 }, FRAME)).toBeCloseTo(60 - 8e6 / 3474800, 2);
   });
 });
+
+describe("40 km regional frame against the backend (lunar_core) values", (): void => {
+  // Frame and corners exactly as returned by /api/rois/shackleton-rim-b/terrain and /regional-terrain.
+  const frame: Parameters<typeof toGeographic>[0] = { center_projected_m: [11999.719394392474, 7999.813678027343],
+    east_axis_projected: [0.5547002321529926, -0.8320502703860002], north_axis_projected: [0.8320502703860002, 0.5547002321529926] };
+  const corners: [number, number, number, number][] = [
+    [-20000, 20000, -88.68719581090211, 26.15222904617576], [20000, 20000, -88.68719581090211, 86.46763095382425],
+    [20000, -20000, -89.31527766854369, 161.8940665248902], [-20000, -20000, -89.31527766854369, 310.7257934751098]];
+
+  it("places the 40 km corners where the backend does", (): void => {
+    for (const [east, north, lat, lon] of corners) {
+      const [latitude, longitude] = toGeographic(frame, { east_m: east, north_m: north });
+      expect(latitude).toBeCloseTo(lat, 9);
+      expect(longitude).toBeCloseTo(lon, 8);
+      const back: { east_m: number; north_m: number } = toLocal(frame, lat, lon);
+      expect(back.east_m).toBeCloseTo(east, 5);
+      expect(back.north_m).toBeCloseTo(north, 5);
+    }
+  });
+
+  it("puts the geographic south pole inside the 40 km view on the local south axis", (): void => {
+    const pole: { east_m: number; north_m: number } = toLocal(frame, -90, 0);
+    expect(pole.east_m).toBeCloseTo(0, 6);
+    expect(pole.north_m).toBeCloseTo(-14421.87, 1);
+  });
+});

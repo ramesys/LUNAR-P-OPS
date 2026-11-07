@@ -12,10 +12,12 @@ still included; the new work is a candidate workspace around one study area, **S
 > Nothing in this repository has been independently validated as a landing-site, power or
 > communications assessment. See [Scientific limitations](#scientific-limitations).
 
-![LUNA-P/OPS workspace after a Constraint Brush run](docs/screenshots/luna-p-ops-brush-workspace.jpg)
+![LUNA-P/OPS workspace with two brush regions and stored Sun/Earth geometry](docs/screenshots/luna-p-ops-spatial-detail-regions-sky.jpg)
 
 *Current interface (captured 2026-11-07 from the isolated test stack): Landing Graph, 4 km
-Shackleton Rim B terrain with Constraint Brush sample markers, Inspector and the shared Timeline.*
+Shackleton Rim B terrain with two brush regions and their result markers, the symbolic sky dome with
+the stored horizon silhouette and Sun/Earth rays, Inspector, the shared Timeline and, below it, the
+Region Brush dock.*
 
 ## Contents
 
@@ -50,24 +52,26 @@ It is a design and research environment. It does not rank landing sites for flig
 
 | Area | What is implemented |
 | --- | --- |
-| Terrain workspace | Three.js view of the Shackleton Rim B study area at two scales: **Regional explore · 20 km** (240 m LOLA DEM, 250 m display grid) and **Scientific detail · 4 km** (20 m LOLA DEM, 20 m display grid). Hover readout of position and elevation, compass, grid, vertical exaggeration, optional lighting from the stored Sun direction. |
-| Candidates | Clicking inside the outlined 4 km study area creates an immutable **C0** candidate whose elevation is re-sampled from the original 20 m DEM (clicks outside it are refused). **C1** revisions (new observer height or time) are derived from a C0. Identity is a SHA-256 of the scientific inputs. |
+| Terrain workspace | Three.js view of the Shackleton Rim B study area at two scales: **Regional explore · 40 km** (40 × 40 km from the 240 m LOLA DEM on a 250 m display grid; it contains the geographic south pole, marked SP) and **Scientific detail · 4 km** (20 m LOLA DEM, 20 m display grid). The 4 km study boundary is outlined on both. Hover readout of position and elevation, compass, grid, vertical exaggeration, optional lighting from the stored Sun direction. |
+| Candidates | Clicking inside the 4 km study area on the **Scientific detail** view creates an immutable **C0** candidate whose elevation is re-sampled from the original 20 m DEM. Clicks outside the study area, on the regional view, or while a region evaluation runs never create candidates. **C1** revisions (new observer height or time) are derived from a C0. Identity is a SHA-256 of the scientific inputs. |
 | Landing Graph | Rete.js graph: Location, Terrain, Observer Height and Time nodes → Candidate → Scientific computation (backend) → Results. Computation runs only on an explicit **Evaluate**. |
 | Evaluation | Per-candidate terrain horizon (0.5° azimuth, 200 km) from LOLA, Sun and Earth positions from SPICE, sampled visibility series and intervals, full provenance. Strict DEM coverage check: missing data gives `UNAVAILABLE`, never a flat-horizon substitute. |
-| Timeline and Inspector | One shared state drives the Timeline cursor, the Sun/Earth rays and horizon guides in 3D, the graph Results node and the Inspector. The cursor only moves between stored samples; it never computes. |
-| Constraint Brush | Polygon drawing and vertex editing on the 4 km terrain, deterministic grid sampling, read-only preview, confirmed batch evaluation, PASS/FAIL/UNAVAILABLE/ERROR markers, C0 persistence with reuse of matching candidates, experiment JSON export. |
+| Timeline and Inspector | One shared state drives the Timeline cursor, the 3D sky geometry, the graph Results node and the Inspector. The cursor only moves between stored samples; it never computes. |
+| Sun/Earth geometry | From the stored evaluation only: whole-interval Sun and Earth paths (every stored sample, solid where visible, faint where blocked), a trail up to the Timeline cursor, the cursor ray and body, the stored 200 km horizon silhouette, the local horizontal and a clearance arc between horizon angle and body. All are drawn on a **symbolic** sky dome (2.6 km radius at 4 km, 12 km at 40 km): directions are real, distances are not. |
+| Constraint Brush | A compact **Region Brush dock** directly below the Timeline. Several regions can be created, selected, edited (vertex drag, undo, remove) and deleted (with confirmation; persisted candidates and evaluations are kept). Each region has its own parameters, read-only preview, confirmed batch evaluation, PASS/FAIL/UNAVAILABLE/ERROR markers, C0 persistence with reuse of matching candidates and experiment JSON export. Region definitions are restored after a reload. |
 | Reproducibility | Stored evaluations record dataset and kernel SHA-256 hashes, library versions and the software commit. An experiment manifest can be exported; **Recompute & compare** recomputes without storing and reports differences. |
 | Catalog comparison | The original CLPS browser: compare 2–4 catalog or custom sites over a date range with sky diagrams, timelines, CSV/PNG export and a south-pole map. Catalog sites are **placeholders**, not official CLPS sites. |
 
 ## Interface
 
-| Regional explore (20 km, 240 m DEM) | Constraint Brush panel after an evaluated run |
+| Regional explore (40 km, 240 m DEM) with the sky dome | Phone layout: Timeline and Region Brush dock |
 | --- | --- |
-| ![Regional terrain view](docs/screenshots/luna-p-ops-workspace-regional.jpg) | ![Constraint Brush panel](docs/screenshots/luna-p-ops-constraint-brush.jpg) |
+| ![Regional 40 km terrain view](docs/screenshots/luna-p-ops-spatial-regional-40km.jpg) | ![Phone layout](docs/screenshots/luna-p-ops-spatial-phone.jpg) |
 
-These three images were captured from the running application on the isolated test stack, whose
-database is temporary. The results shown are real outputs (all points fail a 50 % Earth-visibility
-constraint for 2026-11-07, 48 h). Older images in `docs/screenshots/` (`01-…` to `09-…` and the
+These images were captured from the running application on the isolated test stack, whose
+database is temporary. The results shown are real outputs: every point of the evaluated region fails
+a 10 % Earth-visibility constraint for 24 h from 2026-11-07 (the Earth is below the terrain horizon
+there in that interval). Older images in `docs/screenshots/` (`01-…` to `09-…` and the
 `sprint0x-…` files) are **historical** and show earlier interfaces.
 
 ## Architecture
@@ -114,7 +118,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Input | Source | Use |
 | --- | --- | --- |
 | `LDEM_80S_20MPP_ADJ` (20 m/px) | NASA GSFC PGDA, LOLA south-pole DEM (Barker et al. 2023) | Candidate elevation, near-field horizon (≤ 8 km), 4 km display grid |
-| `LDEM_60S_240MPP_ADJ` (240 m/px) | NASA GSFC PGDA | Far-field horizon (8–200 km), 20 km regional display grid |
+| `LDEM_60S_240MPP_ADJ` (240 m/px) | NASA GSFC PGDA | Far-field horizon (8–200 km), 40 km regional display grid |
 | `de440s.bsp`, `moon_pa_de421_1900-2050.bpc`, `moon_080317.tf`, `pck00011.tpc`, `naif0012.tls` | NASA/JPL NAIF generic kernels | Sun and Earth positions in `MOON_ME`, lunar radius, leap seconds |
 
 Only bounded windows of the DEMs are downloaded and cached as `.npz` files under `data/terrain/`.
@@ -137,8 +141,11 @@ Full method, coordinate conventions and verification levels:
 
 The Constraint Brush turns a drawn region into a batch of evaluated candidates.
 
-1. **Draw** a polygon on the 4 km terrain (top view recommended); finish, then optionally edit or
-   remove vertices. Vertices are stored as ROI-local east/north offsets in projected metres.
+1. **Draw:** in the Region Brush dock choose **＋ New region** and click the terrain inside the
+   4 km study area (Scientific detail and top view recommended); **Finish region**, then optionally
+   edit, undo or remove vertices. Vertices are ROI-local east/north offsets in projected metres.
+   Several regions can exist; the chips in the dock select one, and **Delete region** asks for
+   confirmation and removes only the drawing.
 2. **Set parameters:** grid spacing (≥ 20 m), maximum locations (≤ 64), observer height, UTC start,
    duration (≤ 168 h), step, and constraints: minimum Sun, Earth and simultaneous fractions,
    optional maximum darkness and Earth gap. Choose whether to persist all valid locations or only
@@ -158,9 +165,11 @@ The Constraint Brush turns a drawn region into a batch of evaluated candidates.
    whole run (preview, per-point results, evaluations with provenance, notes) as JSON.
 
 Fractions are counts of stored samples; gaps are sampled estimates and may differ from continuous
-time by up to one step. The brush run itself is browser-session state: after a reload, the
-persisted candidates remain, but the region and verdict list are recovered only from the exported
-JSON.
+time by up to one step. Region definitions (vertices and parameters) are kept in the browser's
+local storage and restored after a reload. A region's preview and verdict list are session state:
+after a reload, the persisted candidates and evaluations remain in SQLite, but the verdict list is
+recovered only from the exported JSON. Editing a region discards its preview and results view, and
+a preview or execution that returns after its region was edited or deleted is not attached to it.
 
 ## Getting started
 
@@ -279,9 +288,9 @@ only in `lunar_core`; after changing API models run `make openapi` and commit
   ignored); the Sun test uses the upper limb.
 - **Spherical reference.** Elevations and geometry use the 1737.4 km LOLA reference sphere.
   DE421 lunar orientation covers 1900–2050.
-- **3D view is not the scientific horizon.** The viewer shows at most a 20 km area; visibility
+- **3D view is not the scientific horizon.** The viewer shows at most a 40 km area; visibility
   comes from the stored 200 km horizon mask. Mesh heights, exaggeration and lighting are visual.
-- **Separate terrain scales.** The 20 km and 4 km views are separate DEM meshes, switched rather
+- **Separate terrain scales.** The 40 km and 4 km views are separate DEM meshes, switched rather
   than blended; their heights can differ at the same point.
 - **Placeholders.** Catalog sites A–F are arbitrary samples. Shackleton Rim B (−89.5244°,
   56.30993°E, NASA Lunar Surface Data Book table A2.1-1) is a study-area centre, not a landing
@@ -289,15 +298,15 @@ only in `lunar_core`; after changing API models run `make openapi` and commit
 
 ## Current development status
 
-Reviewed at commit `06bda7c` on 2026-11-07. Backend (148 tests), frontend unit (80), lint, type
-checks, production build and 19 browser checks (Chrome, desktop and phone) passed in that review.
+Spatial workspace sprint, 2026-11-07: backend (148 tests), frontend unit (90), lint, type checks,
+production build and 23 browser checks (Chrome, desktop and phone) passed on the isolated stack.
 What works, what is unverified, the review findings and the recommended next milestone are in
 [docs/STATUS.md](docs/STATUS.md). Sprint reports `docs/LUNAR_OPS_SPRINT_0*.md` and
 `docs/LUNAR_OPS_SESSION_HANDOVER.md` are historical records.
 
-Main known limitations: no 40 km regional view; no LROC imagery; no region-level executable graph
-nodes; brush execution is synchronous without progress or cancel; the brush run is not persisted
-as one record; the three.js chunk triggers a bundle-size warning.
+Main known limitations: no LROC imagery; no region-level executable graph nodes; brush execution is
+synchronous without progress or cancel; a region's results are not persisted as one record; the
+three.js chunk triggers a bundle-size warning.
 
 ## Credits, sources and license
 

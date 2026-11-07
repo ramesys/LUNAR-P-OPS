@@ -8,10 +8,10 @@ interface BatchResponse { results: BatchItem[] }
 test("draws, previews, evaluates and inspects a brush candidate", async ({ page, request }): Promise<void> => {
   const existing: { candidate_id: string }[] = await (await request.get("/api/rois/shackleton-rim-b/candidates")).json() as { candidate_id: string }[];
   await page.goto("/?sites=sample-a,sample-b&from=2026-01-01&to=2026-01-02&step=120&height=2&horizon=terrain&dte=0&mode=expert");
-  await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Regional explore · 40 km" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
   await page.getByRole("button", { name: "Top view" }).click();
-  await page.getByRole("button", { name: "Draw region" }).click();
+  await page.getByRole("button", { name: "＋ New region" }).click();
   const canvas: Locator = page.locator(".terrain-canvas canvas");
   const box: { width: number; height: number } | null = await canvas.boundingBox();
   if (box === null) throw new Error("Terrain canvas unavailable");
@@ -42,7 +42,7 @@ test("draws, previews, evaluates and inspects a brush candidate", async ({ page,
   await page.getByRole("button", { name: "Preview locations" }).click();
   const preview: { ready_count: number; samples: unknown[] } = await (await previewResponse).json() as { ready_count: number; samples: unknown[] };
   expect(preview.ready_count).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Regional explore · 20 km" }).click();
+  await page.getByRole("button", { name: "Regional explore · 40 km" }).click();
   await expect(page.getByText(/4 vertices ·/)).toBeVisible();
   await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
   const afterPreview: { candidate_id: string }[] = await (await request.get("/api/rois/shackleton-rim-b/candidates")).json() as { candidate_id: string }[];
@@ -113,10 +113,10 @@ test("draws, previews, evaluates and inspects a brush candidate", async ({ page,
 test("@phone draws and clears a brush without creating a candidate", async ({ page, request }): Promise<void> => {
   const before: { candidate_id: string }[] = await (await request.get("/api/rois/shackleton-rim-b/candidates")).json() as { candidate_id: string }[];
   await page.goto("/?sites=sample-a,sample-b&from=2026-01-01&to=2026-01-02&step=120&height=2&horizon=terrain&dte=0&mode=expert");
-  await expect(page.getByRole("button", { name: "Regional explore · 20 km" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Regional explore · 40 km" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
   await page.getByRole("button", { name: "Top view" }).click();
-  await page.getByRole("button", { name: "Draw region" }).click();
+  await page.getByRole("button", { name: "＋ New region" }).click();
   const canvas: Locator = page.locator(".terrain-canvas canvas");
   const box: { width: number; height: number } | null = await canvas.boundingBox();
   if (box === null) throw new Error("Terrain canvas unavailable");
@@ -124,7 +124,8 @@ test("@phone draws and clears a brush without creating a candidate", async ({ pa
     await canvas.click({ position: { x: box.width * x, y: box.height * y } });
   }
   await expect(page.getByText(/3 vertices ·/)).toBeVisible();
-  await page.getByRole("button", { name: "Clear region" }).click();
+  await page.getByRole("button", { name: "Clear vertices" }).click();
+  await page.getByRole("alertdialog", { name: "Confirm clearing vertices" }).getByRole("button", { name: "Clear vertices" }).click();
   await expect(page.getByText(/0 vertices ·/)).toBeVisible();
   const after: { candidate_id: string }[] = await (await request.get("/api/rois/shackleton-rim-b/candidates")).json() as { candidate_id: string }[];
   expect(after).toEqual(before);

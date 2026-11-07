@@ -36,8 +36,9 @@ from an API response.
 - `clps_api/brush.py`: polygon validation, grid sampling, preview token, batch execution, metrics
   and constraint verdicts.
 - `clps_api/experiment.py`: experiment manifest and recompute-and-compare.
-- `clps_api/roi_terrain.py`: 4 km display grid (20 m) with coverage checks; 20 km regional
-  display grid (250 m spacing from the 240 m DEM).
+- `clps_api/roi_terrain.py`: 4 km display grid (20 m) with coverage checks; 40 km regional
+  display grid (161 × 161 nodes, 250 m spacing, bilinear samples of the 240 m DEM, with corner
+  coordinates). The 40 km square contains the south pole (local 0 m E, −14.42 km N).
 - `clps_api/service.py`, `pole_map.py`, `terrain_store.py`: the original catalog comparison.
 
 SPICE calls are serialized with a lock (`SPICE_LOCK`) because CSPICE is not thread-safe. The API
@@ -52,7 +53,7 @@ Interactive documentation at `/docs` on a running API.
 | --- | --- |
 | `GET /api/rois` | List ROIs and whether their LOLA windows are present |
 | `GET /api/rois/{roi_id}/terrain` | 4 km display grid, corners, coverage checks, datasets, limitations |
-| `GET /api/rois/{roi_id}/regional-terrain` | 20 km display-only far-field grid |
+| `GET /api/rois/{roi_id}/regional-terrain` | 40 km display-only far-field grid and its corners |
 | `POST /api/rois/{roi_id}/candidates` | Create (or reuse) a C0 at local east/north offsets — **writes** |
 | `GET /api/rois/{roi_id}/candidates` | C0 candidates of the ROI |
 | `POST /api/rois/{roi_id}/brush/preview` | Validate and sample a polygon — read-only |
@@ -79,14 +80,27 @@ Use the exact paths in `frontend/api-client/openapi.json` when in doubt.
 - `App.tsx` persists identifiers only (root, revision, evaluation, cursor, context) to
   `localStorage`, debounced by 300 ms and flushed on `pagehide`, and re-reads every record from
   the API on load.
-- `components/RoiTerrain3D.tsx` (Three.js): one scene; the 20 km and 4 km grids are swapped in it.
+- `components/RoiTerrain3D.tsx` (Three.js): one scene; the 40 km and 4 km grids are swapped in it.
+  Candidate creation happens only on the 4 km grid, inside the study area and never while a region
+  evaluation runs. Sky geometry (paths, trail, cursor ray, horizon silhouette) is built from the
+  stored evaluation by the pure helpers in `lib/sceneGeometry.ts` on a symbolic dome; whole paths
+  are rebuilt per evaluation and scale, the cursor objects per Timeline step. The canvas exposes
+  `data-*` attributes (path counts, cursor index, drawn Sun/Earth directions, hover coordinates)
+  that the browser tests compare with the API.
   Click picking returns local east/north offsets to the parent; markers, brush polygon, sample
   markers, Sun/Earth rays and horizon guides are overlays.
 - `components/LandingGraph.tsx`, `landingGraph.ts` (Rete.js v2 with `rete-engine`): Location,
   Terrain, Observer Height, Time → Candidate (`preview`, `candidate_ref`) → Scientific computation
   (memoised; runs only on Evaluate) → Results. There are no region-level nodes.
-- `components/ConstraintBrush.tsx`: polygon, parameters, preview and execution results in React
-  component state (not in the shared store, not persisted across reloads).
+- `components/ConstraintBrush.tsx`: the Region Brush dock. Regions (vertices, parameters, revision,
+  preview, execution), the active region, the drawing mode and the inspected result live in the
+  shared store. Every edit increments the region's revision and discards its preview/results view;
+  preview and execution responses are applied only to the revision they were requested for.
+  Deleting a region removes the drawing only. Selecting a candidate anywhere moves the inspected
+  result to the matching region result or clears it. Region definitions are saved to
+  `localStorage` (`lunar-ops-regions`); previews and results are not. The dock is fixed below the
+  Timeline in the candidate context and publishes its height (`--brush-dock-h`) so the Timeline and
+  page padding sit above it.
 - `components/WorkspaceInspector.tsx`, `ExperimentPanel.tsx`, `ContextBar.tsx`: inspection,
   manifest export, recompute-and-compare, active-context bar.
 - The original catalog UI (`ChartsPanel`, `SkyChart`, `Timeline`, `PoleMap`, …) is intact; its

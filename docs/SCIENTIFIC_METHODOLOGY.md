@@ -13,7 +13,7 @@ independent reference data**, and **independent scientific validation**
 | Product | Resolution | Window used | Role |
 | --- | --- | --- | --- |
 | LOLA `LDEM_80S_20MPP_ADJ.TIF` (PGDA) | 20 m/px | ±12 km around the ROI centre (`shackleton-rim-b_near.npz`) | candidate elevation, near-field horizon, 4 km display grid |
-| LOLA `LDEM_60S_240MPP_ADJ.TIF` (PGDA) | 240 m/px | ±205 km around the ROI centre (`shackleton-rim-b_far.npz`) | far-field horizon, 20 km display grid |
+| LOLA `LDEM_60S_240MPP_ADJ.TIF` (PGDA) | 240 m/px | ±205 km around the ROI centre (`shackleton-rim-b_far.npz`) | far-field horizon, 40 km display grid |
 | NAIF `de440s.bsp` | — | — | Sun, Earth, Moon ephemerides |
 | NAIF `moon_pa_de421_1900-2050.bpc`, `moon_080317.tf` | — | — | lunar orientation; `MOON_ME` (DE421 mean Earth / polar axis) frame |
 | NAIF `pck00011.tpc`, `naif0012.tls` | — | — | lunar radii (spherical, 1737.4 km), leap seconds |
@@ -164,9 +164,13 @@ repeatability with the same inputs and code; it is not validation.
 - Candidate IDs depend on bit-exact floating-point results (projection, bilinear interpolation).
   Running on a different platform or library version could, in principle, produce different IDs
   for the same nominal point; this has not been tested.
-- The 3D viewer shows at most a 20 km area. It does not render the 200 km horizon; distant terrain
+- The 3D viewer shows at most a 40 km area. It does not render the 200 km horizon; distant terrain
   that blocks the Sun or Earth appears only through the stored horizon guides and results.
-- The 20 km and 4 km views are separate meshes from different DEMs and are switched, not blended.
+- Sun/Earth paths, rays and the horizon silhouette in the 3D view are drawn on a symbolic dome
+  (2.6 km radius at 4 km scale, 12 km at 40 km). Only their directions come from the stored
+  SPICE samples and horizon mask; their distance from the observer has no physical meaning. Paths
+  connect stored samples with straight segments; nothing between samples is computed.
+- The 40 km and 4 km views are separate meshes from different DEMs and are switched, not blended.
 - No orbital imagery (for example LROC) is shown; its registration to the DEM has not been checked.
 - Shackleton Rim B is a published study point, not an official landing site; the ±2 km square is a
   proposed study area.

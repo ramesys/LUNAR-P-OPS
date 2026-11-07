@@ -4,7 +4,7 @@ import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { LandingGraph } from "./components/LandingGraph.tsx";
 import { ShackletonWorkspace } from "./components/ShackletonWorkspace.tsx";
 import { SelectionGuard } from "./lib/selectionGuard.ts";
-import { loadContext, loadSelection, saveContext, saveSelection, type ContextSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
+import { loadContext, loadRegions, loadSelection, saveContext, saveRegions, saveSelection, type ContextSelection, type StoredRegions, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
 import { analysisKey, analysisLabel } from "./lib/analysisKey.ts";
 import { ContextBar } from "./components/ContextBar.tsx";
 import { createExplorationStore, ExplorationContext, INITIAL, INITIAL_CATALOG, useExploration, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
@@ -81,7 +81,10 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [store] = useState<ExplorationStore>((): ExplorationStore => {
     const saved: WorkspaceSelection | null = loadSelection();
     const context: ContextSelection = loadContext();
+    const stored: StoredRegions = loadRegions();
     const base: ExplorationState = { ...INITIAL, context: context.context,
+      regions: stored.regions.map((r): ExplorationState["regions"][number] => ({ ...r, revision: 0, preview: null, execution: null })),
+      activeRegionId: stored.activeRegionId,
       catalog: { ...INITIAL_CATALOG, analysisKey: context.catalogAnalysisKey, cursorUtc: context.catalogCursorUtc } };
     return createExplorationStore(saved === null ? base :
       { ...base, rootId: saved.rootId, revisionId: saved.revisionId, cursorUtc: saved.cursorUtc ?? null });
@@ -123,6 +126,9 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         timer = undefined;
         const state: ExplorationState = store.getState();
         saveContext({ context: state.context, catalogAnalysisKey: state.catalog.analysisKey, catalogCursorUtc: state.catalog.cursorUtc });
+        // Region definitions only: previews and results are not stored in the browser.
+        saveRegions({ regions: state.regions.map((r): StoredRegions["regions"][number] => ({ id: r.id, number: r.number, vertices: r.vertices, closed: r.closed, params: r.params })),
+          activeRegionId: state.activeRegionId });
         if (state.rootId === null || state.revisionId === null) return;
         saveSelection({ rootId: state.rootId, revisionId: state.revisionId,
           evaluationId: state.evaluation?.evaluation_id ?? null, cursorUtc: state.cursorUtc });

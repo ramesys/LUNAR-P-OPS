@@ -1,15 +1,16 @@
 import { createApiClient, type ApiClient, type BrushDefinition, type BrushPreview, type BrushSample, type ScientificEvaluation, type Candidate } from "@clps/api-client";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import type { JSX } from "react";
 import { evaluation } from "../lib/testFixtures.ts";
 import type { BrushOverlay } from "../lib/brushTypes.ts";
+import { createExplorationStore, ExplorationContext, type ExplorationStore } from "../lib/explorationStore.ts";
 import { ConstraintBrush } from "./ConstraintBrush.tsx";
 
 function fakeApi(calls: string[]): ApiClient {
   return createApiClient({ baseUrl: "http://api.test", fetch: async (request: Request): Promise<Response> => {
     const path: string = new URL(request.url).pathname;
-    calls.push(path);
+    calls.push(`${request.method} ${path}`);
     const body: Record<string, unknown> = await request.json() as Record<string, unknown>;
     const definition: BrushDefinition = (path.endsWith("/preview") ? body : body["definition"]) as BrushDefinition;
     const sample: BrushSample = { east_m: 0, north_m: 0, latitude_deg: -89.5, longitude_deg: 56, elevation_m: -28,
@@ -26,28 +27,85 @@ function fakeApi(calls: string[]): ApiClient {
 
 afterEach(cleanup);
 
-it("keeps drawing and preview read-only, and inspects a result only after explicit approval", async (): Promise<void> => {
-  const calls: string[] = [];
-  const created: Candidate[][] = [];
-  const inspected: { candidate: Candidate; evaluationId: string | undefined }[] = [];
-  render(<ConstraintBrush apiClient={fakeApi(calls)} defaultTimeUtc="2026-11-07T00:00:00Z"
-    onCandidatesCreated={(c: Candidate[]): void => { created.push(c); }} onInspect={(candidate: Candidate, evaluationId?: string): void => { inspected.push({ candidate, evaluationId }); }}
-    renderTerrain={(brush: BrushOverlay): JSX.Element => <button type="button" onClick={(): void => {
-      brush.onAdd({ east_m: brush.vertices.length * 100, north_m: brush.vertices.length * 50 });
-    }}>Test terrain click</button>} />);
-  fireEvent.click(screen.getByRole("button", { name: "Draw region" }));
+interface Harness { store: ExplorationStore; calls: string[]; created: Candidate[][]; inspected: { candidate: Candidate; evaluationId: string | undefined }[]; overlay: () => BrushOverlay }
+
+function mount(): Harness {
+  const store: ExplorationStore = createExplorationStore();
+  const harness: Harness = { store, calls: [], created: [], inspected: [], overlay: (): BrushOverlay => { throw new Error("not rendered"); } };
+  let latest: BrushOverlay | null = null;
+  harness.overlay = (): BrushOverlay => { if (latest === null) throw new Error("not rendered"); return latest; };
+  render(<ExplorationContext.Provider value={store}><ConstraintBrush apiClient={fakeApi(harness.calls)} defaultTimeUtc="2026-11-07T00:00:00Z"
+    onCandidatesCreated={(c: Candidate[]): void => { harness.created.push(c); }}
+    onInspect={(candidate: Candidate, evaluationId?: string): void => { harness.inspected.push({ candidate, evaluationId }); store.dispatch({ type: "select-root", rootId: candidate.candidate_id }); }}
+    renderTerrain={(brush: BrushOverlay): JSX.Element => { latest = brush; return <button type="button" onClick={(): void => {
+      const count: number = brush.regions.find((r): boolean => r.active)?.vertices.length ?? 0;
+      brush.onAdd({ east_m: count * 100, north_m: count * 50 });
+    }}>Test terrain click</button>; }} /></ExplorationContext.Provider>);
+  return harness;
+}
+
+function drawTriangle(): void {
+  fireEvent.click(screen.getByRole("button", { name: "＋ New region" }));
   for (let i: number = 0; i < 3; i++) fireEvent.click(screen.getByRole("button", { name: "Test terrain click" }));
-  expect(calls).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Finish region" }));
+}
+
+it("keeps drawing and preview read-only, and inspects a result only after explicit approval", async (): Promise<void> => {
+  const h: Harness = mount();
+  fireEvent.click(screen.getByRole("button", { name: "＋ New region" }));
+  for (let i: number = 0; i < 3; i++) fireEvent.click(screen.getByRole("button", { name: "Test terrain click" }));
+  expect(h.calls).toEqual([]);
+  expect(screen.getByText(/3 vertices ·/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Finish region" }));
+  expect(screen.getByLabelText("Grid spacing (m)")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Preview locations" }));
   await screen.findByText(/1 locations · 1 DEM-ready/);
-  expect(calls).toEqual(["/api/rois/shackleton-rim-b/brush/preview"]);
+  expect(h.calls).toEqual(["POST /api/rois/shackleton-rim-b/brush/preview"]);
   expect(screen.getByRole("button", { name: "Evaluate region & create candidates" }).hasAttribute("disabled")).toBe(true);
   fireEvent.click(screen.getByRole("checkbox", { name: /I approve evaluating/ }));
   fireEvent.click(screen.getByRole("button", { name: "Evaluate region & create candidates" }));
-  await screen.findByRole("heading", { name: "Experiment results" });
-  expect(created[0]?.[0]?.candidate_id).toBe("c0");
+  await screen.findByRole("heading", { name: "Experiment results · Region 1" });
+  expect(h.created[0]?.[0]?.candidate_id).toBe("c0");
   fireEvent.click(screen.getByRole("button", { name: /PASS · 0 m E, 0 m N/ }));
-  expect(inspected[0]?.candidate.candidate_id).toBe("c0");
-  expect(inspected[0]?.evaluationId).toBe("e1");
+  expect(h.inspected[0]?.candidate.candidate_id).toBe("c0");
+  expect(h.inspected[0]?.evaluationId).toBe("e1");
+  expect(h.store.getState().inspectedSample).toEqual({ regionId: h.store.getState().activeRegionId, index: 0 });
+  expect(h.overlay().regions[0]?.samples[0]).toMatchObject({ verdict: "PASS", selected: true });
+});
+
+it("manages several regions and deletes one only after confirmation, without any API write", (): void => {
+  const h: Harness = mount();
+  drawTriangle();
+  drawTriangle();
+  expect(h.store.getState().regions.map((r): number => r.number)).toEqual([1, 2]);
+  expect(h.overlay().regions.map((r): boolean => r.active)).toEqual([false, true]);
+  fireEvent.click(screen.getByRole("button", { name: /^Region 1/ }));
+  expect(h.overlay().regions.map((r): boolean => r.active)).toEqual([true, false]);
+  fireEvent.click(screen.getByRole("button", { name: "Delete region" }));
+  const dialog: HTMLElement = screen.getByRole("alertdialog", { name: "Confirm region deletion" });
+  expect(dialog.textContent).toContain("Persisted candidates and evaluations are kept");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(h.store.getState().regions).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Delete region" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete region" }));
+  expect(h.store.getState().regions.map((r): number => r.number)).toEqual([2]);
+  // Numbers are never reused while regions exist.
+  drawTriangle();
+  expect(h.store.getState().regions.map((r): number => r.number)).toEqual([2, 3]);
+  fireEvent.click(screen.getByRole("button", { name: "Clear vertices" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Confirm clearing vertices" })).getByRole("button", { name: "Clear vertices" }));
+  expect(h.store.getState().regions.at(-1)?.vertices).toEqual([]);
+  expect(h.calls).toEqual([]);
+});
+
+it("drops a preview that returns after its region was edited", async (): Promise<void> => {
+  const h: Harness = mount();
+  drawTriangle();
+  fireEvent.click(screen.getByRole("button", { name: "Preview locations" }));
+  // Edit while the request is in flight: the response belongs to the previous revision.
+  const region: ReturnType<ExplorationStore["getState"]>["regions"][number] | undefined = h.store.getState().regions[0];
+  if (region === undefined) throw new Error("region missing");
+  act((): void => { h.store.dispatch({ type: "region-edit", regionId: region.id, patch: { params: { ...region.params, spacing_m: 200 } } }); });
+  await screen.findByText(/changed while previewing/);
+  expect(h.store.getState().regions[0]?.preview).toBeNull();
 });

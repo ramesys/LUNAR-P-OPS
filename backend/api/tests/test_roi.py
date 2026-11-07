@@ -37,10 +37,14 @@ def write_windows(terrain: Path) -> None:
     TerrainGrid(heights, x_left, y_top, 20, "https://test.invalid/LDEM_80S_20MPP_ADJ.TIF").save(
         near
     )
+    far_left, far_top = round(CENTER_X) - 205200, round(CENTER_Y) + 205200
+    fx, fy = np.meshgrid(
+        far_left + 120 + 240 * np.arange(1710), far_top - 120 - 240 * np.arange(1710)
+    )
     TerrainGrid(
-        np.zeros((1710, 1710), dtype=np.float32),
-        round(CENTER_X) - 205200,
-        round(CENTER_Y) + 205200,
+        (0.01 * (fx - CENTER_X) - 0.02 * (fy - CENTER_Y) - 30.0).astype(np.float32),
+        far_left,
+        far_top,
         240,
         "https://test.invalid/LDEM_60S_240MPP_ADJ.TIF",
     ).save(far)
@@ -255,10 +259,12 @@ def test_real_shackleton_roi_and_candidate_evaluation(
     regional = client.get("/api/rois/shackleton-rim-b/regional-terrain").json()
     far = TerrainGrid.load(far_path)
     frame = local_frame(ROI.center_latitude_deg, ROI.center_longitude_deg)
+    assert regional["size"] == 161 and len(regional["elevations_m"]) == 161 * 161
     for index, east, north in [
-        (0, -10000, 10000),
-        (81 * 40 + 40, 0, 0),
-        (81 * 81 - 1, 10000, -10000),
+        (0, -20000, 20000),
+        (161 * 80 + 80, 0, 0),
+        (161 * 72 + 88, 2000, 2000),
+        (161 * 161 - 1, 20000, -20000),
     ]:
         x, y = frame.to_projected(east, north)
         expected = float(far.sample(np.atleast_1d(x), np.atleast_1d(y))[0])
@@ -291,17 +297,39 @@ def test_regional_terrain_samples_far_dem_in_roi_frame(client: TestClient, tmp_p
     response = client.get("/api/rois/shackleton-rim-b/regional-terrain")
     assert response.status_code == 200
     region = response.json()
-    assert (region["half_width_m"], region["spacing_m"], region["size"]) == (10000, 250, 81)
-    assert len(region["elevations_m"]) == 81 * 81
+    assert (region["half_width_m"], region["spacing_m"], region["size"]) == (20000, 250, 161)
+    assert len(region["elevations_m"]) == 161 * 161
     assert region["dataset"]["dataset_id"] == "LDEM_60S_240MPP_ADJ"
     assert region["dataset"]["resolution_m"] == 240
-    assert all(value == 0 for value in region["elevations_m"])
-    far = TerrainGrid.load(terrain_files(tmp_path / "terrain", ROI.id)[1])
     frame = local_frame(ROI.center_latitude_deg, ROI.center_longitude_deg)
-    for index, e, n in [(0, -10000, 10000), (81 * 40 + 40, 0, 0), (81 * 81 - 1, 10000, -10000)]:
-        x, y = frame.to_projected(e, n)
-        sampled = far.sample(np.atleast_1d(x), np.atleast_1d(y))
-        assert region["elevations_m"][index] == pytest.approx(float(sampled[0]))
+    # The synthetic far DEM is a plane, so every node must equal the plane at its exact position:
+    # this checks row order (north first), column order (west first), axes and spacing.
+    offsets = np.linspace(-20000, 20000, 161)
+    east, north = np.meshgrid(offsets, offsets[::-1])
+    x, y = frame.to_projected(east, north)
+    expected = 0.01 * (x - CENTER_X) - 0.02 * (y - CENTER_Y) - 30.0
+    assert np.allclose(np.array(region["elevations_m"]).reshape(161, 161), expected, atol=0.006)
+    # The 4 km study boundary is on the regional lattice (every 8th node) and in the same frame.
+    roi = client.get("/api/rois/shackleton-rim-b/terrain").json()
+    for corner in roi["corners"]:
+        col = round((corner["east_m"] + 20000) / 250)
+        row = round((20000 - corner["north_m"]) / 250)
+        cx, cy = frame.to_projected(corner["east_m"], corner["north_m"])
+        assert region["elevations_m"][row * 161 + col] == pytest.approx(
+            float(0.01 * (cx - CENTER_X) - 0.02 * (cy - CENTER_Y) - 30.0), abs=0.006
+        )
+    labels = [c["label"] for c in region["corners"]]
+    assert labels == ["north-west", "north-east", "south-east", "south-west"]
+    for c in region["corners"]:
+        lat, lon = polar_stereographic_south_inverse(*frame.to_projected(c["east_m"], c["north_m"]))
+        assert (c["latitude_deg"], c["longitude_deg"]) == pytest.approx((float(lat), float(lon)))
+        assert abs(c["east_m"]) == abs(c["north_m"]) == 20000
+    # The ROI centre is ~14.42 km from the pole, so the 40 km square contains the pole itself:
+    # it lies on the local south axis, and the corners stay between about -89.3 and -88.7 deg.
+    pole_east, pole_north = frame.from_projected(0.0, 0.0)
+    assert float(pole_east) == pytest.approx(0.0, abs=1e-6)
+    assert -20000 < float(pole_north) < -14000
+    assert all(-89.4 < c["latitude_deg"] < -88.6 for c in region["corners"])
     assert client.get("/api/rois/unknown/regional-terrain").status_code == 404
 
 

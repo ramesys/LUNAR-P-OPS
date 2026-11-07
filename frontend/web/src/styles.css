@@ -1393,3 +1393,42 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .brush-result-detail { padding: 8px; background: var(--surface-2); border-radius: 4px; }
 .brush-proposed { color: #72d8ed; } .brush-pass { color: #5ee3a3; } .brush-fail { color: #ff856e; }
 .brush-unavailable { color: #bca8ff; } .brush-error { color: #ff4874; }
+
+/* --- Region Brush dock: directly below the Timeline, one bottom stack in the candidate context --- */
+.brush-dock { border: 1px solid #3a5a62; background: #0c181e; border-radius: 7px; padding: 6px 10px; margin: 12px 0; font-size: .76rem; }
+.brush-dock[data-active="true"] { position: fixed; z-index: 31; left: 16px; right: 16px; bottom: 12px; margin: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top-color: #2b464d; box-shadow: 0 10px 40px #000c; }
+.candidate-time-dock[data-active="true"] { bottom: calc(12px + var(--brush-dock-h, 0px)); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.page { padding-bottom: calc(150px + var(--brush-dock-h, 0px)); }
+.more-tools { bottom: calc(112px + var(--brush-dock-h, 0px)); }
+.brush-dock-bar { display: flex; align-items: center; gap: 8px; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; scrollbar-width: thin; }
+.brush-dock-bar .brush-actions { flex-wrap: nowrap; margin: 0; gap: 4px; }
+.brush-dock-bar button { font-size: .72rem; padding: 3px 8px; }
+.dock-title { display: flex; flex-direction: column; line-height: 1.15; }
+.dock-title strong { color: #f2d27a; letter-spacing: .13em; font-size: .66rem; }
+.dock-link { color: #94e2d9; font-size: .62rem; text-decoration: none; }
+.region-chips { display: flex; gap: 4px; flex-wrap: nowrap; }
+.region-chips button[aria-pressed="true"] { border-color: #f2d27a; background: #3a3218; color: #ffeebb; }
+.region-chips .chip-meta { color: #a6b8bd; font-size: .66rem; }
+.region-chips .new-region { border-style: dashed; }
+.brush-state { font-size: .64rem; }
+.vertex-count { color: #a6b8bd; }
+.brush-confirm { margin: 6px 0; padding: 8px 10px; border: 1px solid #a8584c; background: #2a1513; border-radius: 5px; }
+.brush-confirm p { margin: 0 0 6px; }
+.brush-confirm .danger { border-color: #ff7a66; color: #ffd5cc; }
+.brush-dock-panel { max-height: min(26vh, 220px); overflow: auto; border-top: 1px solid #284049; margin-top: 6px; padding-top: 6px; }
+.brush-dock-panel .brush-fields { padding: 4px 0; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
+.sky-scale { color: #a9bcc2; font-size: .68rem; }
+@media (max-width: 720px) {
+  .brush-dock[data-active="true"] { left: 6px; right: 6px; bottom: 6px; padding: 5px 7px; }
+  .candidate-time-dock[data-active="true"] { bottom: calc(6px + var(--brush-dock-h, 0px)); }
+  .page { padding-bottom: calc(190px + var(--brush-dock-h, 0px)); }
+  .vertex-count { font-size: .68rem; }
+  .brush-dock-panel { max-height: 34vh; }
+}
+.brush-dock-panel .brush-results h4 { margin: 0 0 2px; font-size: .78rem; }
+.brush-dock-panel .brush-results p { margin: 2px 0; }
+.brush-results-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.brush-dock-panel .brush-results ol { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; max-height: none; list-style: none; padding: 2px 0 4px; margin: 4px 0; }
+.brush-dock-panel .brush-results li { margin: 0; flex: none; }
+.brush-dock-panel .brush-results li button { font-size: .7rem; padding: 2px 7px; }
+.brush-dock-panel .brush-preview p, .brush-dock-panel .brush-fields + p { margin: 3px 0; }

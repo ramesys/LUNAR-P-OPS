@@ -83,7 +83,7 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     void apiClient.GET("/api/rois/{roi_id}/regional-terrain", { params: { path: { roi_id: ROI_ID } } })
       .then(({ data }): void => {
         if (!active) return;
-        if (data?.size === 81 && data.elevations_m.length === 81 * 81) setRegional(data);
+        if (data !== undefined && data.size > 1 && data.elevations_m.length === data.size * data.size) setRegional(data);
         else setRegionalError("Regional terrain unavailable; showing the 4 km study area.");
       }).catch((): void => { if (active) setRegionalError("Regional terrain unavailable; showing the 4 km study area."); });
     void apiClient.GET("/api/rois/{roi_id}/candidates", { params: { path: { roi_id: ROI_ID } } })
