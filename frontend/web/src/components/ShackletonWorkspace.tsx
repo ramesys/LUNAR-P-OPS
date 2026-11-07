@@ -111,13 +111,13 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     if (found !== undefined) onCandidateSelected(found);
   }, [candidates, onCandidateSelected]);
 
-  return <section aria-label="Shackleton Rim B workspace">
-    <h2>Shackleton Rim B region of interest</h2>
+  return <section className="ws-terrain card" aria-label="Shackleton Rim B workspace">
+    <h2>Terrain explorer · Shackleton Rim B</h2>
     {terrain.kind === "loading" && <p className="muted">Loading ROI terrain…</p>}
     {terrain.kind === "error" && <p role="alert">ROI terrain unavailable: {terrain.message}</p>}
     {terrain.kind === "ready" && <RoiSummary terrain={terrain.terrain} />}
-    <fieldset>
-      <legend>New candidate settings</legend>
+    <fieldset className="new-candidate">
+      <legend>Settings for the next terrain click</legend>
       <label>Observer height (m) <input type="number" min="0" max="100" step="0.1" value={height}
         onChange={(event): void => { setHeight(Number(event.target.value)); }} /></label>{" "}
       <label>UTC time <input type="text" value={time} onChange={(event): void => { setTime(event.target.value); }} /></label>
@@ -130,9 +130,9 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     {busy && <p>Sampling the LOLA raster at the selected point…</p>}
     {lastPick !== null && <p className="muted">Last terrain pick: {lastPick.east_m.toFixed(1)} m east, {lastPick.north_m.toFixed(1)} m north of the ROI centre (local projected metres).</p>}
     {error !== null && <p role="alert">{error}</p>}
-    <h3>Candidates in this ROI ({candidates.length})</h3>
+    <h3>Saved candidates in this ROI ({candidates.length})</h3>
     {candidates.length === 0 ? <p>No candidates yet. Click the terrain to create one.</p> :
-      <ol aria-label="ROI candidates">{candidates.map((c: Candidate): JSX.Element =>
+      <ol aria-label="ROI candidates" className="candidate-list">{candidates.map((c: Candidate): JSX.Element =>
         <li key={c.candidate_id}><button type="button" aria-pressed={c.candidate_id === selectedCandidateId}
           onClick={(): void => { onCandidateSelected(c); }}>{candidateLabel(c)}</button>{" "}
           <span className="muted">{c.candidate_id.slice(0, 18)}…</span></li>)}</ol>}
@@ -145,18 +145,16 @@ function RoiSummary({ terrain }: { terrain: RoiTerrain }): JSX.Element {
   const [lonMin = 0, lonMax = 0] = terrain.longitude_range_deg;
   const [low = 0, high = 0] = terrain.elevation_range_m;
   const coverage: Coverage = terrain.coverage;
-  return <div>
-    <p>
-      {(terrain.roi.half_width_m * 2 / 1000).toFixed(0)} km × {(terrain.roi.half_width_m * 2 / 1000).toFixed(0)} km around
-      {" "}{deg(terrain.roi.center_latitude_deg, "N", "S")}, {terrain.roi.center_longitude_deg.toFixed(5)}°E
-      {" "}(<a href={terrain.roi.center_source_url}>{terrain.roi.center_source_name}</a>). {terrain.roi.note}
-    </p>
-    <p>
-      DEM: {near?.dataset_id ?? "unknown"} ({near?.resolution_m ?? "?"} m/pixel), one {terrain.size} × {terrain.size} grid at
-      {" "}{terrain.spacing_m} m spacing; elevations {low.toFixed(0)} to {high.toFixed(0)} m above the {terrain.reference_radius_m / 1000} km sphere.
-      {" "}Coverage: <strong>{coverage.grid_status}</strong> ({coverage.grid_missing_samples} of {coverage.grid_total_samples} grid samples missing);
-      {" "}horizon checks {coverage.horizon_checks.filter((c): boolean => c.status === "covered").length} of {coverage.horizon_checks.length} covered.
-    </p>
+  const covered: number = coverage.horizon_checks.filter((c): boolean => c.status === "covered").length;
+  return <div className="roi-summary">
+    <ul className="chips" aria-label="Terrain data summary">
+      <li>{(terrain.roi.half_width_m * 2 / 1000).toFixed(0)} × {(terrain.roi.half_width_m * 2 / 1000).toFixed(0)} km around {deg(terrain.roi.center_latitude_deg, "N", "S")}, {terrain.roi.center_longitude_deg.toFixed(5)}°E</li>
+      <li>{near?.dataset_id ?? "unknown DEM"} · {near?.resolution_m ?? "?"} m/pixel · {terrain.size}×{terrain.size} grid at {terrain.spacing_m} m</li>
+      <li className={coverage.grid_status === "complete" ? "ok" : "warn"}>DEM coverage {coverage.grid_status} ({coverage.grid_missing_samples} missing)</li>
+      <li className={covered === coverage.horizon_checks.length ? "ok" : "warn"}>Horizon rays covered at {covered}/{coverage.horizon_checks.length} check points</li>
+      <li>Elevation {low.toFixed(0)} to {high.toFixed(0)} m</li>
+    </ul>
+    <p className="muted small">{terrain.roi.note} Centre from the <a href={terrain.roi.center_source_url}>{terrain.roi.center_source_name}</a>.</p>
     <details><summary>ROI georeference, datasets and limitations</summary>
       <p>Coordinates: {terrain.coordinate_reference}. Projection: {terrain.projection}.</p>
       <p>Extent: latitude {latMin.toFixed(5)}° to {latMax.toFixed(5)}°, east longitude {lonMin.toFixed(5)}° to {lonMax.toFixed(5)}°.

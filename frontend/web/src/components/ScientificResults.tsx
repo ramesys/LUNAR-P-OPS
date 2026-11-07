@@ -7,7 +7,7 @@ function hours(result: ScientificEvaluation, key: Key): number {
   return (result.intervals[key] ?? []).reduce((total: number, interval): number => total + interval.duration_seconds, 0) / 3600;
 }
 
-function Inspection({ result, label }: { result: ScientificEvaluation; label: string }): JSX.Element {
+export function ResultDetails({ result, label }: { result: ScientificEvaluation; label: string }): JSX.Element {
   return <section aria-label={`${label} scientific result`}>
     <h4>{label}: {result.status}</h4>
     <p>Evaluation: {result.evaluation_id}</p>
@@ -32,13 +32,21 @@ function Inspection({ result, label }: { result: ScientificEvaluation; label: st
 
 export function ScientificResults({ c0, c1 }: { c0: ScientificEvaluation | null; c1: ScientificEvaluation | null }): JSX.Element {
   return <section aria-label="Scientific evaluation results">
-    {c0 !== null && <Inspection label="C0" result={c0} />}
-    {c1 !== null && <Inspection label="C1" result={c1} />}
-    {(c0?.status === "COMPUTED_UNVERIFIED" || c0?.status === "VALIDATED") && (c1?.status === "COMPUTED_UNVERIFIED" || c1?.status === "VALIDATED") && <section aria-label="Scientific comparison">
+    {c0 !== null && <ResultDetails label="C0" result={c0} />}
+    {c1 !== null && <ResultDetails label="C1" result={c1} />}
+    {c0 !== null && c1 !== null && <ResultComparison c0={c0} c1={c1} />}
+  </section>;
+}
+
+/** C0 / C1 sampled visibility comparison; shown only when both evaluations computed. */
+export function ResultComparison({ c0, c1 }: { c0: ScientificEvaluation; c1: ScientificEvaluation }): JSX.Element | null {
+  const computed: (r: ScientificEvaluation) => boolean = (r: ScientificEvaluation): boolean => r.status === "COMPUTED_UNVERIFIED" || r.status === "VALIDATED";
+  if (!computed(c0) || !computed(c1)) return null;
+  return <section aria-label="Scientific comparison">
+
       <h4>C0 / C1 visibility comparison</h4>
       <p>Windows start at each candidate’s selected UTC time; different times are different observation periods. Differences cannot be attributed to height alone when time also changes.</p>
       {(c0.request.duration_hours !== c1.request.duration_hours || c0.request.step_minutes !== c1.request.step_minutes) && <p>Warning: the duration or sampling step differs between these evaluations.</p>}
       {KEYS.map((key: Key): JSX.Element => <p key={key}>{key}: {hours(c0, key).toFixed(2)} h → {hours(c1, key).toFixed(2)} h (difference {(hours(c1, key) - hours(c0, key)).toFixed(2)} h)</p>)}
-    </section>}
   </section>;
 }

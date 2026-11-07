@@ -1,10 +1,10 @@
 import type { AnalysisResponse, ApiClient, Candidate, PoleMap as PoleMapData, Site, SiteResult } from "@clps/api-client";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
-import { CandidateInspector } from "./components/CandidateInspector.tsx";
 import { LandingGraph } from "./components/LandingGraph.tsx";
 import { ShackletonWorkspace } from "./components/ShackletonWorkspace.tsx";
 import { SelectionGuard } from "./lib/selectionGuard.ts";
+import { loadSelection, saveSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
@@ -64,6 +64,8 @@ export function defaultForm(now: Date): Form {
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+  // The single persisted selection: root C0 (graph, marker) and the committed revision (C0/C1).
+  const [revisionId, setRevisionId] = useState<string | null>(null);
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const candidateGuard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
   const [sites, setSites] = useState<Site[]>([]);
@@ -82,20 +84,25 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   }, []);
   const onCandidateSelected: (value: Candidate) => void = useCallback((value: Candidate): void => {
     candidateGuard.current.invalidate();
-    localStorage.setItem("lunar-ops-c0", value.candidate_id);
+    saveSelection({ rootId: value.candidate_id, revisionId: value.candidate_id });
     setCandidateError(null);
     setCandidate(value);
+    setRevisionId(value.candidate_id);
+  }, []);
+  const onSelectRevision: (revision: Candidate) => void = useCallback((revision: Candidate): void => {
+    setRevisionId(revision.candidate_id);
+    saveSelection({ rootId: revision.parent_candidate_id ?? revision.candidate_id, revisionId: revision.candidate_id });
   }, []);
   useEffect((): (() => void) => {
     const guard: SelectionGuard = candidateGuard.current;
     const sequence: number = guard.next();
-    const saved: string | null = localStorage.getItem("lunar-ops-c0");
+    const saved: WorkspaceSelection | null = loadSelection();
     if (saved !== null) {
-      void apiClient.GET("/api/candidates/{candidate_id}", { params: { path: { candidate_id: saved } } })
+      void apiClient.GET("/api/candidates/{candidate_id}", { params: { path: { candidate_id: saved.rootId } } })
         .then(({ data }): void => {
           if (!guard.isCurrent(sequence)) return;
           if (data === undefined) setCandidateError("The saved candidate is unavailable. Select a terrain point to continue.");
-          else setCandidate(data);
+          else { setCandidate(data); setRevisionId(saved.revisionId); }
         }).catch((): void => {
           if (guard.isCurrent(sequence)) setCandidateError("Could not restore the saved candidate. Check the API connection.");
         });
@@ -243,6 +250,32 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         </p>
       </header>
 
+      <ol className="workflow" aria-label="Workflow">
+        <li className={candidate === null ? "current" : "done"}>Explore the terrain and click a point (or a marker)</li>
+        <li className={candidate === null ? "" : "done"}>Candidate C0 is saved from the LOLA DEM</li>
+        <li className={candidate === null ? "" : "current"}>Edit height or time, then <strong>Create Candidate C1</strong></li>
+        <li className={candidate === null ? "" : "current"}><strong>Evaluate</strong> the selected revision</li>
+        <li>Compare and read the results in the Inspector</li>
+      </ol>
+
+      <section className="workspace" aria-label="Landing workspace">
+        <ShackletonWorkspace
+          apiClient={apiClient}
+          selectedCandidateId={candidate?.candidate_id ?? null}
+          onCandidateSelected={onCandidateSelected}
+          defaultTimeUtc={`${defaultForm(now).startDate}T00:00:00Z`}
+          defaultObserverHeightM={defaultForm(now).observerHeightM}
+        />
+        {candidate === null ? <>
+          <section className="ws-graph card" aria-label="Landing graph"><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></section>
+          <aside className="ws-inspector card" aria-label="Inspector"><h2>Inspector</h2><p className="muted">No candidate selected. Click the Shackleton terrain, pick a marker, or click the Sample A 3D view below.</p></aside>
+        </> : <LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate}
+            selectedRevisionId={revisionId ?? candidate.candidate_id} onSelectRevision={onSelectRevision} mode={mode} />}
+        {candidateError !== null && <p role="alert" className="ws-alert">{candidateError}</p>}
+      </section>
+
+      <h2 className="section-title" id="catalog-title">Catalog site comparison</h2>
+      <p className="muted section-lede">The original CLPS browser: compare 2–4 sites over a date range with terrain horizons, sky diagrams and timelines.</p>
       <div className="setup">
         <ScenarioForm
           sites={sites}
@@ -277,18 +310,6 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         )}
       </div>
 
-      <section className="card" aria-label="Landing workspace">
-        <ShackletonWorkspace
-          apiClient={apiClient}
-          selectedCandidateId={candidate?.candidate_id ?? null}
-          onCandidateSelected={onCandidateSelected}
-          defaultTimeUtc={`${defaultForm(now).startDate}T00:00:00Z`}
-          defaultObserverHeightM={defaultForm(now).observerHeightM}
-        />
-        {candidate === null ? <><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></> :
-          <><CandidateInspector candidate={candidate} /><LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate} /></>}
-        {candidateError !== null && <p role="alert">{candidateError}</p>}
-      </section>
 
       {status.kind === "error" && (
         <p className="error-banner" role="alert">

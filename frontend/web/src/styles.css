@@ -57,7 +57,7 @@ body {
 }
 
 .page {
-  max-width: 1100px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 24px 16px 48px;
   display: grid;
@@ -861,3 +861,289 @@ button.small {
   margin: 6px 0;
   font-size: 0.85rem;
 }
+
+/* ---- Sprint 05: one exploration workspace (terrain · inspector · graph) ---- */
+.workflow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.workflow li {
+  counter-increment: step;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+.workflow li::before {
+  content: counter(step) " ";
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.workflow li.current {
+  border-color: var(--sun);
+  color: var(--text-primary);
+}
+.workflow li.done {
+  color: var(--text-muted);
+}
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+  grid-template-areas: "terrain inspector" "graph graph" "alert alert";
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 28px;
+}
+.workspace > .card {
+  margin: 0;
+  min-width: 0;
+}
+.ws-terrain { grid-area: terrain; }
+.ws-inspector { grid-area: inspector; }
+.ws-graph { grid-area: graph; }
+.ws-alert { grid-area: alert; }
+@media (max-width: 1000px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "terrain" "inspector" "graph" "alert";
+  }
+}
+.section-title {
+  margin: 8px 0 2px;
+}
+.section-lede {
+  margin-top: 0;
+}
+.small,
+.small-list {
+  font-size: 0.85rem;
+}
+.mono-wrap {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.chips li,
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.82rem;
+}
+.chips li.ok,
+.chip.ok {
+  background: rgba(60, 160, 110, 0.18);
+  color: var(--text-primary);
+}
+.chips li.warn,
+.chip.warn {
+  background: rgba(235, 160, 0, 0.22);
+  color: var(--text-primary);
+}
+.chip.idle {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+.terrain-stage {
+  position: relative;
+}
+.terrain-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(5, 6, 10, 0.72);
+  color: #f2f4f8;
+  font-size: 0.82rem;
+  pointer-events: none;
+}
+.terrain-hud .muted {
+  color: #b9c0cc;
+}
+.terrain-compass {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  pointer-events: none;
+}
+.terrain-compass svg {
+  transition: transform 80ms linear;
+}
+.compass-ring {
+  fill: rgba(5, 6, 10, 0.72);
+  stroke: #9aa7ba;
+}
+.compass-north {
+  fill: #ff8a5c;
+}
+.terrain-compass text {
+  fill: #f2f4f8;
+  font-size: 9px;
+  font-weight: 700;
+}
+.terrain-controls,
+.graph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.toolbar-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+.graph-toolbar input[type="number"] {
+  width: 5.5em;
+}
+button.primary {
+  background: var(--sun);
+  border-color: var(--sun);
+  color: #fff;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.legend-dot.selected { background: #eb6834; }
+.legend-dot.other { background: #46c2d6; }
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.graph-legend .kind {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  border-radius: 3px;
+  vertical-align: middle;
+  border: 2px solid;
+}
+.kind.parameter { background: #33435a; border-color: #7f95b5; }
+.kind.candidate { background: #6b3d24; border-color: #eb6834; }
+.kind.compute { background: #4a3a6e; border-color: #a58cf0; }
+.kind.result { background: #24533f; border-color: #4fc08d; }
+.graph-canvas {
+  width: 100%;
+  height: 460px;
+  background: #1b2129;
+  border: 1px solid #4a5767;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.graph-head p {
+  margin-top: 0;
+}
+.inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.inspector-head h2 {
+  margin: 0;
+}
+.selected-line {
+  margin: 6px 0 10px;
+}
+.sel-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #eb6834;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 0 0 10px;
+}
+.facts dt {
+  color: var(--text-secondary);
+}
+.facts dd {
+  margin: 0;
+}
+.status-grid h3,
+.ws-inspector h3 {
+  margin: 14px 0 6px;
+  font-size: 1rem;
+}
+.status-grid p {
+  margin: 4px 0;
+}
+.param-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.param-row input[type="number"] {
+  width: 6em;
+}
+.inspector-charts {
+  margin-top: 8px;
+}
+.candidate-list {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.candidate-list li {
+  margin: 2px 0;
+}
+.new-candidate {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.node-kind-parameter [data-testid="node"] { background: #33435a !important; border-left: 8px solid #7f95b5 !important; }
+.node-kind-candidate [data-testid="node"] { background: #6b3d24 !important; border-left: 8px solid #eb6834 !important; }
+.node-kind-compute [data-testid="node"] { background: #4a3a6e !important; border-left: 8px solid #a58cf0 !important; }
+.node-kind-result [data-testid="node"] { background: #24533f !important; border-left: 8px solid #4fc08d !important; }
+.node-kind [data-testid="title"] { font-size: 15px; }
+@keyframes focus-flash {
+  from { box-shadow: 0 0 0 3px #ffd27a; }
+  to { box-shadow: 0 0 0 3px transparent; }
+}
+.focus-flash {
+  border-radius: 6px;
+  animation: focus-flash 1.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-flash { animation: none; outline: 2px solid #ffd27a; }
+}
+.node-kind-candidate [data-testid="node"],
+.node-kind-compute [data-testid="node"],
+.node-kind-result [data-testid="node"] { width: 250px !important; }
+.node-kind [data-testid="node"] input { width: 100% !important; box-sizing: border-box; }

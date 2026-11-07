@@ -13,7 +13,8 @@ import type { JSX } from "react";
 import { App } from "./App.tsx";
 
 vi.mock("./components/LandingGraph.tsx", () => ({
-  LandingGraph: (): JSX.Element => <div data-testid="stable-editor"><input aria-label="Editor draft" defaultValue="draft" /></div>,
+  LandingGraph: ({ selectedRevisionId }: { selectedRevisionId: string }): JSX.Element =>
+    <div data-testid="stable-editor" data-revision={selectedRevisionId}><input aria-label="Editor draft" defaultValue="draft" /></div>,
 }));
 
 const RESTORED: Candidate = { candidate_id: "saved-c0", site_id: "site", latitude_deg: -89.5,
@@ -153,6 +154,24 @@ describe("App", (): void => {
     render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
     expect(await screen.findByRole("heading", { name: "Landing Graph" })).toBeDefined();
     expect(screen.getByText(/select a terrain point to create a candidate/i)).toBeDefined();
+  });
+
+  it("restores the selected committed revision and keeps every area in both modes", async (): Promise<void> => {
+    localStorage.setItem("lunar-ops-selection", JSON.stringify({ rootId: "saved-c0", revisionId: "saved-c1" }));
+    render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
+    const editor: HTMLElement = await screen.findByTestId("stable-editor");
+    expect(editor.getAttribute("data-revision")).toBe("saved-c1");
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+    for (const mode of ["Expert", "Simple"]) {
+      fireEvent.click(screen.getByRole("button", { name: mode }));
+      expect(screen.getByRole("heading", { name: /Terrain explorer/ })).toBeDefined();
+      expect(screen.getByRole("heading", { name: "Catalog site comparison" })).toBeDefined();
+      expect(screen.getByRole("heading", { name: "Sky & timeline" })).toBeDefined();
+      expect(screen.getByRole("heading", { name: "South pole map" })).toBeDefined();
+      expect(screen.getByTestId("stable-editor")).toBe(editor);
+    }
+    // The ROI terrain is missing in this fake API: the workspace says so instead of hiding.
+    expect(screen.getByText(/ROI terrain unavailable/)).toBeDefined();
   });
 
   it("restores the editor and preserves its draft when comparisons and modes change", async (): Promise<void> => {

@@ -57,7 +57,7 @@ describe("Shackleton workspace", (): void => {
     const view: RenderResult = render(<ShackletonWorkspace apiClient={api(posted)} selectedCandidateId={null}
       onCandidateSelected={(c): void => { selected.push(c); }} defaultTimeUtc="2026-11-07T00:00:00Z" defaultObserverHeightM={2} />);
     expect(await screen.findByText(/marker saved/)).toBeDefined();
-    expect(screen.getByText(/Coverage:/).textContent).toContain("complete");
+    expect(screen.getByText(/DEM coverage complete/)).toBeDefined();
     fireEvent.change(screen.getByRole("spinbutton", { name: /Observer height/ }), { target: { value: "4" } });
     fireEvent.click(screen.getByRole("button", { name: "pick west" }));
     await screen.findByText(/marker new--1500/);
