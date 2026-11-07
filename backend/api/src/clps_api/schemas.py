@@ -150,6 +150,10 @@ class CandidateRequest(BaseModel):
 
 class CandidateOut(BaseModel):
     candidate_id: str
+    parent_candidate_id: str | None = None
+    terrain_dataset_sha256: str = ""
+    terrain_nodata: str = "unknown"
+    coverage_bounds_m: list[float] = []
     site_id: str
     latitude_deg: float
     longitude_deg: float
@@ -162,3 +166,9 @@ class CandidateOut(BaseModel):
     coordinate_reference: str
     validation_status: Literal["not_independently_validated"]
     data_availability: Literal["available"]
+
+
+class CandidateEvolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    observer_height_m: float = Field(ge=0, le=100)
+    selected_time_utc: AwareDatetime

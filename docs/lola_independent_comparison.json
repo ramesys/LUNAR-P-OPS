@@ -1,0 +1,74 @@
+{
+  "source": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_20MPP_ADJ.TIF",
+  "cached_window_sha256": "753de3fead9a9f18da9ca6366835b5677a97570d73b0dce6a34cf560420faa76",
+  "source_checksum": "unavailable: only remote ranges read",
+  "nodata": "NaN",
+  "source_bounds_m": [
+    -304000.0,
+    -304000.0,
+    304000.0,
+    304000.0
+  ],
+  "source_resolution_m": [
+    20.0,
+    20.0
+  ],
+  "coordinate_tolerance_deg": 1e-09,
+  "elevation_tolerance_m": 0.001,
+  "samples": [
+    {
+      "east_m": 0,
+      "north_m": 0,
+      "lat_deg": -89.50000000000014,
+      "lon_east_deg": 0.0,
+      "coordinate_max_error_deg": 1.4210854715202004e-13,
+      "source_elevation_m": -721.964599609375,
+      "cached_elevation_m": -721.964506072493,
+      "elevation_difference_m": 9.353688199098542e-05
+    },
+    {
+      "east_m": 1200,
+      "north_m": -900,
+      "lat_deg": -89.52801765403265,
+      "lon_east_deg": 4.809596513144988,
+      "coordinate_max_error_deg": 8.526512829121202e-14,
+      "source_elevation_m": -565.2422485351562,
+      "cached_elevation_m": -565.2422309043586,
+      "elevation_difference_m": 1.7630797628953587e-05
+    },
+    {
+      "east_m": -2300,
+      "north_m": 1800,
+      "lat_deg": -89.43552208638114,
+      "lon_east_deg": 352.27784652202655,
+      "coordinate_max_error_deg": 1.9895196601282805e-13,
+      "source_elevation_m": -1029.3892822265625,
+      "cached_elevation_m": -1029.389301108507,
+      "elevation_difference_m": -1.8881944470194867e-05
+    },
+    {
+      "east_m": 4000,
+      "north_m": 3000,
+      "lat_deg": -89.38671474673549,
+      "lon_east_deg": 12.420688863823928,
+      "coordinate_max_error_deg": 1.9895196601282805e-13,
+      "source_elevation_m": -429.1801452636719,
+      "cached_elevation_m": -429.1801483523856,
+      "elevation_difference_m": -3.0887136972523876e-06
+    },
+    {
+      "east_m": 869.4534726024133,
+      "north_m": 532.033472758767,
+      "lat_deg": -89.4816613812178,
+      "lon_east_deg": 3.171005503338025,
+      "coordinate_max_error_deg": 2.5579538487363607e-13,
+      "source_elevation_m": -618.7817993164062,
+      "cached_elevation_m": -618.7817844514241,
+      "elevation_difference_m": 1.4864982176732155e-05,
+      "browser_candidate_id": "candidate-d8dff67ea896840707b28a58aeeecc87e02bbea713603f80ecfff8076f3e59f1",
+      "candidate_elevation_m": -618.7817844514108,
+      "candidate_minus_source_m": 1.4864995478092169e-05
+    }
+  ],
+  "passed": true
+}

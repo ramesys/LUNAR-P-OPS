@@ -20,6 +20,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "test-dem",
     ).save(path)
     monkeypatch.setattr(terrain_store, "terrain_dir", lambda: tmp_path)
+    monkeypatch.setenv("CLPS_DATA_DIR", str(tmp_path))
     yield TestClient(app, raise_server_exceptions=True)
 
 

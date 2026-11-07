@@ -12,10 +12,11 @@ from lunar_core.kernels import load_kernels
 from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import candidate, pole_map, terrain_store
+from clps_api import candidate, candidate_store, pole_map, terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
+    CandidateEvolutionRequest,
     CandidateOut,
     CandidateRequest,
     HealthResponse,
@@ -148,8 +149,31 @@ def create_candidate(site_id: str, request: CandidateRequest) -> CandidateOut:
     if site is None:
         raise HTTPException(status_code=404, detail="unknown terrain site")
     try:
-        return candidate.create_candidate(site, request)
+        return candidate_store.save(candidate.create_candidate(site, request))
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/candidates/{candidate_id}", operation_id="getCandidate")
+def get_candidate(candidate_id: str) -> CandidateOut:
+    result = candidate_store.get(candidate_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return result
+
+
+@app.get("/api/candidates/{candidate_id}/children", operation_id="listCandidateChildren")
+def list_candidate_children(candidate_id: str) -> list[CandidateOut]:
+    if candidate_store.get(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return candidate_store.children(candidate_id)
+
+
+@app.post("/api/candidates/{candidate_id}/evolve", operation_id="evolveCandidate")
+def evolve_candidate(candidate_id: str, request: CandidateEvolutionRequest) -> CandidateOut:
+    parent = candidate_store.get(candidate_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return candidate_store.evolve(parent, request)

@@ -1,3 +1,5 @@
 packages:
   - web
   - api-client
+allowBuilds:
+  rete: false

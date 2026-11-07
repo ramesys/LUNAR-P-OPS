@@ -282,6 +282,137 @@
           }
         }
       }
+    },
+    "/api/candidates/{candidate_id}": {
+      "get": {
+        "summary": "Get Candidate",
+        "operationId": "getCandidate",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/candidates/{candidate_id}/children": {
+      "get": {
+        "summary": "List Candidate Children",
+        "operationId": "listCandidateChildren",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateOut"
+                  },
+                  "title": "Response Listcandidatechildren"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/candidates/{candidate_id}/evolve": {
+      "post": {
+        "summary": "Evolve Candidate",
+        "operationId": "evolveCandidate",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateEvolutionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -446,11 +577,62 @@
         "title": "BodySeries",
         "description": "Columnar series aligned with `AnalysisResponse.times`."
       },
+      "CandidateEvolutionRequest": {
+        "properties": {
+          "observer_height_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Observer Height M"
+          },
+          "selected_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Selected Time Utc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "observer_height_m",
+          "selected_time_utc"
+        ],
+        "title": "CandidateEvolutionRequest"
+      },
       "CandidateOut": {
         "properties": {
           "candidate_id": {
             "type": "string",
             "title": "Candidate Id"
+          },
+          "parent_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Candidate Id"
+          },
+          "terrain_dataset_sha256": {
+            "type": "string",
+            "title": "Terrain Dataset Sha256",
+            "default": ""
+          },
+          "terrain_nodata": {
+            "type": "string",
+            "title": "Terrain Nodata",
+            "default": "unknown"
+          },
+          "coverage_bounds_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Coverage Bounds M",
+            "default": []
           },
           "site_id": {
             "type": "string",

@@ -25,6 +25,7 @@ def create_candidate(site: Site, request: CandidateRequest) -> CandidateOut:
     if not near.is_file():
         raise FileNotFoundError("LOLA near-field terrain is unavailable")
     grid = TerrainGrid.load(near)
+    checksum = hashlib.sha256(near.read_bytes()).hexdigest()
     x0, y0 = polar_stereographic_south(site.latitude_deg, site.longitude_deg)
     lon = math.radians(site.longitude_deg)
     x = float(x0) + request.east_m * math.cos(lon) + request.north_m * math.sin(lon)
@@ -45,6 +46,7 @@ def create_candidate(site: Site, request: CandidateRequest) -> CandidateOut:
         "observer_height_m": request.observer_height_m,
         "selected_time_utc": instant.isoformat(),
         "terrain_source_url": grid.source,
+        "terrain_dataset_sha256": checksum,
         "dem_resolution_m": grid.pixel_size_m,
         "coordinate_reference": reference,
         "terrain_elevation_m": elevation,
@@ -54,6 +56,14 @@ def create_candidate(site: Site, request: CandidateRequest) -> CandidateOut:
     ).hexdigest()
     return CandidateOut(
         candidate_id=f"candidate-{identifier}",
+        terrain_dataset_sha256=checksum,
+        terrain_nodata="NaN" if grid.source.endswith("/LDEM_80S_20MPP_ADJ.TIF") else "unknown",
+        coverage_bounds_m=[
+            grid.x_left + grid.pixel_size_m / 2,
+            grid.y_top - (grid.heights.shape[0] - 0.5) * grid.pixel_size_m,
+            grid.x_left + (grid.heights.shape[1] - 0.5) * grid.pixel_size_m,
+            grid.y_top - grid.pixel_size_m / 2,
+        ],
         site_id=site_id,
         latitude_deg=lat,
         longitude_deg=lng,
