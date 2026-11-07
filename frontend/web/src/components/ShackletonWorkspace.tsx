@@ -119,21 +119,22 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
   }, [candidates, onCandidateSelected]);
 
   return <section className="ws-terrain card" aria-label="Shackleton Rim B workspace">
-    <h2>Terrain explorer · Shackleton Rim B</h2>
+    <div className="panel-heading"><div><span className="panel-eyebrow">01 / SPATIAL EXPLORER</span><h2>Terrain explorer · Shackleton Rim B</h2></div><span className="status-pill">● &nbsp;LOLA TERRAIN</span></div>
     {terrain.kind === "loading" && <p className="muted">Loading ROI terrain…</p>}
     {terrain.kind === "error" && <p role="alert">ROI terrain unavailable: {terrain.message}</p>}
-    {terrain.kind === "ready" && <RoiSummary terrain={terrain.terrain} />}
+
+    {terrain.kind === "ready" &&
+      <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
+        <RoiTerrain3D terrain={terrain.terrain} candidates={candidates} selectedId={selectedCandidateId}
+          onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
+      </Suspense>}
     <fieldset className="new-candidate">
       <legend>Settings for the next terrain click</legend>
       <label>Observer height (m) <input type="number" min="0" max="100" step="0.1" value={height}
         onChange={(event): void => { setHeight(Number(event.target.value)); }} /></label>{" "}
       <label>UTC time <input type="text" value={time} onChange={(event): void => { setTime(event.target.value); }} /></label>
     </fieldset>
-    {terrain.kind === "ready" &&
-      <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
-        <RoiTerrain3D terrain={terrain.terrain} candidates={candidates} selectedId={selectedCandidateId}
-          onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />
-      </Suspense>}
+    {terrain.kind === "ready" && <details className="terrain-metadata"><summary>Terrain data and coverage</summary><RoiSummary terrain={terrain.terrain} /></details>}
     {busy && <p>Sampling the LOLA raster at the selected point…</p>}
     {lastPick !== null && <p className="muted">Last terrain pick: {lastPick.east_m.toFixed(1)} m east, {lastPick.north_m.toFixed(1)} m north of the ROI centre (local projected metres).</p>}
     {error !== null && <p role="alert">{error}</p>}

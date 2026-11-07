@@ -7,7 +7,7 @@ import { SelectionGuard } from "./lib/selectionGuard.ts";
 import { loadContext, loadSelection, saveContext, saveSelection, type ContextSelection, type WorkspaceSelection } from "./lib/workspaceSelection.ts";
 import { analysisKey, analysisLabel } from "./lib/analysisKey.ts";
 import { ContextBar } from "./components/ContextBar.tsx";
-import { createExplorationStore, ExplorationContext, INITIAL, INITIAL_CATALOG, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
+import { createExplorationStore, ExplorationContext, INITIAL, INITIAL_CATALOG, useExploration, type ExplorationState, type ExplorationStore } from "./lib/explorationStore.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
@@ -63,6 +63,16 @@ export function defaultForm(now: Date): Form {
     horizon: "terrain",
     earthMinClearanceDeg: 0,
   };
+}
+
+function EmptyTimelineDock(): JSX.Element | null {
+  const hasSamples: boolean = useExploration((state): boolean => (state.evaluation?.samples.length ?? 0) > 0);
+  const active: boolean = useExploration((state): boolean => state.context === "candidate");
+  if (hasSamples || !active) return null;
+  return <section className="candidate-time-dock" aria-label="Candidate timeline dock" data-active="true">
+    <div className="dock-heading"><strong>◷ &nbsp; TIMELINE</strong><span>Candidate evaluation</span></div>
+    <p className="empty-timeline">No evaluation samples · Select a candidate and evaluate it to inspect time.</p>
+  </section>;
 }
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
@@ -267,29 +277,16 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
     <ExplorationContext.Provider value={store}>
     <div className="context-bar-wrap"><ContextBar /></div>
     <div className="page">
-      <header className="page-header">
-        <div className="title-row">
-          <h1>CLPS Lunar Mission Browser</h1>
-          <ModeToggle mode={mode} onChange={changeMode} />
-        </div>
-        <p className="lede">
-          Compare candidate landing sites near the lunar south pole: when is the Sun up for solar power, and
-          when is the Earth in view for direct-to-Earth communication?
-        </p>
-        <p className="notice" role="note">
-          The sites below are <strong>placeholder samples</strong> with arbitrary coordinates, not official
-          CLPS landing sites. Horizons use NASA LOLA terrain where it is available. The page address keeps
-          your selection, so you can share it.
-        </p>
+      <header className="page-header spatial-header">
+        <div className="brand"><span className="brand-mark" aria-hidden="true">◒</span><div><h1>LUNAR<span>·</span>OPS</h1><p>LUNAR EXPLORATION WORKSPACE</p></div></div>
+        <nav className="spatial-nav" aria-label="Spatial workspace navigation">
+          <a href="#candidate-context" aria-current="location">Terrain</a>
+          <a href="#catalog-title">South pole overview</a>
+          <a href="#geometry-controls">Geometry</a>
+        </nav>
+        <ModeToggle mode={mode} onChange={changeMode} />
       </header>
-
-      <ol className="workflow" aria-label="Workflow">
-        <li className={candidate === null ? "current" : "done"}>Explore the terrain and click a point (or a marker)</li>
-        <li className={candidate === null ? "" : "done"}>Candidate C0 is saved from the LOLA DEM</li>
-        <li className={candidate === null ? "" : "current"}>Edit height or time, then <strong>Create Candidate C1</strong></li>
-        <li className={candidate === null ? "" : "current"}><strong>Evaluate</strong> the selected revision</li>
-        <li>Compare and read the results in the Inspector</li>
-      </ol>
+      <div className="workspace-intro"><span><b>EXPLORATION /</b> SHACKLETON RIM B</span><span>LOLA TERRAIN · SPICE GEOMETRY</span></div>
 
       <section className="workspace" id="candidate-context" aria-label="Landing workspace">
         <ShackletonWorkspace
@@ -307,6 +304,12 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         {candidateError !== null && <p role="alert" className="ws-alert">{candidateError}</p>}
       </section>
 
+      <a className="more-tools" href="#catalog-title" aria-label="Show more tools and comparison below">↓ <span>More tools &amp; comparison</span></a>
+      <details className="workspace-guide"><summary>Workspace guide and scientific context</summary>
+        <p>Explore the terrain and click a point or marker. A terrain click saves Candidate C0 from the LOLA DEM; edit height or time in the graph to create C1, then evaluate the selected revision and inspect the result.</p>
+        <p>Catalog sample sites are placeholders, not official CLPS landing sites. The shared address retains the catalog scenario.</p>
+      </details>
+      <div className="brush-status" role="note"><strong>◌ &nbsp; REGION / CONSTRAINT BRUSH</strong><span>Not available in this build · point selection is active</span></div>
       <h2 className="section-title" id="catalog-title">Catalog site comparison</h2>
       <p className="muted section-lede">The original CLPS browser: compare 2–4 sites over a date range with terrain horizons, sky diagrams and timelines.</p>
       <div className="setup">
@@ -388,6 +391,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         </main>
       )}
 
+      <EmptyTimelineDock />
       <footer className="page-footer muted">
         <HealthStatus apiClient={apiClient} /> · NASA Space Apps Challenge 2026
       </footer>

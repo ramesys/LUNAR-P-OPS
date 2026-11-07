@@ -154,6 +154,7 @@ describe("App", (): void => {
     render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
     expect(await screen.findByRole("heading", { name: "Landing Graph" })).toBeDefined();
     expect(screen.getByText(/select a terrain point to create a candidate/i)).toBeDefined();
+    expect(screen.getByRole("region", { name: "Candidate timeline dock" }).textContent).toContain("No evaluation");
   });
 
   it("restores the selected committed revision and keeps every area in both modes", async (): Promise<void> => {

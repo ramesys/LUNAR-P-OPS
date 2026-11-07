@@ -1260,3 +1260,117 @@ button.primary {
 }
 .node-info.tone-saved { color: #d6dde8; font-style: italic; }
 .node-info.tone-status { background: rgba(0, 0, 0, 0.42); font-weight: 600; }
+
+/* Spatial workspace: the data views remain the same; the surface gives them a shared hierarchy. */
+:root, :root:where(:not([data-theme="light"])) {
+  color-scheme: dark;
+  --page: #070b10; --surface: #101820; --surface-2: #18232d;
+  --text-primary: #e8f1f3; --text-secondary: #b1c2c9; --text-muted: #8ba0a9;
+  --border: #2a3b46; --grid: #263844; --axis: #415766;
+  --accent: #72d8d1; --selection: #f2c879; --notice-bg: #2b2518;
+  --notice-border: #e2b75c; --error: #ff8880;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+body { background: radial-gradient(ellipse at 50% 4%, #152632 0, #080e14 44%, #070b10 100%); }
+.page { max-width: none; padding: 12px 18px 160px; gap: 12px; }
+.card { background: #101820; border: 1px solid #293d48; border-radius: 8px; }
+.page-header.spatial-header { display: flex; align-items: center; gap: 32px; min-height: 52px; }
+.brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.brand-mark { font-size: 2rem; line-height: 1; color: #86d9d1; }
+.brand h1 { font-size: 1.05rem; letter-spacing: .18em; margin: 0; }
+.brand h1 span { color: #7ce1d4; }
+.brand p { font-size: .55rem; color: #8da7ae; letter-spacing: .18em; margin: 0; }
+.spatial-nav { display: flex; flex: 1; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spatial-nav a { color: #9ab0b9; text-decoration: none; padding: 8px 12px; font-size: .8rem; border-radius: 5px; }
+.spatial-nav a:hover, .spatial-nav a[aria-current] { color: #e5ffff; background: #1a3038; }
+.workspace-intro { display: flex; justify-content: space-between; color: #91a9b1; font-size: .68rem; letter-spacing: .11em; }
+.workspace-intro b { color: #8de5da; }
+.workspace { grid-template-columns: minmax(250px, .9fr) minmax(380px, 2.15fr) minmax(260px, .9fr); grid-template-areas: "graph terrain inspector" "alert alert alert"; gap: 10px; align-items: start; margin-bottom: 0; }
+.workspace > .card { padding: 14px; }
+.ws-graph, .ws-inspector { max-height: min(75vh, 850px); overflow-y: auto; scrollbar-color: #44606a transparent; }
+.panel-eyebrow { color: #7bc7c4; font-size: .62rem; font-weight: 700; letter-spacing: .14em; }
+.panel-heading { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.panel-heading h2, .graph-head h2, .inspector-head h2 { margin: 3px 0 10px; font-size: .98rem; }
+.status-pill { color: #89d9ca; background: #172c2d; border: 1px solid #31514d; border-radius: 20px; font-size: .62rem; padding: 5px 8px; white-space: nowrap; }
+.ws-terrain { background: #0c141b; }
+.terrain-stage { border: 1px solid #344955; border-radius: 5px; overflow: hidden; background: #05080b; }
+.terrain-canvas canvas { display: block; max-width: 100%; }
+.terrain-hud, .terrain-time { background: rgba(6, 15, 21, .88); border: 1px solid #304650; }
+.terrain-controls { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.terrain-controls button, .graph-toolbar button { font-size: .76rem; }
+.terrain-controls label, .graph-toolbar label { font-size: .75rem; color: #bdced2; }
+.terrain-3d > p { font-size: .74rem; line-height: 1.5; }
+.new-candidate { margin-top: 12px; font-size: .78rem; }
+.terrain-metadata { margin: 10px 0; font-size: .8rem; }
+.graph-head p { font-size: .75rem; line-height: 1.45; }
+.graph-canvas { min-height: 470px; background-color: #0a131a; background-image: radial-gradient(#314653 1px, transparent 1px); background-size: 18px 18px; border-color: #344a56; }
+.graph-legend { gap: 7px; font-size: .68rem; }
+.graph-toolbar { align-items: end; }
+.graph-toolbar label { display: flex; flex-direction: column; }
+.ws-inspector { font-size: .8rem; line-height: 1.45; }
+.ws-inspector section { border-top: 1px solid #263943; margin-top: 12px; padding-top: 3px; }
+.ws-inspector .facts { grid-template-columns: 1fr; gap: 1px; }
+.ws-inspector .facts dd { margin-bottom: 7px; overflow-wrap: anywhere; }
+.ws-inspector .facts dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; }
+.ws-inspector .status-grid p { margin: 6px 0; }
+.brush-status { display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 12px 16px; border: 1px solid #2d414c; border-radius: 5px; color: #9bb0b8; background: #101820; font-size: .76rem; }
+.brush-status strong { color: #d8e8ea; font-size: .7rem; letter-spacing: .1em; }
+.context-bar-wrap { position: relative; background: #0a1218; }
+.context-bar { max-width: none; padding: 7px 18px; gap: 8px; }
+.context-title { text-transform: uppercase; font-size: .61rem; letter-spacing: .12em; }
+.context-card { padding: 5px 9px; font-size: .69rem; background: #101c23; }
+.context-card[aria-pressed="true"] { border: 1px solid #65c9bd; box-shadow: inset 2px 0 #65c9bd; }
+.context-kind { font-size: .61rem; }
+.candidate-time-dock { border: 1px solid #304951; background: #0d171d; border-radius: 7px; padding: 10px 14px; }
+.candidate-time-dock[data-active="true"] { position: fixed; z-index: 30; left: 16px; right: 16px; bottom: 12px; box-shadow: 0 8px 40px #000c; }
+.dock-heading { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; color: #9eb5bb; font-size: .67rem; letter-spacing: .05em; }
+.dock-heading strong { color: #81dcd2; letter-spacing: .13em; }
+.candidate-time-dock .time-control { margin: 6px 0 0; }
+.candidate-time-dock .time-slider { flex: 1 1 200px; min-width: 100px; }
+.candidate-time-dock .time-label { color: #e5f7f6; font-variant-numeric: tabular-nums; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #8ce9df; outline-offset: 2px; }
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr); grid-template-areas: "terrain inspector" "graph graph" "alert alert"; }
+  .ws-graph { max-height: none; }
+}
+@media (max-width: 720px) {
+  .page { padding: 10px 10px 185px; }
+  .page-header.spatial-header { gap: 12px; flex-wrap: wrap; }
+  .spatial-nav { order: 3; flex-basis: 100%; }
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "terrain" "inspector" "graph" "alert"; }
+  .ws-inspector { max-height: none; }
+  .workspace-intro span:last-child { display: none; }
+  .context-bar { padding: 6px 10px; }
+  .context-card { flex-basis: 140px; }
+  .candidate-time-dock[data-active="true"] { left: 6px; right: 6px; bottom: 6px; padding: 7px; }
+  .candidate-time-dock .time-control { gap: 4px; }
+  .candidate-time-dock .time-label { font-size: .7rem; }
+}
+.more-tools { justify-self: center; color: #94e2d9; text-decoration: none; border: 1px solid #36545a; background: #13252b; border-radius: 30px; padding: 6px 16px; font-size: .75rem; }
+.more-tools:hover { background: #1d3b40; }
+.workspace-guide { color: #a5bbc1; font-size: .78rem; }
+.workspace-guide summary { cursor: pointer; color: #b5d2d4; }
+@media (min-width: 1101px) {
+  .workspace:has(.graph-expanded) { grid-template-columns: minmax(620px, 1.8fr) minmax(380px, 1.3fr) minmax(260px, .7fr); }
+}
+@media (max-width: 720px) {
+  .candidate-time-dock .time-control { padding: 4px; }
+  .candidate-time-dock .time-control button { min-width: 0; padding: 4px 7px; }
+  .candidate-time-dock .time-control .play { min-width: 4.5rem; }
+  .candidate-time-dock .time-slider { flex: 1 1 100%; }
+  .candidate-time-dock .time-label { min-width: 0; }
+  .candidate-time-dock .speed { font-size: .7rem; margin-left: auto; }
+  .candidate-time-dock .speed select { padding: 2px; font-size: .7rem; }
+}
+.more-tools { position: fixed; z-index: 25; right: 22px; bottom: 112px; box-shadow: 0 4px 18px #0008; }
+@media (min-width: 1101px) {
+  .workspace:has(.graph-expanded) { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1.2fr) minmax(250px, .7fr); }
+}
+@media (max-width: 720px) {
+  .context-bar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .context-title { grid-column: 1 / -1; }
+  .context-card { width: 100%; font-size: .63rem; overflow-wrap: anywhere; }
+  .terrain-time { position: static; max-width: none; border-radius: 0; font-size: .74rem; }
+  .more-tools { right: 10px; bottom: 162px; }
+}
+.empty-timeline { margin: 7px 0 0; color: #b2c6ca; font-size: .8rem; }

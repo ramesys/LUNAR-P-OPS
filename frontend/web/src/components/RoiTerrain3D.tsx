@@ -497,7 +497,7 @@ export function RoiTerrain3D({ terrain, candidates, selectedId, onPick, onSelect
           </svg>
         </div>
       </div>
-      <div className="terrain-controls" role="toolbar" aria-label="3D view controls">
+      <div id="geometry-controls" className="terrain-controls" role="toolbar" aria-label="3D view controls">
         <button type="button" onClick={(): void => { view("reset"); }}>Reset view</button>
         <button type="button" onClick={(): void => { view("top"); }}>Top view</button>
         <button type="button" aria-label="Zoom in" onClick={(): void => { view("in"); }}>＋</button>

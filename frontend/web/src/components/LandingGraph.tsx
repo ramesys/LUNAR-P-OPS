@@ -118,6 +118,7 @@ interface LandingGraphProps {
 export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelectRevision, mode }: LandingGraphProps): JSX.Element {
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const [preview, setPreview] = useState<CandidatePreview | null>(null);
+  const [expanded, setExpanded] = useState<boolean>(false);
   const store: ExplorationStore = useExplorationStore();
   const draft: Draft | null = useExploration((state): Draft | null => state.draft);
   const settings: ExperimentSettings = useExploration((state): ExperimentSettings => state.settings);
@@ -496,12 +497,13 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
 
   const label: string = selected === null ? "—" : revisionLabel(candidate, selected);
   return <>
-    <section className="ws-graph card" aria-label="Landing graph">
+    <section className={`ws-graph card${expanded ? " graph-expanded" : ""}`} aria-label="Landing graph">
       <div className="graph-head">
-        <h2>Landing Graph</h2>
+        <span className="panel-eyebrow">02 / PARAMETRIC DESIGN</span><h2>Landing Graph</h2>
         <p className="muted">Each wire carries real data through the Rete.js dataflow engine. Parameter nodes feed the <strong>Candidate</strong> preview; its <code>candidate_ref</code> output carries the committed {label} to <strong>Scientific computation</strong> (the Python backend) and on to <strong>Results</strong>.</p>
       </div>
       <div className="graph-toolbar" role="toolbar" aria-label="Graph actions">
+        <button type="button" aria-pressed={expanded} onClick={(): void => { setExpanded(!expanded); }}>{expanded ? "Compact graph" : "Expand graph"}</button>
         <button type="button" disabled={preview === null || saving || evaluationBusy} onClick={(): void => { void commit(); }}>Create Candidate C1</button>
         <span className="toolbar-sep" aria-hidden="true" />
         <label>Duration (h, max 168) <input type="number" min="0.01" max="168" disabled={evaluationBusy} value={settings.duration_hours} onChange={(event): void => { store.dispatch({ type: "settings", settings: { ...settings, duration_hours: Number(event.target.value) } }); }} /></label>

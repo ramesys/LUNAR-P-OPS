@@ -60,7 +60,7 @@ export function WorkspaceInspector({ root, child, selected, selectedRef, evaluat
   const validated: boolean = evaluation?.status === "VALIDATED";
   return <aside className="ws-inspector card" aria-label="Inspector">
     <div className="inspector-head">
-      <h2>Inspector</h2>
+      <div><span className="panel-eyebrow">03 / CANDIDATE CONTEXT</span><h2>Inspector</h2></div>
       <div className="site-tabs" role="group" aria-label="Committed revision on candidate_ref">
         <button type="button" aria-pressed={selected.candidate_id === root.candidate_id} disabled={busy}
           onClick={(): void => { onSelectRevision(root); }}>C0</button>
@@ -154,6 +154,7 @@ function EvaluationCharts({ chart, evaluation }: { chart: EvaluationChart; evalu
   const store: ExplorationStore = useExplorationStore();
   const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
   const playing: boolean = useExploration((state): boolean => state.playing);
+  const activeContext: string = useExploration((state): string => state.context);
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
   const width: number = Math.max(300, useElementWidth(host, 420));
   const [hover, setHover] = useState<number | null>(null);
@@ -183,8 +184,11 @@ function EvaluationCharts({ chart, evaluation }: { chart: EvaluationChart; evalu
   return <div ref={host} className="inspector-charts">
     <p className="muted small">Inspecting stored sample <strong>{(index + 1).toString()} of {count.toString()}</strong> at {formatUtc(chart.times[index] ?? "")}
       {index === 0 ? " (start of interval)" : index === count - 1 ? " (end of interval)" : ""}. The terrain view and graph follow this cursor; it never changes the candidate or runs a calculation.</p>
-    <TimeControl times={chart.times} index={shown} playing={playing} hoursPerSecond={speed} onIndex={moveTo}
-      onPlayingChange={(next: boolean): void => { store.dispatch({ type: "playing", playing: next }); }} onSpeed={setSpeed} />
+    <section className="candidate-time-dock" aria-label="Candidate timeline dock" data-active={activeContext === "candidate"}>
+      <div className="dock-heading"><strong>◷ &nbsp; TIMELINE</strong><span>Candidate evaluation · {evaluation.request.duration_hours} h / {evaluation.request.step_minutes} min</span><span>Sample {index + 1} / {count}</span></div>
+      <TimeControl times={chart.times} index={shown} playing={playing} hoursPerSecond={speed} onIndex={moveTo}
+        onPlayingChange={(next: boolean): void => { store.dispatch({ type: "playing", playing: next }); }} onSpeed={setSpeed} />
+    </section>
     <HoverReadout times={chart.times} focused={chart.site} index={shown} previewing={hover !== null} />
     <SkyChart result={chart.site} width={width} index={shown} trailSamples={trailSamples(evaluation.request.step_minutes)} onHover={setHover} onSelect={select} />
     <Timeline times={chart.times} width={width} sites={[chart.site]} focused={chart.site} rangeEnd={chart.rangeEnd}

@@ -68,6 +68,17 @@ test.describe("desktop", (): void => {
     const writes: string[] = watchWrites(page);
     const camera: string | null = await page.locator("[aria-label^='3D terrain of the Shackleton']").getAttribute("data-camera");
 
+    await page.getByRole("link", { name: "Show more tools and comparison below" }).click();
+    await expect(page.getByRole("heading", { name: "Catalog site comparison" })).toBeInViewport();
+    await page.getByRole("button", { name: /^Candidate evaluation/ }).click();
+
+    // Widen the graph without remounting the terrain scene.
+    const graph: Locator = page.getByRole("region", { name: "Landing graph" });
+    const graphWidth: number = (await graph.boundingBox())?.width ?? 0;
+    await page.getByRole("button", { name: "Expand graph" }).click();
+    expect((await graph.boundingBox())?.width ?? 0).toBeGreaterThan(graphWidth);
+    await page.getByRole("button", { name: "Compact graph" }).click();
+
     // Scene controls alter the actual canvas without changing the stored result or camera.
     const canvas: Locator = page.locator(".terrain-canvas canvas");
     await expect(canvas).toBeVisible();
@@ -208,4 +219,19 @@ test.describe("desktop", (): void => {
     await expect(page.locator(".node-kind-parameter").filter({ hasText: "Time" })).toContainText("saved C0: 2026-11-07T00:00:00Z");
     await expect(page.locator(".node-kind-candidate")).toContainText(f.candidateId.slice(0, 22));
   });
+});
+
+test("@phone keeps terrain controls and the candidate timeline usable", async ({ page, request }): Promise<void> => {
+  const f: Fixture = await fixture(request);
+  await open(page, f);
+  await expect(page.locator(".terrain-canvas canvas")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Candidate timeline dock" })).toBeInViewport();
+  expect(await page.evaluate((): boolean => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const writes: string[] = watchWrites(page);
+  await inspectorTime(page).getByRole("button", { name: "Step forward" }).click();
+  await expect(page.locator(".terrain-time")).toContainText(`stored sample 2/${f.samples.toString()}`);
+  await expect(resultsNode(page)).toContainText("cursor 2/");
+  await page.getByRole("checkbox", { name: "Horizon guides" }).uncheck();
+  await expect(page.getByRole("checkbox", { name: "Horizon guides" })).not.toBeChecked();
+  expect(writes).toEqual([]);
 });

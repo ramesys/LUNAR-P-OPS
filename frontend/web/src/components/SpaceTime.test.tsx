@@ -54,6 +54,7 @@ describe("space–time synchronization", (): void => {
     const calls: string[] = [];
     render(workspace(store, calls));
     expect((await screen.findByTestId("scene")).textContent).toBe("e1@0:2026-11-07T00:00:00Z draft=9 selected=c0");
+    expect(screen.getByRole("region", { name: "Candidate timeline dock" }).getAttribute("data-active")).toBe("true");
     const before: number = calls.length;
     // Scrub with the original CLPS time control's step button.
     fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
