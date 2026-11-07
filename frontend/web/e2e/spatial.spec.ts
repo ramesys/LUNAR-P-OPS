@@ -293,3 +293,23 @@ test("@phone keeps the Region Brush dock directly below the Timeline", async ({ 
   expect(Math.abs(t2.y + t2.height - d2.y)).toBeLessThan(2);
   expect(await page.evaluate((): boolean => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("orders the desktop page: workspace, Sky & timeline, catalog, saved candidates, sources", async ({ page, request }): Promise<void> => {
+  const f: Evaluation = await fixture(request);
+  await open(page, f);
+  await expect(page.getByRole("heading", { name: "Assumptions & sources" })).toBeVisible();
+  const order: number[] = await page.evaluate((): number[] => ["#candidate-context", "#catalog-context", "#catalog-title", "#learn-title", "#saved-candidates", "#assumptions-title"]
+    .map((selector: string): number => document.querySelector(selector)?.getBoundingClientRect().top ?? NaN));
+  expect(order.every((value: number): boolean => Number.isFinite(value))).toBe(true);
+  expect([...order].sort((a: number, b: number): number => a - b)).toEqual(order);
+  // The saved-candidate list lives in the bottom section, still fully interactive.
+  const saved: Locator = page.locator("#saved-candidates");
+  await expect(saved.getByRole("heading", { name: /Saved candidates in this ROI \(\d+\)/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Shackleton Rim B workspace" }).getByRole("list", { name: "ROI candidates" })).toHaveCount(0);
+  const requests: string[] = watchRequests(page);
+  await saved.getByRole("list", { name: "ROI candidates" }).getByRole("button", { pressed: false }).first().click();
+  await expect(page.locator("#candidate-context")).toBeInViewport();
+  await expect(saved.getByRole("button", { pressed: true })).toHaveCount(1);
+  expect(requests).toEqual([]);
+  expect(await page.evaluate((): boolean => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

@@ -1432,3 +1432,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .brush-dock-panel .brush-results li { margin: 0; flex: none; }
 .brush-dock-panel .brush-results li button { font-size: .7rem; padding: 2px 7px; }
 .brush-dock-panel .brush-preview p, .brush-dock-panel .brush-fields + p { margin: 3px 0; }
+
+/* --- Desktop page order: workspace → Sky & timeline → catalog comparison → saved candidates → sources --- */
+.sky-timeline { margin-top: 4px; }
+.sky-timeline-placeholder { min-height: 120px; }
+.saved-candidates:empty { display: none; }
+.saved-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 8px; }
+.saved-heading h3 { margin: 0; }
+.saved-candidates .candidate-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 4px 12px; }
+.saved-candidates .candidate-list li { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; }
+.saved-candidates .candidate-list li .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
+.saved-candidates .candidate-list button { font-size: .76rem; white-space: nowrap; }
+.saved-candidates .candidate-list button[aria-pressed="true"] { border-color: #f2c14e; background: #3a3218; color: #ffeebb; }
+@media (min-width: 1101px) {
+  .spatial-nav { flex-wrap: wrap; }
+}
+@media (min-width: 1101px) {
+  /* The header links reach every section on desktop; the floating shortcut would cover content. */
+  .more-tools { display: none; }
+}

@@ -14,6 +14,7 @@ import {
   type LazyExoticComponent,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { ConstraintBrush } from "./ConstraintBrush.tsx";
 import { describeApiError } from "../lib/apiError.ts";
 import type { LocalPoint } from "../lib/roiFrame.ts";
@@ -37,10 +38,17 @@ interface Props {
   onCandidateSelected: (candidate: Candidate, evaluationId?: string) => void;
   defaultTimeUtc: string;
   defaultObserverHeightM: number;
+  /** Where the saved-candidate list is shown (a section near the page bottom); inline when absent. */
+  candidateListSlot?: HTMLElement | null;
 }
 
 function deg(value: number, positive: string, negative: string): string {
   return `${Math.abs(value).toFixed(5)}°${value < 0 ? negative : positive}`;
+}
+
+/** The list sits near the page bottom: after a selection, bring the workspace back into view. */
+function showTerrain(): void {
+  try { document.getElementById("candidate-context")?.scrollIntoView({ block: "start" }); } catch { /* not supported (tests) */ }
 }
 
 export function candidateLabel(candidate: Candidate): string {
@@ -49,7 +57,7 @@ export function candidateLabel(candidate: Candidate): string {
 
 /** The Shackleton Rim B ROI: one terrain scene holding every persisted candidate of the ROI. */
 export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidateSelected, defaultTimeUtc,
-  defaultObserverHeightM }: Props): JSX.Element {
+  defaultObserverHeightM, candidateListSlot = null }: Props): JSX.Element {
   const [terrain, setTerrain] = useState<TerrainState>({ kind: "loading" });
   const [regional, setRegional] = useState<RegionalTerrain | null>(null);
   const [regionalError, setRegionalError] = useState<string | null>(null);
@@ -127,6 +135,17 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     if (found !== undefined) onCandidateSelected(found);
   }, [candidates, onCandidateSelected]);
 
+  const savedList: JSX.Element = <>
+    <div className="saved-heading"><h3>Saved candidates in this ROI ({candidates.length})</h3>
+      <span className="muted small">Persisted C0 candidates of Shackleton Rim B. Selecting one opens it in the Landing Graph, Inspector and Timeline; nothing is computed.</span>
+      <a href="#candidate-context" className="dock-link">Back to terrain ↑</a></div>
+    {candidates.length === 0 ? <p>No candidates yet. Click the terrain to create one.</p> :
+      <ol aria-label="ROI candidates" className="candidate-list">{candidates.map((c: Candidate): JSX.Element =>
+        <li key={c.candidate_id}><button type="button" aria-pressed={c.candidate_id === selectedCandidateId}
+          onClick={(): void => { onCandidateSelected(c); showTerrain(); }}>{candidateLabel(c)}</button>{" "}
+          <span className="muted">{c.candidate_id.slice(0, 18)}…</span></li>)}</ol>}
+  </>;
+
   return <section className="ws-terrain card" aria-label="Shackleton Rim B workspace">
     <div className="panel-heading"><div><span className="panel-eyebrow">01 / SPATIAL EXPLORER</span><h2>Terrain explorer · Shackleton Rim B</h2></div><span className="status-pill">● &nbsp;LOLA TERRAIN</span></div>
     {terrain.kind === "loading" && <p className="muted">Loading ROI terrain…</p>}
@@ -151,12 +170,7 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     {busy && <p>Sampling the LOLA raster at the selected point…</p>}
     {lastPick !== null && <p className="muted">Last terrain pick: {lastPick.east_m.toFixed(1)} m east, {lastPick.north_m.toFixed(1)} m north of the ROI centre (local projected metres).</p>}
     {error !== null && <p role="alert">{error}</p>}
-    <h3>Saved candidates in this ROI ({candidates.length})</h3>
-    {candidates.length === 0 ? <p>No candidates yet. Click the terrain to create one.</p> :
-      <ol aria-label="ROI candidates" className="candidate-list">{candidates.map((c: Candidate): JSX.Element =>
-        <li key={c.candidate_id}><button type="button" aria-pressed={c.candidate_id === selectedCandidateId}
-          onClick={(): void => { onCandidateSelected(c); }}>{candidateLabel(c)}</button>{" "}
-          <span className="muted">{c.candidate_id.slice(0, 18)}…</span></li>)}</ol>}
+    {candidateListSlot === null ? savedList : createPortal(savedList, candidateListSlot)}
   </section>;
 }
 
