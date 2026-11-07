@@ -269,6 +269,8 @@ export function ChartsPanel({ result, focused, onFocus, mode, apiClient }: Chart
                 key={focused.site.id}
                 apiClient={apiClient}
                 site={focused}
+                selectedTimeUtc={result.times[shown] ?? ""}
+                observerHeightM={result.request.observer_height_m}
                 sunAzimuthDeg={focused.sun.azimuth_deg[shown] ?? 0}
                 sunElevationDeg={focused.sun.elevation_deg[shown] ?? 0}
                 earthAzimuthDeg={focused.earth.azimuth_deg[shown] ?? 0}

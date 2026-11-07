@@ -233,6 +233,55 @@
           }
         }
       }
+    },
+    "/api/sites/{site_id}/candidate": {
+      "post": {
+        "summary": "Create Candidate",
+        "operationId": "createCandidate",
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Site Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -396,6 +445,119 @@
         ],
         "title": "BodySeries",
         "description": "Columnar series aligned with `AnalysisResponse.times`."
+      },
+      "CandidateOut": {
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "latitude_deg": {
+            "type": "number",
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "type": "number",
+            "title": "Longitude Deg"
+          },
+          "terrain_elevation_m": {
+            "type": "number",
+            "title": "Terrain Elevation M"
+          },
+          "observer_height_m": {
+            "type": "number",
+            "title": "Observer Height M"
+          },
+          "selected_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Selected Time Utc"
+          },
+          "terrain_dataset_id": {
+            "type": "string",
+            "title": "Terrain Dataset Id"
+          },
+          "terrain_source_url": {
+            "type": "string",
+            "title": "Terrain Source Url"
+          },
+          "dem_resolution_m": {
+            "type": "number",
+            "title": "Dem Resolution M"
+          },
+          "coordinate_reference": {
+            "type": "string",
+            "title": "Coordinate Reference"
+          },
+          "validation_status": {
+            "type": "string",
+            "const": "not_independently_validated",
+            "title": "Validation Status"
+          },
+          "data_availability": {
+            "type": "string",
+            "const": "available",
+            "title": "Data Availability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "site_id",
+          "latitude_deg",
+          "longitude_deg",
+          "terrain_elevation_m",
+          "observer_height_m",
+          "selected_time_utc",
+          "terrain_dataset_id",
+          "terrain_source_url",
+          "dem_resolution_m",
+          "coordinate_reference",
+          "validation_status",
+          "data_availability"
+        ],
+        "title": "CandidateOut"
+      },
+      "CandidateRequest": {
+        "properties": {
+          "east_m": {
+            "type": "number",
+            "maximum": 6000.0,
+            "minimum": -6000.0,
+            "title": "East M"
+          },
+          "north_m": {
+            "type": "number",
+            "maximum": 6000.0,
+            "minimum": -6000.0,
+            "title": "North M"
+          },
+          "observer_height_m": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Observer Height M"
+          },
+          "selected_time_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Selected Time Utc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "east_m",
+          "north_m",
+          "observer_height_m",
+          "selected_time_utc"
+        ],
+        "title": "CandidateRequest",
+        "description": "Local mesh coordinates, metres in the existing patch east/north plane."
       },
       "DataSourceOut": {
         "properties": {

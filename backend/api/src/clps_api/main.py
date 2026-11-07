@@ -12,10 +12,12 @@ from lunar_core.kernels import load_kernels
 from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import pole_map, terrain_store
+from clps_api import candidate, pole_map, terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
+    CandidateOut,
+    CandidateRequest,
     HealthResponse,
     PoleMapOut,
     SiteOut,
@@ -134,5 +136,20 @@ def get_pole_map_image() -> FileResponse:
 def analyze_scenario(request: AnalysisRequest) -> AnalysisResponse:
     try:
         return run_analysis(request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/sites/{site_id}/candidate", operation_id="createCandidate")
+def create_candidate(site_id: str, request: CandidateRequest) -> CandidateOut:
+    if site_id != "sample-a":
+        raise HTTPException(status_code=404, detail="candidate terrain site unavailable")
+    site = resolve_site(site_id)
+    if site is None:
+        raise HTTPException(status_code=404, detail="unknown terrain site")
+    try:
+        return candidate.create_candidate(site, request)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

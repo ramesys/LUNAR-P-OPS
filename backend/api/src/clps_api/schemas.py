@@ -136,3 +136,29 @@ class AnalysisResponse(BaseModel):
     sites: list[SiteResult]
     assumptions: list[AssumptionOut]
     data_sources: list[DataSourceOut]
+
+
+class CandidateRequest(BaseModel):
+    """Local mesh coordinates, metres in the existing patch east/north plane."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    east_m: float = Field(ge=-6000, le=6000)
+    north_m: float = Field(ge=-6000, le=6000)
+    observer_height_m: float = Field(ge=0, le=100)
+    selected_time_utc: AwareDatetime
+
+
+class CandidateOut(BaseModel):
+    candidate_id: str
+    site_id: str
+    latitude_deg: float
+    longitude_deg: float
+    terrain_elevation_m: float
+    observer_height_m: float
+    selected_time_utc: AwareDatetime
+    terrain_dataset_id: str
+    terrain_source_url: str
+    dem_resolution_m: float
+    coordinate_reference: str
+    validation_status: Literal["not_independently_validated"]
+    data_availability: Literal["available"]

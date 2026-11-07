@@ -143,6 +143,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sites/{site_id}/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Candidate */
+        post: operations["createCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -215,6 +232,61 @@ export interface components {
             elevation_deg: number[];
             /** Horizon Deg */
             horizon_deg: number[];
+        };
+        /** CandidateOut */
+        CandidateOut: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Site Id */
+            site_id: string;
+            /** Latitude Deg */
+            latitude_deg: number;
+            /** Longitude Deg */
+            longitude_deg: number;
+            /** Terrain Elevation M */
+            terrain_elevation_m: number;
+            /** Observer Height M */
+            observer_height_m: number;
+            /**
+             * Selected Time Utc
+             * Format: date-time
+             */
+            selected_time_utc: string;
+            /** Terrain Dataset Id */
+            terrain_dataset_id: string;
+            /** Terrain Source Url */
+            terrain_source_url: string;
+            /** Dem Resolution M */
+            dem_resolution_m: number;
+            /** Coordinate Reference */
+            coordinate_reference: string;
+            /**
+             * Validation Status
+             * @constant
+             */
+            validation_status: "not_independently_validated";
+            /**
+             * Data Availability
+             * @constant
+             */
+            data_availability: "available";
+        };
+        /**
+         * CandidateRequest
+         * @description Local mesh coordinates, metres in the existing patch east/north plane.
+         */
+        CandidateRequest: {
+            /** East M */
+            east_m: number;
+            /** North M */
+            north_m: number;
+            /** Observer Height M */
+            observer_height_m: number;
+            /**
+             * Selected Time Utc
+             * Format: date-time
+             */
+            selected_time_utc: string;
         };
         /** DataSourceOut */
         DataSourceOut: {
@@ -616,6 +688,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    createCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
