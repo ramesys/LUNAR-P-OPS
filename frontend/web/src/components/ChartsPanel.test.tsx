@@ -67,6 +67,8 @@ function renderPanel(): void {
       focused={FOCUSED}
       mode="expert"
       apiClient={createApiClient({ baseUrl: "http://api.test" })}
+      onCandidateSelected={(): void => { /* no-op */ }}
+      onSelectionStarted={(): void => { /* no-op */ }}
       onFocus={(): void => {
         /* no-op */
       }}

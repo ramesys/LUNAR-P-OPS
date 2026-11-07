@@ -3,12 +3,24 @@ import {
   type AnalysisRequest,
   type AnalysisResponse,
   type ApiClient,
+  type Candidate,
   type Site,
   type SiteResult,
 } from "@clps/api-client";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { JSX } from "react";
 import { App } from "./App.tsx";
+
+vi.mock("./components/LandingGraph.tsx", () => ({
+  LandingGraph: (): JSX.Element => <div data-testid="stable-editor"><input aria-label="Editor draft" defaultValue="draft" /></div>,
+}));
+
+const RESTORED: Candidate = { candidate_id: "saved-c0", site_id: "site", latitude_deg: -89.5,
+  longitude_deg: 0, terrain_elevation_m: 10, observer_height_m: 2, selected_time_utc: "2026-01-01T00:00:00Z",
+  terrain_dataset_id: "LOLA", terrain_source_url: "https://example.org", terrain_dataset_sha256: "hash",
+  terrain_nodata: "NaN", coverage_bounds_m: [0,0,1,1], dem_resolution_m: 20, coordinate_reference: "MOON_ME",
+  validation_status: "not_independently_validated", data_availability: "available" };
 
 const SITES: Site[] = [
   { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "", terrain_available: true, map_x_m: 0, map_y_m: 15000 },
@@ -84,6 +96,7 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
     baseUrl: "http://api.test",
     fetch: async (input: Request): Promise<Response> => {
       const path: string = new URL(input.url).pathname;
+      if (path === "/api/candidates/saved-c0") return Response.json(RESTORED);
       if (path === "/api/sites") {
         return Response.json(SITES);
       }
@@ -128,10 +141,30 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
 
 afterEach((): void => {
   cleanup();
+  localStorage.clear();
   window.history.replaceState(null, "", "/");
 });
 
 describe("App", (): void => {
+  it("keeps the empty landing workspace visible without a candidate", async (): Promise<void> => {
+    localStorage.clear();
+    render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
+    expect(await screen.findByRole("heading", { name: "Landing Graph" })).toBeDefined();
+    expect(screen.getByText(/select a terrain point to create a candidate/i)).toBeDefined();
+  });
+
+  it("restores the editor and preserves its draft when comparisons and modes change", async (): Promise<void> => {
+    localStorage.setItem("lunar-ops-c0", "saved-c0");
+    render(<App apiClient={fakeApi([])} now={new Date("2026-03-15T10:00:00Z")} />);
+    const draft: HTMLElement = await screen.findByRole("textbox", { name: "Editor draft" });
+    fireEvent.change(draft, { target: { value: "my retained draft" } });
+    await screen.findByRole("table", { name: /ranked by sunlit time/i });
+    fireEvent.click(screen.getByRole("button", { name: "Compare sites" }));
+    fireEvent.click(screen.getByRole("button", { name: /Expert/ }));
+    expect(await screen.findByRole("textbox", { name: "Editor draft" })).toBe(draft);
+    expect(draft).toHaveProperty("value", "my retained draft");
+    expect(screen.getByRole("heading", { name: "Sky & timeline" })).toBeDefined();
+  });
   it("loads the catalog, runs a default comparison and shows the ranked table", async (): Promise<void> => {
     const requests: AnalysisRequest[] = [];
     render(<App apiClient={fakeApi(requests)} now={new Date("2026-03-15T10:00:00Z")} />);

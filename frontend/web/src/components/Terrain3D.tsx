@@ -21,8 +21,6 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { LandingGraph } from "./LandingGraph.tsx";
-import { CandidateInspector } from "./CandidateInspector.tsx";
 import { pickTerrain, type TerrainPick } from "../lib/terrainPicking.ts";
 import { SelectionGuard } from "../lib/selectionGuard.ts";
 import { useElementWidth } from "../lib/useElementWidth.ts";
@@ -35,6 +33,8 @@ import { useElementWidth } from "../lib/useElementWidth.ts";
 export interface Terrain3DProps {
   apiClient: ApiClient;
   site: SiteResult;
+  onCandidateSelected: (candidate: Candidate) => void;
+  onSelectionStarted: () => void;
   selectedTimeUtc: string;
   observerHeightM: number;
   sunAzimuthDeg: number;
@@ -176,6 +176,8 @@ function applyHeights(parts: SceneParts, patch: TerrainPatch, exaggeration: numb
 export function Terrain3D({
   apiClient,
   site,
+  onCandidateSelected,
+  onSelectionStarted,
   selectedTimeUtc,
   observerHeightM,
   sunAzimuthDeg,
@@ -194,9 +196,7 @@ export function Terrain3D({
   const [state, setState] = useState<LoadState>((): LoadState =>
     hasWebGL() ? { kind: "loading" } : { kind: "error", message: NO_WEBGL },
   );
-  const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
-  const restoreGuard: RefObject<SelectionGuard> = useRef<SelectionGuard>(new SelectionGuard());
   const selectionGuard: RefObject<SelectionGuard> = useRef<SelectionGuard>(new SelectionGuard());
   const [exaggeration, setExaggeration] = useState<number>(2);
   const siteId: string = site.site.id;
@@ -227,18 +227,6 @@ export function Terrain3D({
       cancelled = true;
     };
   }, [apiClient, siteId, webglMissing]);
-
-  useEffect((): (() => void) => {
-    const guard: SelectionGuard = restoreGuard.current;
-    const token: number = guard.next();
-    const saved: string | null = localStorage.getItem("lunar-ops-c0");
-    if (saved !== null && siteId === "sample-a") {
-      void apiClient.GET("/api/candidates/{candidate_id}", { params: { path: { candidate_id: saved } } })
-        .then(({ data }): void => { if (guard.isCurrent(token) && data !== undefined) setCandidate(data); })
-        .catch((): void => { /* A missing saved candidate leaves the viewer ready for a new selection. */ });
-    }
-    return (): void => { guard.invalidate(); };
-  }, [apiClient, siteId]);
 
   const patch: TerrainPatch | null = state.kind === "ready" ? state.patch : null;
 
@@ -322,13 +310,9 @@ export function Terrain3D({
         -(event.clientY - rect.top) / rect.height * 2 + 1);
       const hit: TerrainPick | null = pickTerrain(parts.camera, parts.terrain, mouse);
       const sequence: number = guard.next();
-      restoreGuard.current.invalidate();
-      setCandidate(null);
       setSelectionError(null);
-      selectedPoint.current = null;
-      parts.pin.visible = false;
-      parts.renderer.render(parts.scene, parts.camera);
       if (hit === null) return;
+      onSelectionStarted();
       const point: Vector3 = hit.point;
       void apiClient.POST("/api/sites/{site_id}/candidate", {
         params: { path: { site_id: siteId } },
@@ -341,14 +325,13 @@ export function Terrain3D({
         parts.pin.visible = true;
         parts.pin.position.set(point.x, point.y + 0.3, point.z);
         parts.renderer.render(parts.scene, parts.camera);
-        localStorage.setItem("lunar-ops-c0", data.candidate_id);
-        setCandidate(data);
+        onCandidateSelected(data);
       }).catch((): void => { if (guard.isCurrent(sequence)) setSelectionError("Could not load DEM data for this selection."); });
     };
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointerup", onUp);
     return (): void => { guard.invalidate(); canvas.removeEventListener("pointerdown", onDown); canvas.removeEventListener("pointerup", onUp); };
-  }, [apiClient, patch, siteId, selectedTimeUtc, observerHeightM, exaggeration]);
+  }, [apiClient, patch, siteId, selectedTimeUtc, observerHeightM, exaggeration, onCandidateSelected, onSelectionStarted]);
 
   // Lights and markers follow the instant shown; render once per change.
   useEffect((): void => {
@@ -382,7 +365,6 @@ export function Terrain3D({
         hidden={state.kind !== "ready"}
       />
       {selectionError !== null && <p role="alert">{selectionError}</p>}
-      {candidate !== null && <><CandidateInspector candidate={candidate} /><LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate} /></>}
       {state.kind === "ready" && (
         <div className="terrain-caption">
           <p>

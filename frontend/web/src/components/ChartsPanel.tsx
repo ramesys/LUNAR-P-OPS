@@ -1,4 +1,4 @@
-import type { AnalysisResponse, ApiClient, SiteResult } from "@clps/api-client";
+import type { AnalysisResponse, ApiClient, Candidate, SiteResult } from "@clps/api-client";
 import {
   lazy,
   Suspense,
@@ -54,13 +54,15 @@ interface ChartsPanelProps {
   onFocus: (siteId: string) => void;
   mode: Mode;
   apiClient: ApiClient;
+  onCandidateSelected: (candidate: Candidate) => void;
+  onSelectionStarted: () => void;
 }
 
 /**
  * Sky diagram + timeline sharing one instant (RF-12). Time state lives here, not in App, so
  * playback re-renders only the charts. Mount with a new `key` per result to reset it.
  */
-export function ChartsPanel({ result, focused, onFocus, mode, apiClient }: ChartsPanelProps): JSX.Element {
+export function ChartsPanel({ result, focused, onFocus, mode, apiClient, onCandidateSelected, onSelectionStarted }: ChartsPanelProps): JSX.Element {
   const expert: boolean = mode === "expert";
   const [index, setIndex] = useState<number>(0);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -269,6 +271,8 @@ export function ChartsPanel({ result, focused, onFocus, mode, apiClient }: Chart
                 key={focused.site.id}
                 apiClient={apiClient}
                 site={focused}
+                onCandidateSelected={onCandidateSelected}
+                onSelectionStarted={onSelectionStarted}
                 selectedTimeUtc={result.times[shown] ?? ""}
                 observerHeightM={result.request.observer_height_m}
                 sunAzimuthDeg={focused.sun.azimuth_deg[shown] ?? 0}

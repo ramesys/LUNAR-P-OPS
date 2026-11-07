@@ -1,6 +1,9 @@
-import type { AnalysisResponse, ApiClient, PoleMap as PoleMapData, Site, SiteResult } from "@clps/api-client";
+import type { AnalysisResponse, ApiClient, Candidate, PoleMap as PoleMapData, Site, SiteResult } from "@clps/api-client";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
+import { CandidateInspector } from "./components/CandidateInspector.tsx";
+import { LandingGraph } from "./components/LandingGraph.tsx";
+import { SelectionGuard } from "./lib/selectionGuard.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
 import { ExportPanel } from "./components/ExportPanel.tsx";
@@ -59,6 +62,9 @@ export function defaultForm(now: Date): Form {
 }
 
 export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [candidateError, setCandidateError] = useState<string | null>(null);
+  const candidateGuard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
   const [sites, setSites] = useState<Site[]>([]);
   const [poleMap, setPoleMap] = useState<PoleMapData | null>(null);
   const [form, setForm] = useState<Form>((): Form => defaultForm(now));
@@ -69,6 +75,32 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [mode, setMode] = useState<Mode>((): Mode => modeFromSearch(window.location.search));
   const modeRef: RefObject<Mode> = useRef<Mode>(mode);
   const latestRequest: RefObject<number> = useRef<number>(0);
+
+  const onSelectionStarted: () => void = useCallback((): void => {
+    candidateGuard.current.invalidate();
+  }, []);
+  const onCandidateSelected: (value: Candidate) => void = useCallback((value: Candidate): void => {
+    candidateGuard.current.invalidate();
+    localStorage.setItem("lunar-ops-c0", value.candidate_id);
+    setCandidateError(null);
+    setCandidate(value);
+  }, []);
+  useEffect((): (() => void) => {
+    const guard: SelectionGuard = candidateGuard.current;
+    const sequence: number = guard.next();
+    const saved: string | null = localStorage.getItem("lunar-ops-c0");
+    if (saved !== null) {
+      void apiClient.GET("/api/candidates/{candidate_id}", { params: { path: { candidate_id: saved } } })
+        .then(({ data }): void => {
+          if (!guard.isCurrent(sequence)) return;
+          if (data === undefined) setCandidateError("The saved candidate is unavailable. Select a terrain point to continue.");
+          else setCandidate(data);
+        }).catch((): void => {
+          if (guard.isCurrent(sequence)) setCandidateError("Could not restore the saved candidate. Check the API connection.");
+        });
+    }
+    return (): void => { guard.invalidate(); };
+  }, [apiClient]);
 
   function changeMode(next: Mode): void {
     modeRef.current = next;
@@ -244,6 +276,12 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
         )}
       </div>
 
+      <section className="card" aria-label="Landing workspace">
+        {candidate === null ? <><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></> :
+          <><CandidateInspector candidate={candidate} /><LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate} /></>}
+        {candidateError !== null && <p role="alert">{candidateError}</p>}
+      </section>
+
       {status.kind === "error" && (
         <p className="error-banner" role="alert">
           {status.message}
@@ -271,6 +309,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             onFocus={setFocusedId}
             mode={mode}
             apiClient={apiClient}
+            onCandidateSelected={onCandidateSelected}
+            onSelectionStarted={onSelectionStarted}
           />
 
           <section className="card" aria-labelledby="learn-title">
