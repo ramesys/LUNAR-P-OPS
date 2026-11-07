@@ -69,7 +69,12 @@ test.describe("desktop", (): void => {
     const writes: string[] = watchWrites(page);
     const camera: string | null = await page.locator("[aria-label^='3D terrain of the Shackleton']").getAttribute("data-camera");
 
-    await page.getByRole("link", { name: "Show more tools and comparison below" }).click();
+    // Desktop: the header links replace the floating shortcut, which is hidden at this width.
+    await expect(page.getByRole("link", { name: "Show more tools and comparison below" })).toBeHidden();
+    const nav: Locator = page.getByRole("navigation", { name: "Spatial workspace navigation" });
+    await nav.getByRole("link", { name: "Sky & timeline" }).click();
+    await expect(page.getByRole("heading", { name: "Sky & timeline" })).toBeInViewport();
+    await nav.getByRole("link", { name: "South pole overview" }).click();
     await expect(page.getByRole("heading", { name: "Catalog site comparison" })).toBeInViewport();
     await page.getByRole("button", { name: /^Candidate evaluation/ }).click();
 

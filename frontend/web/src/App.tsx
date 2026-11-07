@@ -103,6 +103,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
   const [mode, setMode] = useState<Mode>((): Mode => modeFromSearch(window.location.search));
   const modeRef: RefObject<Mode> = useRef<Mode>(mode);
   const latestRequest: RefObject<number> = useRef<number>(0);
+  // Page slot near the bottom where the workspace renders its saved-candidate list.
+  const [candidateListSlot, setCandidateListSlot] = useState<HTMLElement | null>(null);
 
   const onSelectionStarted: () => void = useCallback((): void => {
     candidateGuard.current.invalidate();
@@ -298,6 +300,8 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           <a href="#catalog-title">South pole overview</a>
           <a href="#geometry-controls">Geometry</a>
           <a href="#constraint-brush">Constraint brush</a>
+          <a href="#catalog-context">Sky &amp; timeline</a>
+          <a href="#saved-candidates">Saved candidates</a>
         </nav>
         <ModeToggle mode={mode} onChange={changeMode} />
       </header>
@@ -310,6 +314,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
           onCandidateSelected={onCandidateSelected}
           defaultTimeUtc={`${defaultForm(now).startDate}T00:00:00Z`}
           defaultObserverHeightM={defaultForm(now).observerHeightM}
+          candidateListSlot={candidateListSlot}
         />
         {candidate === null ? <>
           <section className="ws-graph card" aria-label="Landing graph"><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></section>
@@ -319,6 +324,21 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             preferredEvaluation={preferredEvaluation?.candidateId === candidate.candidate_id ? preferredEvaluation : null} />}
         {candidateError !== null && <p role="alert" className="ws-alert">{candidateError}</p>}
       </section>
+
+      {result !== null && focused !== undefined ? (
+        <div className={status.kind === "loading" ? "results sky-timeline stale" : "results sky-timeline"} aria-busy={status.kind === "loading"}>
+          <ChartsPanel
+            key={resultVersion}
+            result={result}
+            focused={focused}
+            onFocus={setFocusedId}
+            mode={mode}
+            apiClient={apiClient}
+            onCandidateSelected={onCandidateSelected}
+            onSelectionStarted={onSelectionStarted}
+          />
+        </div>
+      ) : status.kind === "loading" && <section className="card sky-timeline-placeholder" aria-label="Sky and timeline loading"><h2>Sky &amp; timeline</h2><p className="muted">Computing the catalog comparison…</p></section>}
 
       <a className="more-tools" href="#catalog-title" aria-label="Show more tools and comparison below">↓ <span>More tools &amp; comparison</span></a>
       <details className="workspace-guide"><summary>Workspace guide and scientific context</summary>
@@ -382,28 +402,21 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
             {mode === "expert" && <ExportPanel result={result} />}
           </section>
 
-          <ChartsPanel
-            key={resultVersion}
-            result={result}
-            focused={focused}
-            onFocus={setFocusedId}
-            mode={mode}
-            apiClient={apiClient}
-            onCandidateSelected={onCandidateSelected}
-            onSelectionStarted={onSelectionStarted}
-          />
-
           <section className="card" aria-labelledby="learn-title">
             <h2 id="learn-title">Learn more</h2>
             <WhySouthPole open={mode === "simple"} />
             <WhyTerrainMatters open={mode === "simple"} />
           </section>
-
-          <div className="two-col">
-            <AssumptionsPanel assumptions={result.assumptions} dataSources={result.data_sources} />
-            <Glossary />
-          </div>
         </main>
+      )}
+
+      <section className="card saved-candidates" id="saved-candidates" aria-label="Saved candidates" ref={setCandidateListSlot} />
+
+      {result !== null && (
+        <div className="two-col">
+          <AssumptionsPanel assumptions={result.assumptions} dataSources={result.data_sources} />
+          <Glossary />
+        </div>
       )}
 
       <EmptyTimelineDock />

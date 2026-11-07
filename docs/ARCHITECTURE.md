@@ -103,6 +103,9 @@ Use the exact paths in `frontend/api-client/openapi.json` when in doubt.
   page padding sit above it.
 - `components/WorkspaceInspector.tsx`, `ExperimentPanel.tsx`, `ContextBar.tsx`: inspection,
   manifest export, recompute-and-compare, active-context bar.
+- Page order (desktop): workspace, catalog Sky & timeline (`ChartsPanel`), catalog comparison,
+  Learn more, the saved-candidate list (rendered by `ShackletonWorkspace` through a portal into the
+  `#saved-candidates` section), then Assumptions & sources and Glossary.
 - The original catalog UI (`ChartsPanel`, `SkyChart`, `Timeline`, `PoleMap`, …) is intact; its
   sky diagram and timeline are reused to display stored candidate evaluations.
 
