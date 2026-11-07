@@ -8,7 +8,7 @@ from contextlib import closing
 from datetime import UTC
 from pathlib import Path
 
-from clps_api.schemas import CandidateEvolutionRequest, CandidateOut
+from clps_api.schemas import CandidateEvolutionRequest, CandidateOut, CandidateRefOut
 
 
 def connect() -> sqlite3.Connection:
@@ -41,6 +41,31 @@ def get(candidate_id: str) -> CandidateOut | None:
     with closing(connect()) as db:
         row = db.execute("SELECT payload FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
     return None if row is None else CandidateOut.model_validate_json(row[0])
+
+
+def roots(terrain_window_id: str) -> list[CandidateOut]:
+    """Root (C0) candidates of one terrain window, oldest first."""
+    with closing(connect()) as db:
+        rows = db.execute(
+            "SELECT payload FROM candidates WHERE parent IS NULL ORDER BY rowid"
+        ).fetchall()
+    found = [CandidateOut.model_validate_json(row[0]) for row in rows]
+    return [c for c in found if c.terrain_window_id == terrain_window_id]
+
+
+def ref(candidate_id: str) -> CandidateRefOut | None:
+    with closing(connect()) as db:
+        row = db.execute("SELECT payload FROM candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if row is None:
+        return None
+    stored = CandidateOut.model_validate_json(row[0])
+    return CandidateRefOut(
+        candidate_id=stored.candidate_id,
+        site_id=stored.site_id,
+        parent_candidate_id=stored.parent_candidate_id,
+        terrain_window_id=stored.terrain_window_id,
+        snapshot_sha256=hashlib.sha256(row[0].encode()).hexdigest(),
+    )
 
 
 def children(candidate_id: str) -> list[CandidateOut]:

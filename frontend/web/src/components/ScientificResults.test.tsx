@@ -8,7 +8,7 @@ const candidate: Candidate = { candidate_id: "c0", site_id: "site", latitude_deg
   selected_time_utc: "2026-02-01T00:00:00Z", terrain_dataset_id: "LOLA",
   terrain_source_url: "https://example.org", terrain_dataset_sha256: "hash", terrain_nodata: "NaN",
   coverage_bounds_m: [0, 0, 1, 1], dem_resolution_m: 20, coordinate_reference: "MOON_ME",
-  validation_status: "not_independently_validated", data_availability: "available" };
+  validation_status: "not_independently_validated", data_availability: "available", terrain_window_id: "sample-a" };
 const computed: ScientificEvaluation = { evaluation_id: "e0", candidate_id: "c0", candidate,
   status: "COMPUTED_UNVERIFIED", request: { duration_hours: 24, step_minutes: 60 },
   provenance: { near_sha256: "hash" }, errors: [], warnings: ["Not validated"],

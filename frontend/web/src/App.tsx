@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } fr
 import { AssumptionsPanel } from "./components/AssumptionsPanel.tsx";
 import { CandidateInspector } from "./components/CandidateInspector.tsx";
 import { LandingGraph } from "./components/LandingGraph.tsx";
+import { ShackletonWorkspace } from "./components/ShackletonWorkspace.tsx";
 import { SelectionGuard } from "./lib/selectionGuard.ts";
 import { ChartsPanel } from "./components/ChartsPanel.tsx";
 import { ComparisonTable } from "./components/ComparisonTable.tsx";
@@ -277,6 +278,13 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
       </div>
 
       <section className="card" aria-label="Landing workspace">
+        <ShackletonWorkspace
+          apiClient={apiClient}
+          selectedCandidateId={candidate?.candidate_id ?? null}
+          onCandidateSelected={onCandidateSelected}
+          defaultTimeUtc={`${defaultForm(now).startDate}T00:00:00Z`}
+          defaultObserverHeightM={defaultForm(now).observerHeightM}
+        />
         {candidate === null ? <><h2>Landing Graph</h2><p>Select a terrain point to create a candidate.</p></> :
           <><CandidateInspector candidate={candidate} /><LandingGraph key={candidate.candidate_id} apiClient={apiClient} candidate={candidate} /></>}
         {candidateError !== null && <p role="alert">{candidateError}</p>}

@@ -6,6 +6,7 @@ export function CandidateInspector({ candidate }: { candidate: Candidate }): JSX
     <h3>Candidate C0</h3>
     <p>Candidate ID: {candidate.candidate_id}</p>
     <p>Geographical site ID: {candidate.site_id}</p>
+    <p>Terrain window: {candidate.terrain_window_id}</p>
     <p>Position: {candidate.latitude_deg.toFixed(6)}° latitude, {candidate.longitude_deg.toFixed(6)}° east</p>
     <p>Terrain elevation: {candidate.terrain_elevation_m.toFixed(1)} m above the 1737.4 km reference sphere</p>
     <p>Observer height: {candidate.observer_height_m} m</p>

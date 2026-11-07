@@ -26,3 +26,6 @@ export function createApiClient(options: ClientOptions): ApiClient {
 }
 export type Candidate = Schemas["CandidateOut"];
 export type ScientificEvaluation = Schemas["EvaluationOut"];
+export type CandidateRef = Schemas["CandidateRefOut"];
+export type Roi = Schemas["RoiOut"];
+export type RoiTerrain = Schemas["RoiTerrainOut"];

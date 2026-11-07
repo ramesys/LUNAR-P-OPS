@@ -6,6 +6,7 @@ import math
 from datetime import UTC
 
 import numpy as np
+from lunar_core.roi import ROIS, Roi
 from lunar_core.sites import Site
 from lunar_core.terrain import (
     TerrainGrid,
@@ -17,17 +18,37 @@ from lunar_core.terrain import (
 from clps_api import terrain_store
 from clps_api.schemas import CandidateOut, CandidateRequest
 
+TERRAIN_WINDOWS: frozenset[str] = frozenset({"sample-a", *ROIS})
+"""Terrain windows that candidates may reference; also guards the file paths derived from them."""
+
 
 def create_candidate(site: Site, request: CandidateRequest) -> CandidateOut:
     if site.id != "sample-a":
         raise ValueError("candidate selection is available only for sample-a")
-    near, _ = terrain_files(terrain_store.terrain_dir(), site.id)
+    return _create(site.latitude_deg, site.longitude_deg, site.id, request)
+
+
+def create_roi_candidate(roi: Roi, request: CandidateRequest) -> CandidateOut:
+    """Candidate at local east/north offsets from the ROI centre; must lie inside the ROI."""
+    if abs(request.east_m) > roi.half_width_m or abs(request.north_m) > roi.half_width_m:
+        raise ValueError(f"point lies outside the {roi.name} ROI (±{roi.half_width_m:g} m)")
+    return _create(roi.center_latitude_deg, roi.center_longitude_deg, roi.id, request)
+
+
+def _create(
+    center_lat: float, center_lon: float, window_id: str, request: CandidateRequest
+) -> CandidateOut:
+    if window_id not in TERRAIN_WINDOWS:
+        raise ValueError(f"unknown terrain window: {window_id}")
+    near, _ = terrain_files(terrain_store.terrain_dir(), window_id)
     if not near.is_file():
         raise FileNotFoundError("LOLA near-field terrain is unavailable")
     grid = TerrainGrid.load(near)
     checksum = hashlib.sha256(near.read_bytes()).hexdigest()
-    x0, y0 = polar_stereographic_south(site.latitude_deg, site.longitude_deg)
-    lon = math.radians(site.longitude_deg)
+    if window_id != "sample-a" and not grid.source.endswith("/LDEM_80S_20MPP_ADJ.TIF"):
+        raise ValueError("unexpected near-field terrain dataset")
+    x0, y0 = polar_stereographic_south(center_lat, center_lon)
+    lon = math.radians(center_lon)
     x = float(x0) + request.east_m * math.cos(lon) + request.north_m * math.sin(lon)
     y = float(y0) - request.east_m * math.sin(lon) + request.north_m * math.cos(lon)
     elevation = float(grid.sample(np.array([x]), np.array([y]))[0])
@@ -64,6 +85,7 @@ def create_candidate(site: Site, request: CandidateRequest) -> CandidateOut:
             grid.x_left + (grid.heights.shape[1] - 0.5) * grid.pixel_size_m,
             grid.y_top - grid.pixel_size_m / 2,
         ],
+        terrain_window_id=window_id,
         site_id=site_id,
         latitude_deg=lat,
         longitude_deg=lng,

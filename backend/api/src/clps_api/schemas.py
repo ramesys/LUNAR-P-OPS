@@ -151,6 +151,8 @@ class CandidateRequest(BaseModel):
 class CandidateOut(BaseModel):
     candidate_id: str
     parent_candidate_id: str | None = None
+    terrain_window_id: str = "sample-a"
+    """Local LOLA near/far window pair used for elevation and horizon (Sample A if absent)."""
     terrain_dataset_sha256: str = ""
     terrain_nodata: str = "unknown"
     coverage_bounds_m: list[float] = []
@@ -213,3 +215,93 @@ class EvaluationOut(BaseModel):
     horizon_elevation_deg: list[float] = []
     samples: list[EvaluationSample] = []
     intervals: dict[str, list[EvaluationInterval]] = {}
+
+
+class CandidateRefOut(BaseModel):
+    """Typed reference to one persisted, immutable candidate snapshot (Rete `CandidateRef`)."""
+
+    schema_version: Literal["candidate-ref/1"] = "candidate-ref/1"
+    candidate_id: str
+    site_id: str
+    parent_candidate_id: str | None
+    terrain_window_id: str
+    snapshot_sha256: str
+    """SHA-256 of the stored candidate JSON payload; changes only if the stored record changes."""
+
+
+class RoiCornerOut(BaseModel):
+    label: str
+    east_m: float
+    north_m: float
+    latitude_deg: float
+    longitude_deg: float
+
+
+class RoiDatasetOut(BaseModel):
+    role: Literal["near", "far"]
+    dataset_id: str
+    source_url: str
+    resolution_m: float
+    local_window_sha256: str
+    nodata: str
+    window_bounds_m: list[float]
+    """Pixel-edge bounds [x_min, y_min, x_max, y_max] in south polar stereographic metres."""
+
+
+class RoiCoverageCheckOut(BaseModel):
+    label: str
+    latitude_deg: float
+    longitude_deg: float
+    status: Literal["covered", "missing"]
+    detail: str
+
+
+class RoiCoverageOut(BaseModel):
+    grid_status: Literal["complete", "incomplete"]
+    grid_missing_samples: int
+    grid_total_samples: int
+    horizon_checks: list[RoiCoverageCheckOut]
+    note: str
+
+
+class RoiOut(BaseModel):
+    roi_id: str
+    name: str
+    center_latitude_deg: float
+    center_longitude_deg: float
+    half_width_m: float
+    center_source_name: str
+    center_source_url: str
+    note: str
+    terrain_available: bool
+
+
+class RoiTerrainOut(BaseModel):
+    """One continuous terrain grid for the ROI, with actual LOLA elevations.
+
+    `elevations_m` is row-major `size` x `size`: row 0 is the north edge (+half_width_m), column 0
+    the west edge. Offsets are local east/north metres in the south polar stereographic plane:
+    x = center_x + east * east_axis[0] + north * north_axis[0] (likewise y). Values are bilinear
+    samples of the 20 m DEM at the grid nodes (null where the DEM has no value); candidates are
+    sampled again from the raster at their exact position.
+    """
+
+    roi: RoiOut
+    coordinate_reference: str
+    projection: str
+    reference_radius_m: float
+    center_projected_m: list[float]
+    east_axis_projected: list[float]
+    north_axis_projected: list[float]
+    stereographic_scale_factor: float
+    corners: list[RoiCornerOut]
+    latitude_range_deg: list[float]
+    longitude_range_deg: list[float]
+    size: int
+    spacing_m: float
+    elevations_m: list[float | None]
+    center_elevation_m: float
+    elevation_range_m: list[float]
+    datasets: list[RoiDatasetOut]
+    coverage: RoiCoverageOut
+    limitations: list[str]

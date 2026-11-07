@@ -20,7 +20,7 @@ const RESTORED: Candidate = { candidate_id: "saved-c0", site_id: "site", latitud
   longitude_deg: 0, terrain_elevation_m: 10, observer_height_m: 2, selected_time_utc: "2026-01-01T00:00:00Z",
   terrain_dataset_id: "LOLA", terrain_source_url: "https://example.org", terrain_dataset_sha256: "hash",
   terrain_nodata: "NaN", coverage_bounds_m: [0,0,1,1], dem_resolution_m: 20, coordinate_reference: "MOON_ME",
-  validation_status: "not_independently_validated", data_availability: "available" };
+  validation_status: "not_independently_validated", data_availability: "available", terrain_window_id: "sample-a" };
 
 const SITES: Site[] = [
   { id: "sample-a", name: "Sample A", latitude_deg: -89.5, longitude_deg: 0, origin: "sample", note: "", terrain_available: true, map_x_m: 0, map_y_m: 15000 },
@@ -97,6 +97,8 @@ function fakeApi(requests: AnalysisRequest[]): ApiClient {
     fetch: async (input: Request): Promise<Response> => {
       const path: string = new URL(input.url).pathname;
       if (path === "/api/candidates/saved-c0") return Response.json(RESTORED);
+      if (path === "/api/rois/shackleton-rim-b/terrain") return Response.json({ detail: "LOLA windows for shackleton-rim-b are not downloaded" }, { status: 404 });
+      if (path === "/api/rois/shackleton-rim-b/candidates") return Response.json([]);
       if (path === "/api/sites") {
         return Response.json(SITES);
       }

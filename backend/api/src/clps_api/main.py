@@ -9,20 +9,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from lunar_core.kernels import load_kernels
+from lunar_core.roi import ROIS
 from lunar_core.sites import Site, custom_site
 from lunar_core.terrain_patch import LocalTerrainPatch
 
-from clps_api import candidate, candidate_store, evaluation, pole_map, terrain_store
+from clps_api import candidate, candidate_store, evaluation, pole_map, roi_terrain, terrain_store
 from clps_api.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     CandidateEvolutionRequest,
     CandidateOut,
+    CandidateRefOut,
     CandidateRequest,
     EvaluationOut,
     EvaluationRequest,
     HealthResponse,
     PoleMapOut,
+    RoiOut,
+    RoiTerrainOut,
     SiteOut,
     TerrainPatchOut,
 )
@@ -160,6 +164,64 @@ def create_candidate(site_id: str, request: CandidateRequest) -> CandidateOut:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/rois", operation_id="listRois")
+def list_rois() -> list[RoiOut]:
+    return [roi_terrain.roi_out(roi) for roi in ROIS.values()]
+
+
+@app.get(
+    "/api/rois/{roi_id}/terrain",
+    operation_id="getRoiTerrain",
+    responses={404: {"description": "Unknown ROI, or its LOLA windows are not downloaded"}},
+)
+def get_roi_terrain(roi_id: str) -> RoiTerrainOut:
+    try:
+        found = roi_terrain.roi_terrain(roi_id)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"unknown ROI: {roi_id}")
+    return found
+
+
+@app.post(
+    "/api/rois/{roi_id}/candidates",
+    operation_id="createRoiCandidate",
+    responses={
+        404: {"description": "Unknown ROI or terrain unavailable"},
+        422: {"description": "Outside the ROI or DEM coverage"},
+    },
+)
+def create_roi_candidate(roi_id: str, request: CandidateRequest) -> CandidateOut:
+    roi = ROIS.get(roi_id)
+    if roi is None:
+        raise HTTPException(status_code=404, detail=f"unknown ROI: {roi_id}")
+    try:
+        return candidate_store.save(candidate.create_roi_candidate(roi, request))
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/rois/{roi_id}/candidates", operation_id="listRoiCandidates")
+def list_roi_candidates(roi_id: str) -> list[CandidateOut]:
+    """Persisted root (C0) candidates created in this ROI, oldest first."""
+    if roi_id not in ROIS:
+        raise HTTPException(status_code=404, detail=f"unknown ROI: {roi_id}")
+    return candidate_store.roots(roi_id)
+
+
+@app.get("/api/candidates/{candidate_id}/ref", operation_id="getCandidateRef")
+def get_candidate_ref(candidate_id: str) -> CandidateRefOut:
+    found = candidate_store.ref(candidate_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return found
 
 
 @app.get("/api/candidates/{candidate_id}", operation_id="getCandidate")

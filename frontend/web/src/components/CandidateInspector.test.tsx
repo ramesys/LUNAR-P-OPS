@@ -9,7 +9,7 @@ describe('Candidate inspector', () => {
       selected_time_utc: '2026-02-01T00:00:00Z', terrain_dataset_id: 'LDEM_80S_20MPP_ADJ',
       terrain_source_url: 'https://example.org/dem', dem_resolution_m: 20,
       coordinate_reference: 'MOON_ME', validation_status: 'not_independently_validated',
-      data_availability: 'available' }} />);
+      data_availability: 'available', terrain_window_id: 'sample-a' }} />);
     expect(screen.getByText(/123.4 m/)).toBeDefined();
     expect(screen.getByText(/MOON_ME/)).toBeDefined();
     expect(screen.getByText(/not independently validated/i)).toBeDefined();

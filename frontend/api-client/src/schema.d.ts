@@ -160,6 +160,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rois": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rois */
+        get: operations["listRois"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rois/{roi_id}/terrain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Roi Terrain */
+        get: operations["getRoiTerrain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rois/{roi_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roi Candidates
+         * @description Persisted root (C0) candidates created in this ROI, oldest first.
+         */
+        get: operations["listRoiCandidates"];
+        put?: never;
+        /** Create Roi Candidate */
+        post: operations["createRoiCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/candidates/{candidate_id}/ref": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Candidate Ref */
+        get: operations["getCandidateRef"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/candidates/{candidate_id}": {
         parameters: {
             query?: never;
@@ -336,6 +408,11 @@ export interface components {
             /** Parent Candidate Id */
             parent_candidate_id?: string | null;
             /**
+             * Terrain Window Id
+             * @default sample-a
+             */
+            terrain_window_id: string;
+            /**
              * Terrain Dataset Sha256
              * @default
              */
@@ -383,6 +460,28 @@ export interface components {
              * @constant
              */
             data_availability: "available";
+        };
+        /**
+         * CandidateRefOut
+         * @description Typed reference to one persisted, immutable candidate snapshot (Rete `CandidateRef`).
+         */
+        CandidateRefOut: {
+            /**
+             * Schema Version
+             * @default candidate-ref/1
+             * @constant
+             */
+            schema_version: "candidate-ref/1";
+            /** Candidate Id */
+            candidate_id: string;
+            /** Site Id */
+            site_id: string;
+            /** Parent Candidate Id */
+            parent_candidate_id: string | null;
+            /** Terrain Window Id */
+            terrain_window_id: string;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
         };
         /**
          * CandidateRequest
@@ -576,6 +675,140 @@ export interface components {
             source_name: string;
             /** Source Url */
             source_url: string;
+        };
+        /** RoiCornerOut */
+        RoiCornerOut: {
+            /** Label */
+            label: string;
+            /** East M */
+            east_m: number;
+            /** North M */
+            north_m: number;
+            /** Latitude Deg */
+            latitude_deg: number;
+            /** Longitude Deg */
+            longitude_deg: number;
+        };
+        /** RoiCoverageCheckOut */
+        RoiCoverageCheckOut: {
+            /** Label */
+            label: string;
+            /** Latitude Deg */
+            latitude_deg: number;
+            /** Longitude Deg */
+            longitude_deg: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "covered" | "missing";
+            /** Detail */
+            detail: string;
+        };
+        /** RoiCoverageOut */
+        RoiCoverageOut: {
+            /**
+             * Grid Status
+             * @enum {string}
+             */
+            grid_status: "complete" | "incomplete";
+            /** Grid Missing Samples */
+            grid_missing_samples: number;
+            /** Grid Total Samples */
+            grid_total_samples: number;
+            /** Horizon Checks */
+            horizon_checks: components["schemas"]["RoiCoverageCheckOut"][];
+            /** Note */
+            note: string;
+        };
+        /** RoiDatasetOut */
+        RoiDatasetOut: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "near" | "far";
+            /** Dataset Id */
+            dataset_id: string;
+            /** Source Url */
+            source_url: string;
+            /** Resolution M */
+            resolution_m: number;
+            /** Local Window Sha256 */
+            local_window_sha256: string;
+            /** Nodata */
+            nodata: string;
+            /** Window Bounds M */
+            window_bounds_m: number[];
+        };
+        /** RoiOut */
+        RoiOut: {
+            /** Roi Id */
+            roi_id: string;
+            /** Name */
+            name: string;
+            /** Center Latitude Deg */
+            center_latitude_deg: number;
+            /** Center Longitude Deg */
+            center_longitude_deg: number;
+            /** Half Width M */
+            half_width_m: number;
+            /** Center Source Name */
+            center_source_name: string;
+            /** Center Source Url */
+            center_source_url: string;
+            /** Note */
+            note: string;
+            /** Terrain Available */
+            terrain_available: boolean;
+        };
+        /**
+         * RoiTerrainOut
+         * @description One continuous terrain grid for the ROI, with actual LOLA elevations.
+         *
+         *     `elevations_m` is row-major `size` x `size`: row 0 is the north edge (+half_width_m), column 0
+         *     the west edge. Offsets are local east/north metres in the south polar stereographic plane:
+         *     x = center_x + east * east_axis[0] + north * north_axis[0] (likewise y). Values are bilinear
+         *     samples of the 20 m DEM at the grid nodes (null where the DEM has no value); candidates are
+         *     sampled again from the raster at their exact position.
+         */
+        RoiTerrainOut: {
+            roi: components["schemas"]["RoiOut"];
+            /** Coordinate Reference */
+            coordinate_reference: string;
+            /** Projection */
+            projection: string;
+            /** Reference Radius M */
+            reference_radius_m: number;
+            /** Center Projected M */
+            center_projected_m: number[];
+            /** East Axis Projected */
+            east_axis_projected: number[];
+            /** North Axis Projected */
+            north_axis_projected: number[];
+            /** Stereographic Scale Factor */
+            stereographic_scale_factor: number;
+            /** Corners */
+            corners: components["schemas"]["RoiCornerOut"][];
+            /** Latitude Range Deg */
+            latitude_range_deg: number[];
+            /** Longitude Range Deg */
+            longitude_range_deg: number[];
+            /** Size */
+            size: number;
+            /** Spacing M */
+            spacing_m: number;
+            /** Elevations M */
+            elevations_m: (number | null)[];
+            /** Center Elevation M */
+            center_elevation_m: number;
+            /** Elevation Range M */
+            elevation_range_m: number[];
+            /** Datasets */
+            datasets: components["schemas"]["RoiDatasetOut"][];
+            coverage: components["schemas"]["RoiCoverageOut"];
+            /** Limitations */
+            limitations: string[];
         };
         /** SiteOut */
         SiteOut: {
@@ -926,6 +1159,166 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listRois: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoiOut"][];
+                };
+            };
+        };
+    };
+    getRoiTerrain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoiTerrainOut"];
+                };
+            };
+            /** @description Unknown ROI, or its LOLA windows are not downloaded */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listRoiCandidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createRoiCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roi_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"];
+                };
+            };
+            /** @description Unknown ROI or terrain unavailable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Outside the ROI or DEM coverage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCandidateRef: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateRefOut"];
                 };
             };
             /** @description Validation Error */

@@ -283,6 +283,196 @@
         }
       }
     },
+    "/api/rois": {
+      "get": {
+        "summary": "List Rois",
+        "operationId": "listRois",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoiOut"
+                  },
+                  "type": "array",
+                  "title": "Response Listrois"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rois/{roi_id}/terrain": {
+      "get": {
+        "summary": "Get Roi Terrain",
+        "operationId": "getRoiTerrain",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoiTerrainOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown ROI, or its LOLA windows are not downloaded"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rois/{roi_id}/candidates": {
+      "post": {
+        "summary": "Create Roi Candidate",
+        "operationId": "createRoiCandidate",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown ROI or terrain unavailable"
+          },
+          "422": {
+            "description": "Outside the ROI or DEM coverage"
+          }
+        }
+      },
+      "get": {
+        "summary": "List Roi Candidates",
+        "description": "Persisted root (C0) candidates created in this ROI, oldest first.",
+        "operationId": "listRoiCandidates",
+        "parameters": [
+          {
+            "name": "roi_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Roi Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateOut"
+                  },
+                  "title": "Response Listroicandidates"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/candidates/{candidate_id}/ref": {
+      "get": {
+        "summary": "Get Candidate Ref",
+        "operationId": "getCandidateRef",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateRefOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/candidates/{candidate_id}": {
       "get": {
         "summary": "Get Candidate",
@@ -745,6 +935,11 @@
             ],
             "title": "Parent Candidate Id"
           },
+          "terrain_window_id": {
+            "type": "string",
+            "title": "Terrain Window Id",
+            "default": "sample-a"
+          },
           "terrain_dataset_sha256": {
             "type": "string",
             "title": "Terrain Dataset Sha256",
@@ -832,6 +1027,53 @@
           "data_availability"
         ],
         "title": "CandidateOut"
+      },
+      "CandidateRefOut": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "candidate-ref/1",
+            "title": "Schema Version",
+            "default": "candidate-ref/1"
+          },
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "parent_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Candidate Id"
+          },
+          "terrain_window_id": {
+            "type": "string",
+            "title": "Terrain Window Id"
+          },
+          "snapshot_sha256": {
+            "type": "string",
+            "title": "Snapshot Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "site_id",
+          "parent_candidate_id",
+          "terrain_window_id",
+          "snapshot_sha256"
+        ],
+        "title": "CandidateRefOut",
+        "description": "Typed reference to one persisted, immutable candidate snapshot (Rete `CandidateRef`)."
       },
       "CandidateRequest": {
         "properties": {
@@ -1290,6 +1532,358 @@
         ],
         "title": "PoleMapOut",
         "description": "Square map centered on the pole, spanning \u00b1half_width_m on both axes."
+      },
+      "RoiCornerOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "east_m": {
+            "type": "number",
+            "title": "East M"
+          },
+          "north_m": {
+            "type": "number",
+            "title": "North M"
+          },
+          "latitude_deg": {
+            "type": "number",
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "type": "number",
+            "title": "Longitude Deg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "east_m",
+          "north_m",
+          "latitude_deg",
+          "longitude_deg"
+        ],
+        "title": "RoiCornerOut"
+      },
+      "RoiCoverageCheckOut": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "latitude_deg": {
+            "type": "number",
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "type": "number",
+            "title": "Longitude Deg"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "covered",
+              "missing"
+            ],
+            "title": "Status"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "latitude_deg",
+          "longitude_deg",
+          "status",
+          "detail"
+        ],
+        "title": "RoiCoverageCheckOut"
+      },
+      "RoiCoverageOut": {
+        "properties": {
+          "grid_status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "incomplete"
+            ],
+            "title": "Grid Status"
+          },
+          "grid_missing_samples": {
+            "type": "integer",
+            "title": "Grid Missing Samples"
+          },
+          "grid_total_samples": {
+            "type": "integer",
+            "title": "Grid Total Samples"
+          },
+          "horizon_checks": {
+            "items": {
+              "$ref": "#/components/schemas/RoiCoverageCheckOut"
+            },
+            "type": "array",
+            "title": "Horizon Checks"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grid_status",
+          "grid_missing_samples",
+          "grid_total_samples",
+          "horizon_checks",
+          "note"
+        ],
+        "title": "RoiCoverageOut"
+      },
+      "RoiDatasetOut": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "near",
+              "far"
+            ],
+            "title": "Role"
+          },
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "resolution_m": {
+            "type": "number",
+            "title": "Resolution M"
+          },
+          "local_window_sha256": {
+            "type": "string",
+            "title": "Local Window Sha256"
+          },
+          "nodata": {
+            "type": "string",
+            "title": "Nodata"
+          },
+          "window_bounds_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Window Bounds M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "dataset_id",
+          "source_url",
+          "resolution_m",
+          "local_window_sha256",
+          "nodata",
+          "window_bounds_m"
+        ],
+        "title": "RoiDatasetOut"
+      },
+      "RoiOut": {
+        "properties": {
+          "roi_id": {
+            "type": "string",
+            "title": "Roi Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "center_latitude_deg": {
+            "type": "number",
+            "title": "Center Latitude Deg"
+          },
+          "center_longitude_deg": {
+            "type": "number",
+            "title": "Center Longitude Deg"
+          },
+          "half_width_m": {
+            "type": "number",
+            "title": "Half Width M"
+          },
+          "center_source_name": {
+            "type": "string",
+            "title": "Center Source Name"
+          },
+          "center_source_url": {
+            "type": "string",
+            "title": "Center Source Url"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "terrain_available": {
+            "type": "boolean",
+            "title": "Terrain Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "roi_id",
+          "name",
+          "center_latitude_deg",
+          "center_longitude_deg",
+          "half_width_m",
+          "center_source_name",
+          "center_source_url",
+          "note",
+          "terrain_available"
+        ],
+        "title": "RoiOut"
+      },
+      "RoiTerrainOut": {
+        "properties": {
+          "roi": {
+            "$ref": "#/components/schemas/RoiOut"
+          },
+          "coordinate_reference": {
+            "type": "string",
+            "title": "Coordinate Reference"
+          },
+          "projection": {
+            "type": "string",
+            "title": "Projection"
+          },
+          "reference_radius_m": {
+            "type": "number",
+            "title": "Reference Radius M"
+          },
+          "center_projected_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Center Projected M"
+          },
+          "east_axis_projected": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "East Axis Projected"
+          },
+          "north_axis_projected": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "North Axis Projected"
+          },
+          "stereographic_scale_factor": {
+            "type": "number",
+            "title": "Stereographic Scale Factor"
+          },
+          "corners": {
+            "items": {
+              "$ref": "#/components/schemas/RoiCornerOut"
+            },
+            "type": "array",
+            "title": "Corners"
+          },
+          "latitude_range_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Latitude Range Deg"
+          },
+          "longitude_range_deg": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Longitude Range Deg"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "spacing_m": {
+            "type": "number",
+            "title": "Spacing M"
+          },
+          "elevations_m": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Elevations M"
+          },
+          "center_elevation_m": {
+            "type": "number",
+            "title": "Center Elevation M"
+          },
+          "elevation_range_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Elevation Range M"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/RoiDatasetOut"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/RoiCoverageOut"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "roi",
+          "coordinate_reference",
+          "projection",
+          "reference_radius_m",
+          "center_projected_m",
+          "east_axis_projected",
+          "north_axis_projected",
+          "stereographic_scale_factor",
+          "corners",
+          "latitude_range_deg",
+          "longitude_range_deg",
+          "size",
+          "spacing_m",
+          "elevations_m",
+          "center_elevation_m",
+          "elevation_range_m",
+          "datasets",
+          "coverage",
+          "limitations"
+        ],
+        "title": "RoiTerrainOut",
+        "description": "One continuous terrain grid for the ROI, with actual LOLA elevations.\n\n`elevations_m` is row-major `size` x `size`: row 0 is the north edge (+half_width_m), column 0\nthe west edge. Offsets are local east/north metres in the south polar stereographic plane:\nx = center_x + east * east_axis[0] + north * north_axis[0] (likewise y). Values are bilinear\nsamples of the 20 m DEM at the grid nodes (null where the DEM has no value); candidates are\nsampled again from the raster at their exact position."
       },
       "SiteOut": {
         "properties": {

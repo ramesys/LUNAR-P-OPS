@@ -20,6 +20,7 @@ from lunar_core.visibility import earth_center_visible, sun_upper_limb_visible
 from lunar_core.windows import build_windows
 
 from clps_api import candidate_store, terrain_store
+from clps_api.candidate import TERRAIN_WINDOWS
 from clps_api.schemas import (
     CandidateOut,
     EvaluationInterval,
@@ -62,6 +63,13 @@ def record_loaded_kernel_hashes() -> None:
 
 def verify_coverage(candidate: CandidateOut, near: TerrainGrid, far: TerrainGrid) -> None:
     """Verify every grid sample used by the existing 0.5-degree horizon algorithm."""
+    verify_point_coverage(candidate.latitude_deg, candidate.longitude_deg, near, far)
+
+
+def verify_point_coverage(
+    latitude_deg: float, longitude_deg: float, near: TerrainGrid, far: TerrainGrid
+) -> None:
+    """Raise ValueError if any discrete horizon ray sample at this point is missing or NaN."""
     az = np.radians(np.arange(0.0, 360.0, 0.5))[:, np.newaxis]
     for label, distances, grid in (
         ("near", np.arange(near.pixel_size_m, 8000.0, near.pixel_size_m), near),
@@ -70,8 +78,8 @@ def verify_coverage(candidate: CandidateOut, near: TerrainGrid, far: TerrainGrid
         if distances.size == 0:
             raise ValueError(f"{label} terrain has no horizon samples")
         lat, lon = _destination(
-            candidate.latitude_deg,
-            candidate.longitude_deg,
+            latitude_deg,
+            longitude_deg,
             az,
             distances[np.newaxis, :] / MOON_RADIUS_M,
         )
@@ -118,10 +126,14 @@ def list_for(candidate_id: str) -> list[EvaluationOut]:
 
 
 def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
-    near_path, far_path = terrain_files(terrain_store.terrain_dir(), "sample-a")
+    window = candidate.terrain_window_id
+    if window not in TERRAIN_WINDOWS:
+        window = "sample-a"  # Never derive a path from an unknown id; identity checks still fail.
+    near_path, far_path = terrain_files(terrain_store.terrain_dir(), window)
     provenance: dict[str, object] = {
         "algorithm": ALGORITHM,
         "candidate_id": candidate.candidate_id,
+        "terrain_window_id": candidate.terrain_window_id,
         "coordinate_reference": candidate.coordinate_reference,
         "horizon_azimuth_step_deg": 0.5,
         "near_limit_m": 8000,
@@ -155,6 +167,8 @@ def evaluate(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationO
     horizon_az: list[float] = []
     horizon_el: list[float] = []
     try:
+        if candidate.terrain_window_id not in TERRAIN_WINDOWS:
+            raise ValueError(f"unknown terrain window: {candidate.terrain_window_id}")
         if not near_path.is_file() or not far_path.is_file():
             raise ValueError("near or far LOLA terrain window unavailable")
         near_hash, far_hash = file_hash(near_path), file_hash(far_path)
