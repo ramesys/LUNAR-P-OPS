@@ -138,7 +138,7 @@ export function ChartsPanel({ result, focused, onFocus, mode, apiClient, onCandi
     ];
     const hasSamples: boolean = result.sites.some((s: SiteResult): boolean => s.site.origin === "sample");
     const credit: string = [
-      "CLPS Lunar Mission Browser",
+      "LUNA-P/OPS (catalog comparison from the CLPS Lunar Mission Browser)",
       "Ephemerides: NASA/JPL NAIF SPICE (DE440, DE421 lunar frame)",
       ...(terrain ? ["Terrain: NASA GSFC LOLA"] : []),
       ...(hasSamples ? ["Sample sites are placeholders, not CLPS sites"] : []),

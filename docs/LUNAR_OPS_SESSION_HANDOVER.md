@@ -1,5 +1,12 @@
 # LUNAR-OPS session handover (self-contained)
 
+> **Historical record — superseded.** This is the Sprint 07 checkpoint of 2026-11-07, kept
+> unchanged below. Later work (multiscale terrain, Constraint Brush, the reload fix) and the
+> current status, test results and findings are in [STATUS.md](STATUS.md). The project is now
+> named **LUNA-P/OPS**. In particular: the GitHub backup in §12 has since been completed
+> (`backup` = `ramesys/LUNAR-OPS`), and the test counts in §6 and the database counts in §9 are
+> out of date.
+
 Written 2026-11-07 at the end of Sprint 07, as a safe-shutdown checkpoint. No Sprint 08 work
 exists: the working tree was clean at `9e49636` when this checkpoint started.
 

@@ -286,7 +286,7 @@ export function App({ apiClient, now = new Date() }: AppProps): JSX.Element {
     <div className="context-bar-wrap"><ContextBar /></div>
     <div className="page">
       <header className="page-header spatial-header">
-        <div className="brand"><span className="brand-mark" aria-hidden="true">◒</span><div><h1>LUNAR<span>·</span>OPS</h1><p>LUNAR EXPLORATION WORKSPACE</p></div></div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">◒</span><div><h1>LUNA-P<span>/</span>OPS</h1><p>LUNAR EXPLORATION WORKSPACE</p></div></div>
         <nav className="spatial-nav" aria-label="Spatial workspace navigation">
           <a href="#candidate-context" aria-current="location">Terrain</a>
           <a href="#catalog-title">South pole overview</a>
