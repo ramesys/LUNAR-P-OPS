@@ -1,4 +1,4 @@
-import type { ApiClient, BrushDefinition, BrushExecution, BrushPreview, BrushResult, Candidate } from "@clps/api-client";
+import type { ApiClient, BrushDefinition, BrushExecution, BrushPreview, BrushResult, BrushSample, Candidate } from "@clps/api-client";
 import { useEffect, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import { describeApiError } from "../lib/apiError.ts";
 import type { BrushOverlay, BrushVerdict, RegionOverlay } from "../lib/brushTypes.ts";
@@ -15,27 +15,33 @@ interface Props {
 }
 
 type Panel = "none" | "params" | "run" | "results";
-type Busy = { kind: "preview" | "execute"; regionId: string } | null;
+type Busy = { kind: "preview" | "execute" | "load"; regionId: string } | null;
 type Pending = { kind: "delete" | "clear"; regionId: string } | null;
 
 export function defaultParams(startUtc: string): BrushParams {
   return { spacing_m: 100, max_points: 16, observer_height_m: 3, start_utc: startUtc, duration_hours: 168, step_minutes: 60,
-    min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all" };
+    min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all", sampling: "adaptive" };
 }
 
 export function definitionOf(region: BrushRegion): BrushDefinition {
   const p: BrushParams = region.params;
   return { polygon: region.vertices, spacing_m: p.spacing_m, max_points: p.max_points, observer_height_m: p.observer_height_m,
-    start_utc: p.start_utc, duration_hours: p.duration_hours, step_minutes: p.step_minutes, retention: p.retention,
+    start_utc: p.start_utc, duration_hours: p.duration_hours, step_minutes: p.step_minutes, retention: p.retention, sampling: p.sampling,
     constraints: { min_sun_fraction: p.min_sun_pct / 100, min_earth_fraction: p.min_earth_pct / 100, min_simultaneous_fraction: p.min_both_pct / 100,
       max_darkness_hours: p.max_darkness_hours === "" ? null : Number(p.max_darkness_hours),
       max_earth_gap_hours: p.max_earth_gap_hours === "" ? null : Number(p.max_earth_gap_hours) } };
 }
 
+/** Region edits discard the execution, so an existing snapshot remains the exact definition. */
+export function definitionForPreview(region: BrushRegion): BrushDefinition {
+  return region.execution?.preview.definition ?? definitionOf(region);
+}
+
 function verdicts(region: BrushRegion): BrushVerdict[] {
   const preview: BrushPreview | null = region.preview ?? region.execution?.preview ?? null;
-  return preview?.samples.map((point, index): BrushVerdict => region.execution?.results[index]?.verdict ??
-    (point.status === "READY" ? "NOT_EVALUATED" : "UNAVAILABLE")) ?? [];
+  if (region.execution !== null) return region.execution.results.map((item): BrushVerdict => item.verdict);
+  return preview?.samples.map((point): BrushVerdict =>
+    point.status === "READY" ? "NOT_EVALUATED" : "UNAVAILABLE") ?? [];
 }
 
 function regionName(region: BrushRegion): string { return `Region ${region.number.toString()}`; }
@@ -61,6 +67,7 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
   const [confirmed, setConfirmed] = useState<boolean>(false);
   const [pending, setPending] = useState<Pending>(null);
   const [panel, setPanel] = useState<Panel>("none");
+  const [experimentId, setExperimentId] = useState<string>("");
   const dock: RefObject<HTMLElement | null> = useRef<HTMLElement | null>(null);
   const locked: boolean = busy !== null;
 
@@ -100,7 +107,7 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
     setBusy({ kind: "preview", regionId: id }); setError(null); setNotice(null); setConfirmed(false);
     try {
       const { data, error: failure, response } = await apiClient.POST("/api/rois/{roi_id}/brush/preview", {
-        params: { path: { roi_id: "shackleton-rim-b" } }, body: definitionOf(region),
+        params: { path: { roi_id: "shackleton-rim-b" } }, body: definitionForPreview(region),
       });
       if (data === undefined) { store.dispatch({ type: "region-preview", regionId: id, revision, preview: null }); setError(describeApiError(failure, response.status)); return; }
       store.dispatch({ type: "region-preview", regionId: id, revision, preview: data });
@@ -108,6 +115,31 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
       if (store.getState().regions.find((r: BrushRegion): boolean => r.id === id)?.preview !== data) setNotice("The region changed while previewing; preview it again.");
       else setPanel("run");
     } catch { setError("Unable to preview the region. Check the connection and parameters."); }
+    finally { setBusy(null); }
+  }
+  async function loadExperiment(): Promise<void> {
+    const id: string = experimentId.trim();
+    if (id === "" || locked) return;
+    setBusy({ kind: "load", regionId: "" }); setError(null); setNotice(null);
+    try {
+      const { data, error: failure, response } = await apiClient.GET("/api/brush-experiments/{experiment_id}", { params: { path: { experiment_id: id } } });
+      if (data === undefined) { setError(describeApiError(failure, response.status)); return; }
+      const d: BrushDefinition = data.preview.definition;
+      const p: BrushParams = { spacing_m: d.spacing_m, max_points: d.max_points, observer_height_m: d.observer_height_m,
+        start_utc: d.start_utc, duration_hours: d.duration_hours, step_minutes: d.step_minutes,
+        min_sun_pct: d.constraints.min_sun_fraction * 100, min_earth_pct: d.constraints.min_earth_fraction * 100,
+        min_both_pct: d.constraints.min_simultaneous_fraction * 100,
+        max_darkness_hours: d.constraints.max_darkness_hours == null ? "" : String(d.constraints.max_darkness_hours),
+        max_earth_gap_hours: d.constraints.max_earth_gap_hours == null ? "" : String(d.constraints.max_earth_gap_hours),
+        retention: d.retention, sampling: d.sampling };
+      const regionId: string = newRegionId();
+      store.dispatch({ type: "region-create", id: regionId, params: p });
+      store.dispatch({ type: "region-edit", regionId, patch: { vertices: d.polygon, closed: true } });
+      store.dispatch({ type: "region-execution", regionId, revision: 1, execution: data });
+      store.dispatch({ type: "brush-mode", mode: "off" });
+      onCandidatesCreated(data.results.flatMap((item: BrushResult): Candidate[] => item.persisted && item.candidate != null ? [item.candidate] : []));
+      setPanel("results"); setConfirmed(false);
+    } catch { setError("Unable to load the saved experiment."); }
     finally { setBusy(null); }
   }
   async function executeRegion(region: BrushRegion): Promise<void> {
@@ -146,9 +178,16 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
   const overlays: RegionOverlay[] = regions.map((region: BrushRegion): RegionOverlay => {
     const preview: BrushPreview | null = region.preview ?? region.execution?.preview ?? null;
     const flags: BrushVerdict[] = verdicts(region);
+    const points: BrushSample[] = region.execution?.results.map((result): typeof result.sample => result.sample) ?? preview?.samples ?? [];
     return { id: region.id, label: `R${region.number.toString()}`, vertices: region.vertices, closed: region.closed, active: region.id === activeId,
-      samples: preview?.samples.map((point, index): RegionOverlay["samples"][number] => ({ east_m: point.east_m, north_m: point.north_m, index,
-        verdict: flags[index] ?? "NOT_EVALUATED", selected: inspected?.regionId === region.id && inspected.index === index })) ?? [] };
+      adaptive: preview?.definition.sampling === "adaptive",
+      samples: points.map((point, index): RegionOverlay["samples"][number] => ({ east_m: point.east_m, north_m: point.north_m, index,
+        iteration: point.iteration,
+        parentIndices: point.parent_evaluation_ids.flatMap((id: string): number[] => {
+          const parent: number = region.execution?.results.findIndex((result, i): boolean => i < index && result.evaluation?.evaluation_id === id) ?? -1;
+          return parent < 0 ? [] : [parent];
+        }),
+        verdict: flags[index] ?? "NOT_EVALUATED", selected: inspected?.regionId === region.id && inspected.index === index })) };
   });
   const overlay: BrushOverlay = { mode: active === null ? "off" : mode, regions: overlays, busy: busy?.kind === "execute",
     onAdd: (point: LocalPoint): void => { if (!locked && mode === "draw" && active !== null && !active.closed) edit(active.id, { vertices: [...active.vertices, point] }); },
@@ -198,6 +237,8 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
           <button type="button" aria-pressed={panel === "run"} disabled={preview === null && execution === null} onClick={(): void => { setPanel(panel === "run" ? "none" : "run"); }}>Run</button>
           <button type="button" aria-pressed={panel === "results"} disabled={execution === null} onClick={(): void => { setPanel(panel === "results" ? "none" : "results"); }}>Results</button>
         </div>
+        <label>Saved experiment ID<input type="text" value={experimentId} disabled={locked} onChange={(e: ChangeEvent<HTMLInputElement>): void => { setExperimentId(e.target.value); }} /></label>
+        <button type="button" disabled={locked || experimentId.trim() === ""} onClick={(): void => { void loadExperiment(); }}>Load experiment</button>
         <span className="chip brush-state">{status}</span>
         <span className="small vertex-count">{vertexCount.toString()} vertices · {hint}</span>
       </div>
@@ -208,12 +249,13 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
         <button type="button" className="danger" onClick={confirmPending}>{pending.kind === "delete" ? "Delete region" : "Clear vertices"}</button>{" "}
         <button type="button" onClick={(): void => { setPending(null); }}>Cancel</button>
       </div>}
-      {busy !== null && <p role="status" className="small">{busy.kind === "execute" ? "Processing… terrain horizons and SPICE may take time. Keep this page open; terrain clicks do not create candidates meanwhile." : "Previewing locations (read-only)…"}</p>}
+      {busy !== null && <p role="status" className="small">{busy.kind === "execute" ? "Processing… terrain horizons and SPICE may take time. Keep this page open; terrain clicks do not create candidates meanwhile." : busy.kind === "load" ? "Loading saved experiment (read-only)…" : "Previewing locations (read-only)…"}</p>}
       {error !== null && <p role="alert">{error}</p>}
       {notice !== null && <p role="status" className="small">{notice}</p>}
       {panel !== "none" && active !== null && <div className="brush-dock-panel">
         {panel === "params" && p !== null && <div>
           <div className="brush-fields">
+            <label>Sampling method<select value={p.sampling} disabled={locked} onChange={(e: ChangeEvent<HTMLSelectElement>): void => { field("sampling", e.target.value === "grid" ? "grid" : "adaptive"); }}><option value="adaptive">Adaptive refinement</option><option value="grid">Uniform grid (benchmark)</option></select></label>
             {numberInput("Grid spacing (m)", "spacing_m", "20", "4000")}
             {numberInput("Maximum locations", "max_points", "1", "64")}
             {numberInput("Observer height (m)", "observer_height_m", "0", "100")}
@@ -227,7 +269,7 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
             <label>Max Earth gap (h, optional)<input type="number" min="0" max="168" value={p.max_earth_gap_hours} disabled={locked} onChange={(e: ChangeEvent<HTMLInputElement>): void => { field("max_earth_gap_hours", e.target.value); }} /></label>
             <label>Persist results<select value={p.retention} disabled={locked} onChange={(e: ChangeEvent<HTMLSelectElement>): void => { field("retention", e.target.value === "passing" ? "passing" : "all"); }}><option value="all">All valid locations (default)</option><option value="passing">Passing locations only</option></select></label>
           </div>
-          <p className="muted small">Grid aligned to ROI origin; boundary tolerance 0.0000001 m. Maximum 64 locations and 8,192 location-time samples. Fractions count stored samples; gaps are sampled estimates. Editing a region discards its preview and results view, never persisted records.</p>
+          <p className="muted small">Locations use a grid aligned to the ROI origin; adaptive execution selects later locations using computed evidence. Boundary tolerance 0.0000001 m. Maximum 64 locations and 8,192 location-time samples. Fractions count stored samples; gaps are sampled estimates. Editing a region discards its preview and results view, never persisted records.</p>
           {mode === "edit" && <div className="brush-vertices">{active.vertices.map((point, index): JSX.Element => <button type="button" key={index} disabled={locked}
             onClick={(): void => { edit(active.id, { vertices: active.vertices.filter((_, i): boolean => i !== index), closed: active.vertices.length > 3 }); if (active.vertices.length <= 3) store.dispatch({ type: "brush-mode", mode: "draw" }); }}>
             Remove vertex {index + 1} ({point.east_m.toFixed(0)}, {point.north_m.toFixed(0)})</button>)}</div>}
@@ -236,11 +278,11 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
           confirmed={confirmed} locked={locked} evaluated={execution !== null} onConfirm={setConfirmed} onExecute={(): void => { void executeRegion(active); }} />}
         {panel === "results" && execution !== null && <div className="brush-results">
           <div className="brush-results-head"><h4>Experiment results · {regionName(active)}</h4>
-          <span>{execution.results.length} requested · {execution.results.filter((r): boolean => r.persisted).length} persisted candidates · {count("PASS") + count("FAIL")} scientifically evaluated · {count("PASS")} pass · {count("FAIL")} fail · {count("UNAVAILABLE")} unavailable · {count("ERROR")} error</span>
+          <span>{execution.results.length} requested · {execution.results.filter((r): boolean => r.persisted).length} persisted candidates · {execution.results.filter((r): boolean => r.evaluation?.status === "COMPUTED_UNVERIFIED" || r.evaluation?.status === "VALIDATED").length} scientifically evaluated · {count("PASS")} pass · {count("FAIL")} fail · {count("UNAVAILABLE")} unavailable · {count("ERROR")} error</span>
           <button type="button" onClick={(): void => { downloadBlob(`lunar-ops-brush-${regionName(active).toLowerCase().replace(" ", "-")}.json`, new Blob([JSON.stringify({ region: { id: active.id, name: regionName(active) }, ...execution }, null, 2)], { type: "application/json" })); }}>Export experiment JSON</button></div>
-          <p className="muted small">Geometric visibility, not power or communications performance; not independently validated. To retry, preview again. This results view lasts for the browser session; export it to keep it.</p>
-          <ol aria-label="Brush results">{execution.results.map((item, index): JSX.Element => <li key={`${item.sample.east_m.toString()}:${item.sample.north_m.toString()}`}><button type="button" onClick={(): void => { inspect(active.id, index); }} aria-pressed={inspected?.regionId === active.id && inspected.index === index}>
-            {item.verdict} · {item.sample.east_m.toFixed(0)} m E, {item.sample.north_m.toFixed(0)} m N {item.persisted ? "· saved" : "· not saved"}</button></li>)}</ol>
+          <p className="muted small">Non-dominated compares passing results across Sun, Earth and simultaneous fractions and both longest gaps; it is not a ranking. Geometric visibility, not power or communications performance; not independently validated. To retry, preview again. This results view lasts for the browser session; export it to keep it. {execution.experiment_id !== null && execution.experiment_id !== undefined ? `Saved experiment: ${execution.experiment_id}` : ""}</p>
+          <ol aria-label="Brush results">{execution.results.map((item, index): JSX.Element => <li key={`${index.toString()}:${item.sample.east_m.toString()}:${item.sample.north_m.toString()}`}><button type="button" onClick={(): void => { inspect(active.id, index); }} aria-pressed={inspected?.regionId === active.id && inspected.index === index}>
+            {item.verdict} · {item.sample.east_m.toFixed(0)} m E, {item.sample.north_m.toFixed(0)} m N · {item.sample.iteration === 0 ? "initial" : `iteration ${item.sample.iteration.toString()}`} {item.pareto === true ? "· non-dominated" : ""} {item.persisted ? "· saved" : "· not saved"}</button></li>)}</ol>
           {outcome !== undefined && <ResultDetail outcome={outcome} />}
         </div>}
       </div>}
@@ -251,11 +293,12 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
 function RunPanel({ preview, retention, confirmed, locked, evaluated, onConfirm, onExecute }: { preview: BrushPreview | null; retention: "all" | "passing";
   confirmed: boolean; locked: boolean; evaluated: boolean; onConfirm: (value: boolean) => void; onExecute: () => void }): JSX.Element | null {
   if (preview === null) return null;
-  return <div className="brush-preview" role="status"><strong>{preview.samples.length} locations · {preview.ready_count} DEM-ready</strong> · {preview.temporal_samples_per_point} times per location · {preview.estimated_total_samples} location-time samples
+  return <div className="brush-preview" role="status"><strong>{preview.samples.length} locations · {preview.ready_count} DEM-ready</strong> · {preview.temporal_samples_per_point} times per location · up to {preview.estimated_total_samples} location-time samples
+    {preview.definition.sampling === "adaptive" && <p>These are initial seeds. After confirmation, computed results select further locations, up to {preview.definition.max_points} total attempts. Later locations and their persistence counts cannot be known at preview time. One final attempt may refine an observed visibility transition within the same interval. A completed adaptive experiment stores all evaluation evidence, including failed results, even when only passing candidates are retained.</p>}
     <p>{retention === "all" ? `At preview: ${preview.new_count.toString()} new C0 records and ${preview.existing_count.toString()} existing C0 records to reuse.` : `At preview: at most ${preview.new_count.toString()} new C0 records; up to ${preview.existing_count.toString()} existing C0 records may be reused if they pass.`} Counts may change if another session creates a matching candidate. An invalid DEM point is reported and skipped.</p>
     <details><summary>Inspect all preview locations</summary><ol>{preview.samples.map((point): JSX.Element =>
       <li key={`${point.east_m.toString()}:${point.north_m.toString()}`}>{point.status} · {point.east_m.toFixed(0)} m E, {point.north_m.toFixed(0)} m N · {point.latitude_deg?.toFixed(6) ?? "—"}°, {point.longitude_deg?.toFixed(6) ?? "—"}°E · DEM {point.elevation_m?.toFixed(1) ?? "unavailable"} m · {point.already_persisted ? "existing C0" : "not saved"} {point.error ?? ""}</li>)}</ol></details>
-    <label><input type="checkbox" checked={confirmed} disabled={locked || evaluated} onChange={(e: ChangeEvent<HTMLInputElement>): void => { onConfirm(e.target.checked); }} /> I approve evaluating and persisting this preview.</label>{" "}
+    <label><input type="checkbox" checked={confirmed} disabled={locked || evaluated} onChange={(e: ChangeEvent<HTMLInputElement>): void => { onConfirm(e.target.checked); }} /> I approve evaluating and persisting this preview and any budgeted adaptive locations.</label>{" "}
     <button type="button" className="primary" disabled={locked || !confirmed || preview.ready_count === 0 || evaluated} onClick={onExecute}>Evaluate region &amp; create candidates</button>
     <p className="brush-legend small">● <span className="brush-proposed">Proposed</span> · <span className="brush-pass">● Pass</span> · <span className="brush-fail">● Fail</span> · <span className="brush-unavailable">● Unavailable</span> · <span className="brush-error">● Error</span></p>
   </div>;
@@ -263,6 +306,9 @@ function RunPanel({ preview, retention, confirmed, locked, evaluated, onConfirm,
 
 function ResultDetail({ outcome }: { outcome: BrushResult }): JSX.Element {
   return <div className="brush-result-detail"><strong>{outcome.verdict}</strong> · {outcome.evaluation?.status ?? outcome.sample.status}
+    <p>{outcome.sample.iteration === 0 ? "Initial candidate" : `Refinement iteration ${outcome.sample.iteration.toString()}`} · {outcome.sample.reason ?? "Grid sample"}</p>
+    {outcome.sample.priority && <p>Selection priority: {outcome.sample.priority}</p>}
+    {outcome.sample.parent_evaluation_ids.length > 0 && <p className="mono-wrap">Parent candidates: {outcome.sample.parent_candidate_ids.join(", ")}<br />Parent evaluations: {outcome.sample.parent_evaluation_ids.join(", ")}</p>}
     <p>Position {outcome.sample.latitude_deg?.toFixed(6) ?? "—"}°, {outcome.sample.longitude_deg?.toFixed(6) ?? "—"}°E · elevation {outcome.sample.elevation_m?.toFixed(1) ?? "—"} m · observer {outcome.candidate?.observer_height_m ?? outcome.evaluation?.candidate.observer_height_m ?? "—"} m</p>
     {outcome.metrics !== null && outcome.metrics !== undefined && <p>Sun {(outcome.metrics.sun_fraction * 100).toFixed(1)}% · Earth {(outcome.metrics.earth_fraction * 100).toFixed(1)}% · both {(outcome.metrics.simultaneous_fraction * 100).toFixed(1)}% · longest darkness {outcome.metrics.longest_darkness_hours.toFixed(1)} h · Earth gap {outcome.metrics.longest_earth_gap_hours.toFixed(1)} h</p>}
     <p className="mono-wrap">Candidate {outcome.candidate?.candidate_id ?? "not persisted"}<br />Evaluation {outcome.evaluation?.evaluation_id ?? "not available"}</p>

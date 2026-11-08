@@ -15,6 +15,7 @@ from lunar_core.terrain_patch import LocalTerrainPatch
 
 from clps_api import (
     brush,
+    brush_store,
     candidate,
     candidate_store,
     evaluation,
@@ -239,6 +240,14 @@ def execute_brush(roi_id: str, request: BrushExecuteRequest) -> BrushExecutionOu
         return brush.execute(request.definition, request.preview_token)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/api/brush-experiments/{experiment_id}", operation_id="getBrushExperiment")
+def get_brush_experiment(experiment_id: str) -> BrushExecutionOut:
+    found = brush_store.get(experiment_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Brush experiment not found")
+    return found
 
 
 @app.post(

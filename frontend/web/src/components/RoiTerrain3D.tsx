@@ -235,9 +235,30 @@ function drawBrush(parts: SceneParts, terrain: RoiTerrain, exaggeration: number,
       outline.renderOrder = 3; parts.brush.add(outline);
     }
     if (region.active) region.vertices.forEach((point: LocalPoint, index: number): void => { dot(point, "#f7d472", 0.045, { brushVertex: index }); });
+    const links: number[] = [];
+    for (const sample of region.samples) {
+      for (const parentIndex of sample.parentIndices ?? []) {
+        const parent: RegionOverlay["samples"][number] | undefined = region.samples[parentIndex];
+        if (parent !== undefined && (parent.east_m !== sample.east_m || parent.north_m !== sample.north_m)) {
+          links.push(...outlinePoints(terrain, exaggeration, { ...region, vertices: [parent, sample], closed: false }, 0.04 * scale));
+        }
+      }
+    }
+    if (links.length > 0) {
+      const geometry: BufferGeometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(new Float32Array(links), 3));
+      const paths: LineSegments = new LineSegments(geometry, new LineBasicMaterial({ color: "#a8d8ef", depthTest: false, transparent: true, opacity: 0.65 }));
+      paths.renderOrder = 3; parts.brush.add(paths);
+    }
     for (const sample of region.samples) {
       dot(sample, BRUSH_COLORS[sample.verdict], sample.selected ? 0.07 : 0.04, { brushSample: sample.index, brushRegion: region.id }, region.active || sample.selected ? 1 : 0.6);
       if (sample.selected) dot(sample, "#ffffff", 0.095, { brushSample: sample.index, brushRegion: region.id }, 0.35);
+      if (region.active && region.adaptive && displayElevation(terrain, sample) !== null) {
+        const tag: Sprite = label((sample.iteration ?? 0) === 0 ? "S" : `R${(sample.iteration ?? 0).toString()}`, "#d7eefa");
+        tag.scale.multiplyScalar(scale * 0.45);
+        tag.position.set(sample.east_m / 1000, heightKm(terrain, sample, exaggeration) + 0.12 * scale, -sample.north_m / 1000);
+        parts.brush.add(tag);
+      }
     }
     const centre: LocalPoint | null = centroid(region.vertices);
     if (centre !== null && displayElevation(terrain, centre) !== null) {

@@ -10,7 +10,8 @@ export interface RegionOverlay {
   vertices: LocalPoint[];
   closed: boolean;
   active: boolean;
-  samples: (LocalPoint & { verdict: BrushVerdict; index: number; selected: boolean })[];
+  adaptive?: boolean;
+  samples: (LocalPoint & { verdict: BrushVerdict; index: number; selected: boolean; iteration?: number; parentIndices?: number[] })[];
 }
 
 export interface BrushOverlay {

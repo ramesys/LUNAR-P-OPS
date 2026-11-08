@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within, type RenderResult } fr
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JSX } from "react";
 import type { RoiTerrain3DProps } from "./RoiTerrain3D.tsx";
-import { ShackletonWorkspace } from "./ShackletonWorkspace.tsx";
+import { mergeCandidateList, ShackletonWorkspace } from "./ShackletonWorkspace.tsx";
 
 // WebGL is unavailable in jsdom: the stand-in exposes the same picking callbacks and markers.
 vi.mock("./RoiTerrain3D.tsx", () => ({
@@ -93,4 +93,11 @@ describe("Shackleton workspace", (): void => {
     expect(selected).toEqual(["new-1200"]);
     expect(screen.queryByText(/marker new--1500/)).toBeNull();
   });
+});
+
+
+it("keeps one terrain marker when a temporal evaluation reuses a candidate", (): void => {
+  const existing: Candidate = candidate("existing", -89.5);
+  const later: Candidate = candidate("later", -89.4);
+  expect(mergeCandidateList([existing], [later, later, existing]).map((c): string => c.candidate_id)).toEqual(["existing", "later"]);
 });

@@ -22,6 +22,13 @@ import { SelectionGuard } from "../lib/selectionGuard.ts";
 import { nearestSample, useExploration, type Draft } from "../lib/explorationStore.ts";
 import type { RoiTerrain3DProps } from "./RoiTerrain3D.tsx";
 
+/** Candidate identities can recur when a finer temporal evaluation uses the same C0. */
+export function mergeCandidateList(current: readonly Candidate[], created: readonly Candidate[]): Candidate[] {
+  const unique: Map<string, Candidate> = new Map<string, Candidate>();
+  [...current, ...created].forEach((candidate: Candidate): void => { if (!unique.has(candidate.candidate_id)) unique.set(candidate.candidate_id, candidate); });
+  return [...unique.values()];
+}
+
 const RoiTerrain3D: LazyExoticComponent<ComponentType<RoiTerrain3DProps>> = lazy(
   async (): Promise<{ default: ComponentType<RoiTerrain3DProps> }> => ({
     default: (await import("./RoiTerrain3D.tsx")).RoiTerrain3D,
@@ -154,7 +161,7 @@ export function ShackletonWorkspace({ apiClient, selectedCandidateId, onCandidat
     {terrain.kind === "ready" &&
       <ConstraintBrush apiClient={apiClient} defaultTimeUtc={defaultTimeUtc} onInspect={onCandidateSelected}
         onCandidatesCreated={(created: Candidate[]): void => { setCandidates((current: Candidate[]): Candidate[] =>
-          [...current, ...created.filter((item: Candidate): boolean => !current.some((existing: Candidate): boolean => existing.candidate_id === item.candidate_id))]); }}
+          mergeCandidateList(current, created)); }}
         renderTerrain={(brush): JSX.Element => <Suspense fallback={<p className="muted">Loading 3D view…</p>}>
           <RoiTerrain3D terrain={terrain.terrain} regional={regional} candidates={candidates} selectedId={selectedCandidateId}
             onPick={onPick} onSelectMarker={onSelectMarker} temporal={temporal} brush={brush} draftHeightM={inRoi === null ? null : draft?.observer_height_m ?? null} />

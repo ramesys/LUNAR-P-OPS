@@ -23,11 +23,12 @@ import {
 } from "./landingGraph.ts";
 
 import { SelectionGuard } from "../lib/selectionGuard.ts";
-import { nearestSample, useExploration, useExplorationStore, type Draft, type ExperimentSettings, type ExplorationStore } from "../lib/explorationStore.ts";
+import { nearestSample, useExploration, useExplorationStore, type BrushRegion, type Draft, type ExperimentSettings, type ExplorationStore } from "../lib/explorationStore.ts";
 import { loadSelection } from "../lib/workspaceSelection.ts";
 import { formatUtc } from "../lib/format.ts";
 import type { Mode } from "../lib/mode.ts";
 import { WorkspaceInspector, revisionLabel } from "./WorkspaceInspector.tsx";
+import { RegionLineage } from "./RegionLineage.tsx";
 
 type Extra = ReactArea2D<LandingScheme>;
 interface Graph { engine: DataflowEngine<LandingScheme>; area: AreaPlugin<LandingScheme, Extra>; landing: LandingNodes; science: ScientificNodes; refresh: () => void }
@@ -125,6 +126,8 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
   const settings: ExperimentSettings = useExploration((state): ExperimentSettings => state.settings);
   const storeEvaluation: ScientificEvaluation | null = useExploration((state): ScientificEvaluation | null => state.evaluation);
   const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
+  const regions: BrushRegion[] = useExploration((state): BrushRegion[] => state.regions);
+  const inspectedRegionId: string | null = useExploration((state): string | null => state.inspectedSample?.regionId ?? null);
   const [children, setChildren] = useState<Candidate[]>([]);
   const [childrenLoaded, setChildrenLoaded] = useState<boolean>(false);
   const childRef: RefObject<Candidate | null> = useRef<Candidate | null>(null);
@@ -523,6 +526,7 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
         <li><span className="kind compute" /> Scientific computation (backend)</li><li><span className="kind result" /> Results (persisted)</li>
       </ul>
       <div ref={host} className="graph-canvas" aria-label="Rete landing graph canvas" />
+      <RegionLineage regions={regions} candidateId={candidate.candidate_id} evaluationId={storeEvaluation?.evaluation_id ?? preferredEvaluation?.evaluationId ?? null} regionId={inspectedRegionId} />
       <p aria-live="polite" className="muted">Dataflow: {outputRef === null ? "building graph…" : `candidate_ref carries ${labelFor(outputRef.candidate_id)} (${outputRef.candidate_id.slice(0, 22)}…) → Scientific computation → Results.`}</p>
       {preview === null ? <p>Live preview unavailable.</p> : <p>Live preview (unsaved): height {preview.observer_height_m} m · time {preview.selected_time_utc} · elevation {preview.terrain_elevation_m.toFixed(2)} m.</p>}
       {error !== null && <p role="alert">{error}</p>}

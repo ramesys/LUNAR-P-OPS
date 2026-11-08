@@ -402,6 +402,7 @@ class BrushDefinition(BaseModel):
     step_minutes: int = Field(default=60, ge=1, le=360)
     constraints: BrushConstraints = BrushConstraints()
     retention: Literal["all", "passing"] = "all"
+    sampling: Literal["grid", "adaptive"] = "grid"
 
 
 class BrushSampleOut(BaseModel):
@@ -414,6 +415,11 @@ class BrushSampleOut(BaseModel):
     status: Literal["READY", "UNAVAILABLE"]
     already_persisted: bool = False
     error: str | None = None
+    iteration: int = 0
+    reason: str | None = None
+    priority: str | None = None
+    parent_candidate_ids: list[str] = []
+    parent_evaluation_ids: list[str] = []
 
 
 class BrushPreviewOut(BaseModel):
@@ -444,6 +450,7 @@ class BrushResultOut(BaseModel):
     sample: BrushSampleOut
     verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"]
     metrics: BrushMetrics | None = None
+    pareto: bool | None = None
     candidate: CandidateOut | None = None
     evaluation: EvaluationOut | None = None
     persisted: bool = False
@@ -462,3 +469,6 @@ class BrushExecutionOut(BaseModel):
     preview: BrushPreviewOut
     results: list[BrushResultOut]
     notes: list[str]
+    experiment_id: str | None = None
+    candidate_set_id: str | None = None
+    refinement_policy: str | None = None

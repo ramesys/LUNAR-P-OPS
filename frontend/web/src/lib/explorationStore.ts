@@ -49,7 +49,7 @@ export interface CatalogState {
 export interface BrushParams {
   spacing_m: number; max_points: number; observer_height_m: number; start_utc: string;
   duration_hours: number; step_minutes: number; min_sun_pct: number; min_earth_pct: number; min_both_pct: number;
-  max_darkness_hours: string; max_earth_gap_hours: string; retention: "all" | "passing";
+  max_darkness_hours: string; max_earth_gap_hours: string; retention: "all" | "passing"; sampling: "adaptive" | "grid";
 }
 
 export interface BrushRegion {

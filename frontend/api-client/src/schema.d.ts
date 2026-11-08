@@ -245,6 +245,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brush-experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Brush Experiment */
+        get: operations["getBrushExperiment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rois/{roi_id}/candidates": {
         parameters: {
             query?: never;
@@ -552,6 +569,12 @@ export interface components {
              * @enum {string}
              */
             retention: "all" | "passing";
+            /**
+             * Sampling
+             * @default grid
+             * @enum {string}
+             */
+            sampling: "grid" | "adaptive";
         };
         /** BrushExecuteRequest */
         BrushExecuteRequest: {
@@ -577,6 +600,12 @@ export interface components {
             results: components["schemas"]["BrushResultOut"][];
             /** Notes */
             notes: string[];
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /** Candidate Set Id */
+            candidate_set_id?: string | null;
+            /** Refinement Policy */
+            refinement_policy?: string | null;
         };
         /** BrushMetrics */
         BrushMetrics: {
@@ -635,6 +664,8 @@ export interface components {
              */
             verdict: "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED";
             metrics?: components["schemas"]["BrushMetrics"] | null;
+            /** Pareto */
+            pareto?: boolean | null;
             candidate?: components["schemas"]["CandidateOut"] | null;
             evaluation?: components["schemas"]["EvaluationOut"] | null;
             /**
@@ -674,6 +705,25 @@ export interface components {
             already_persisted: boolean;
             /** Error */
             error?: string | null;
+            /**
+             * Iteration
+             * @default 0
+             */
+            iteration: number;
+            /** Reason */
+            reason?: string | null;
+            /** Priority */
+            priority?: string | null;
+            /**
+             * Parent Candidate Ids
+             * @default []
+             */
+            parent_candidate_ids: string[];
+            /**
+             * Parent Evaluation Ids
+             * @default []
+             */
+            parent_evaluation_ids: string[];
         };
         /** CandidateEvolutionRequest */
         CandidateEvolutionRequest: {
@@ -1754,6 +1804,37 @@ export interface operations {
                 "application/json": components["schemas"]["BrushExecuteRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrushExecutionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getBrushExperiment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

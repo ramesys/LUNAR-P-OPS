@@ -1,8 +1,8 @@
-import { createApiClient, type ApiClient, type Candidate, type RoiTerrain, type ScientificEvaluation } from "@clps/api-client";
+import { createApiClient, type ApiClient, type BrushSample, type Candidate, type RoiTerrain, type ScientificEvaluation } from "@clps/api-client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JSX } from "react";
-import { createExplorationStore, ExplorationContext, INITIAL, type ExplorationStore } from "../lib/explorationStore.ts";
+import { createExplorationStore, ExplorationContext, INITIAL, type BrushRegion, type ExplorationStore } from "../lib/explorationStore.ts";
 import { evaluation } from "../lib/testFixtures.ts";
 import type { RoiTerrain3DProps } from "./RoiTerrain3D.tsx";
 import { ShackletonWorkspace } from "./ShackletonWorkspace.tsx";
@@ -90,4 +90,31 @@ describe("space–time synchronization", (): void => {
     render(workspace(store, []));
     expect((await screen.findByTestId("scene")).textContent).toContain("no temporal state");
   });
+});
+
+it("compares exact UTC samples across region results without a write", async (): Promise<void> => {
+  const store: ExplorationStore = createExplorationStore({ ...INITIAL, rootId: "c0", revisionId: "c0" });
+  store.dispatch({ type: "evaluation", evaluation: roiEvaluation });
+  const { defaultParams, definitionOf } = await import("./ConstraintBrush.tsx");
+  store.dispatch({ type: "region-create", id: "region", params: defaultParams("2026-11-07T00:00:00Z") });
+  const region: BrushRegion | undefined = store.getState().regions[0];
+  if (region === undefined) throw new Error("region missing");
+  const sample: BrushSample = { east_m: 0, north_m: 0, status: "READY" as const, candidate_id: "c0", already_persisted: true,
+    iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [] };
+  const shifted: ScientificEvaluation = { ...roiEvaluation, evaluation_id: "shifted", samples: roiEvaluation.samples.map((s) => ({ ...s, time_utc: "2026-11-07T00:30:00Z" })) };
+  store.dispatch({ type: "region-execution", regionId: "region", revision: region.revision, execution: {
+    schema_version: "lunar-ops-brush/1", preview: { definition: definitionOf(region), coordinate_reference: "", alignment: "", tolerance_m: 0,
+      samples: [sample], ready_count: 1, new_count: 0, existing_count: 1, temporal_samples_per_point: 2, estimated_total_samples: 2, preview_token: "token" },
+    results: [{ sample, verdict: "PASS", candidate: root, evaluation: roiEvaluation, persisted: true, errors: [] },
+      { sample: { ...sample, candidate_id: "c2" }, verdict: "PASS", candidate: root, evaluation: shifted, persisted: true, errors: [] }], notes: [],
+  } });
+  const calls: string[] = [];
+  render(workspace(store, calls));
+  await screen.findByTestId("scene");
+  fireEvent.click(screen.getByText("Compare region results at the cursor UTC"));
+  expect(screen.getAllByText("unsampled").length).toBeGreaterThan(0);
+  const before: number = calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
+  expect(calls.length).toBe(before);
+  expect(calls.every((call): boolean => !call.startsWith("POST"))).toBe(true);
 });

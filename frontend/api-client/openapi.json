@@ -487,6 +487,45 @@
         }
       }
     },
+    "/api/brush-experiments/{experiment_id}": {
+      "get": {
+        "summary": "Get Brush Experiment",
+        "operationId": "getBrushExperiment",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrushExecutionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rois/{roi_id}/candidates": {
       "post": {
         "summary": "Create Roi Candidate",
@@ -1243,6 +1282,15 @@
             ],
             "title": "Retention",
             "default": "all"
+          },
+          "sampling": {
+            "type": "string",
+            "enum": [
+              "grid",
+              "adaptive"
+            ],
+            "title": "Sampling",
+            "default": "grid"
           }
         },
         "additionalProperties": false,
@@ -1301,6 +1349,39 @@
             },
             "type": "array",
             "title": "Notes"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "candidate_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Set Id"
+          },
+          "refinement_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refinement Policy"
           }
         },
         "type": "object",
@@ -1468,6 +1549,17 @@
               }
             ]
           },
+          "pareto": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pareto"
+          },
           "candidate": {
             "anyOf": [
               {
@@ -1586,6 +1678,49 @@
               }
             ],
             "title": "Error"
+          },
+          "iteration": {
+            "type": "integer",
+            "title": "Iteration",
+            "default": 0
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "parent_candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Parent Candidate Ids",
+            "default": []
+          },
+          "parent_evaluation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Parent Evaluation Ids",
+            "default": []
           }
         },
         "type": "object",

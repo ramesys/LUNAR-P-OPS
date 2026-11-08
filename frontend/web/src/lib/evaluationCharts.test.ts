@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computationState, evaluationChart, visibleHours, type EvaluationChart } from "./evaluationCharts.ts";
+import { exactStoredSample, computationState, evaluationChart, visibleHours, type EvaluationChart } from "./evaluationCharts.ts";
 import { evaluation } from "./testFixtures.ts";
 
 describe("evaluation charts", (): void => {
@@ -23,4 +23,12 @@ describe("evaluation charts", (): void => {
     expect(computationState(evaluation("UNAVAILABLE"))).toBe("unavailable");
     expect(computationState(evaluation("ERROR"))).toBe("failed");
   });
+});
+
+it("matches stored candidate samples only at the exact UTC instant", (): void => {
+  const value: ReturnType<typeof evaluation> = evaluation();
+  expect(exactStoredSample(value, "2026-11-07T03:00:00+02:00")?.time_utc).toBe("2026-11-07T01:00:00Z");
+  expect(exactStoredSample(value, "2026-11-07T00:30:00Z")).toBeNull();
+  expect(exactStoredSample(value, "2026-11-09T00:00:00Z")).toBeNull();
+  expect(exactStoredSample(null, "2026-11-07T00:00:00Z")).toBeNull();
 });
