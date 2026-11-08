@@ -1,6 +1,6 @@
 import type { BrushExecution, ScientificEvaluation } from "@clps/api-client";
 import { describe, expect, it } from "vitest";
-import { createExplorationStore, INITIAL, inspectedCandidateId, nearestSample, reduce, type BrushParams, type ExplorationState, type ExplorationStore } from "./explorationStore.ts";
+import { createExplorationStore, INITIAL, TERRAIN_PARAM_DEFAULTS, inspectedCandidateId, nearestSample, reduce, type BrushParams, type ExplorationState, type ExplorationStore } from "./explorationStore.ts";
 import { evaluation } from "./testFixtures.ts";
 
 const e0: ScientificEvaluation = evaluation();
@@ -92,17 +92,18 @@ describe("scientific context", (): void => {
 
 describe("brush regions in the shared store", (): void => {
   const params: BrushParams = { spacing_m: 100, max_points: 16, observer_height_m: 3, start_utc: "2026-11-07T00:00:00Z", duration_hours: 2,
-    step_minutes: 60, min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all" };
+    step_minutes: 60, min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all", sampling: "adaptive",
+    ...TERRAIN_PARAM_DEFAULTS };
   const triangle: { east_m: number; north_m: number }[] = [
     { east_m: 0, north_m: 0 }, { east_m: 100, north_m: 0 }, { east_m: 0, north_m: 100 }];
   function execution(candidateId: string): BrushExecution {
     const result: ScientificEvaluation = { ...e0, candidate: { ...e0.candidate, candidate_id: candidateId }, candidate_id: candidateId };
     const preview: BrushExecution["preview"] = { definition: { polygon: triangle, spacing_m: 100, max_points: 16, observer_height_m: 3, start_utc: params.start_utc,
-      duration_hours: 2, step_minutes: 60, retention: "all", constraints: { min_sun_fraction: 0, min_earth_fraction: 0, min_simultaneous_fraction: 0, max_darkness_hours: null, max_earth_gap_hours: null } }, coordinate_reference: "", alignment: "", tolerance_m: 0,
-      samples: [{ east_m: 0, north_m: 0, status: "READY", candidate_id: candidateId, already_persisted: false }], ready_count: 1, new_count: 1, existing_count: 0,
+      duration_hours: 2, step_minutes: 60, retention: "all", sampling: "grid", evidence: "visibility", constraints: { min_sun_fraction: 0, min_earth_fraction: 0, min_simultaneous_fraction: 0, max_darkness_hours: null, max_earth_gap_hours: null } }, coordinate_reference: "", alignment: "", tolerance_m: 0,
+      samples: [{ east_m: 0, north_m: 0, status: "READY", candidate_id: candidateId, already_persisted: false, iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [], parent_terrain_screen_ids: [] }], ready_count: 1, new_count: 1, existing_count: 0,
       temporal_samples_per_point: 2, estimated_total_samples: 2, preview_token: "t" };
     return { schema_version: "lunar-ops-brush/1", preview, notes: [],
-      results: [{ sample: { east_m: 0, north_m: 0, status: "READY", candidate_id: candidateId, already_persisted: false }, verdict: "PASS", candidate: result.candidate, evaluation: result, persisted: true, errors: [] }] };
+      results: [{ sample: { east_m: 0, north_m: 0, status: "READY", candidate_id: candidateId, already_persisted: false, iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [], parent_terrain_screen_ids: [] }, verdict: "PASS", candidate: result.candidate, evaluation: result, persisted: true, errors: [] }] };
   }
   function withTwoRegions(): ExplorationState {
     let state: ExplorationState = reduce(selected, { type: "region-create", id: "a", params });

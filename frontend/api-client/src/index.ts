@@ -38,3 +38,6 @@ export type BrushPreview = Schemas["BrushPreviewOut"];
 export type BrushExecution = Schemas["BrushExecutionOut"];
 export type BrushResult = Schemas["BrushResultOut"];
 export type BrushSample = Schemas["BrushSampleOut"];
+export type TerrainScreen = Schemas["TerrainScreenOut"];
+export type TerrainScreenConstraints = Schemas["TerrainScreenConstraints"];
+export type TerrainCheck = Schemas["TerrainCheckOut"];

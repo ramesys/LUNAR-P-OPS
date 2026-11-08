@@ -1,4 +1,4 @@
-import type { BrushParams } from "./explorationStore.ts";
+import { TERRAIN_PARAM_DEFAULTS, type BrushParams } from "./explorationStore.ts";
 /**
  * The one persisted workspace selection: the root candidate (C0) whose graph is open and the
  * committed revision (C0 or its C1) on the graph's `candidate_ref` output. Only identifiers are
@@ -89,6 +89,24 @@ function validParams(value: unknown): value is BrushParams {
     && (p["retention"] === "all" || p["retention"] === "passing");
 }
 
+/** Fill terrain fields missing from regions stored before terrain screening; drop invalid ones. */
+function withTerrainDefaults(params: BrushParams): BrushParams {
+  const p: Partial<BrushParams> = params;
+  const text: (value: unknown, fallback: string) => string = (value: unknown, fallback: string): string => typeof value === "string" ? value : fallback;
+  const merged: BrushParams = {
+    ...params,
+    terrain_enabled: typeof p.terrain_enabled === "boolean" ? p.terrain_enabled : TERRAIN_PARAM_DEFAULTS.terrain_enabled,
+    terrain_radius_m: finite(p.terrain_radius_m) ? p.terrain_radius_m : TERRAIN_PARAM_DEFAULTS.terrain_radius_m,
+    max_local_slope_deg: text(p.max_local_slope_deg, TERRAIN_PARAM_DEFAULTS.max_local_slope_deg),
+    max_neighborhood_slope_deg: text(p.max_neighborhood_slope_deg, TERRAIN_PARAM_DEFAULTS.max_neighborhood_slope_deg),
+    max_roughness_rms_m: text(p.max_roughness_rms_m, TERRAIN_PARAM_DEFAULTS.max_roughness_rms_m),
+    max_relief_m: text(p.max_relief_m, TERRAIN_PARAM_DEFAULTS.max_relief_m),
+    min_coverage_pct: finite(p.min_coverage_pct) ? p.min_coverage_pct : TERRAIN_PARAM_DEFAULTS.min_coverage_pct,
+    evidence: p.evidence === "visibility_terrain" ? "visibility_terrain" : "visibility",
+  };
+  return merged;
+}
+
 export function loadRegions(): StoredRegions {
   const empty: StoredRegions = { regions: [], activeRegionId: null };
   const raw: string | null = read(REGIONS_KEY);
@@ -108,7 +126,7 @@ export function loadRegions(): StoredRegions {
         return finite(point["east_m"]) && finite(point["north_m"]) ? [{ east_m: point["east_m"], north_m: point["north_m"] }] : [];
       });
       if (points.length !== vertices.length) return [];
-      return [{ id: r["id"], number: r["number"], vertices: points, closed: r["closed"] && points.length >= 3, params: r["params"] }];
+      return [{ id: r["id"], number: r["number"], vertices: points, closed: r["closed"] && points.length >= 3, params: withTerrainDefaults(r["params"]) }];
     });
     const active: unknown = (parsed as { activeRegionId?: unknown }).activeRegionId;
     return { regions, activeRegionId: typeof active === "string" && regions.some((r: StoredRegion): boolean => r.id === active) ? active : regions.at(-1)?.id ?? null };

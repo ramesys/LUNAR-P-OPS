@@ -74,3 +74,11 @@ export function horizonGap(evaluation: ScientificEvaluation): HorizonGap | null 
     earthClosest: Math.max(...evaluation.samples.map((s): number => s.earth_elevation_deg - s.earth_horizon_deg)),
   };
 }
+
+/** Return only a stored sample at exactly this UTC instant; never interpolate or snap. */
+export function exactStoredSample(evaluation: ScientificEvaluation | null | undefined, utc: string | null): ScientificEvaluation["samples"][number] | null {
+  if (evaluation === null || evaluation === undefined || utc === null) return null;
+  const instant: number = Date.parse(utc);
+  if (!Number.isFinite(instant)) return null;
+  return evaluation.samples.find((sample): boolean => Date.parse(sample.time_utc) === instant) ?? null;
+}

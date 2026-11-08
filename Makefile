@@ -113,3 +113,19 @@ openapi:
 
 check-openapi: openapi
 	git diff --exit-code -- frontend/api-client
+
+# --- n8n (local orchestration + AI-assisted interpretation; read-only, see infrastructure/n8n) ---
+N8N = docker compose -f infrastructure/n8n/docker-compose.n8n.yml
+.PHONY: n8n-up n8n-down n8n-logs n8n-import
+n8n-up:
+	$(N8N) up -d --wait
+
+n8n-down:
+	$(N8N) down
+
+n8n-logs:
+	$(N8N) logs -f
+
+# Re-imports the workflow file (same workflow id: replaces the n8n copy, including UI edits).
+n8n-import:
+	$(N8N) exec n8n n8n import:workflow --input=/workflows/luna-ops-scientific-review.json

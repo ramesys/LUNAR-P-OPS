@@ -1,5 +1,10 @@
 # LUNA-P/OPS current status and handover
 
+> **Current consolidated record:** [VERIFICATION_AND_LIMITATIONS.md](VERIFICATION_AND_LIMITATIONS.md)
+> (2026-11-08) for verification, known issues and next steps. The AI workflow is in
+> [AI_N8N_INTEGRATION.md](AI_N8N_INTEGRATION.md). This file remains the dated development and
+> handover log that those documents draw on.
+
 Status date: 2026-11-07. Reviewed code: `main` at `06bda7cf6bb7249544960427d8fc68b1b6f03474`
 (plus the documentation and branding changes on the branch that added this file). Section 6
 records the spatial workspace sprint built on top of that review.
@@ -148,3 +153,32 @@ execution is still synchronous; the expanded Rete graph still does not zoom to f
 join stored samples with straight segments (no interpolation); the two terrain scales remain
 separate meshes. Item 2 of the milestone in §5 is therefore only partly addressed.
 
+
+## 7. Experiment B: terrain-aware adaptive sampling (2026-11-08, branch `feat/terrain-aware-brush`)
+
+Built on the adaptive Region Brush milestone (`7cdbb8c`). The visibility engine, candidate and
+evaluation records and database schema are unchanged. Terrain screens are computed on demand and
+are not persisted as separate records; they are stored inside completed brush experiment
+snapshots.
+
+| Item | Implemented |
+| --- | --- |
+| Terrain science (Python) | `lunar_core/landing_terrain.py`: SurfaceSlope (Horn local slope, neighbourhood max, least-squares plane slope), TerrainRoughness (detrended RMS and relief, raw relief), TerrainQuality (DEM node coverage, resolution, interpolation; uncertainty and sub-resolution hazards `NOT_ASSESSED`), LandingZoneScreen (configurable limits, margins, PASS/FAIL/NOT_ASSESSED). |
+| API | `clps_api/terrain_screen.py` with provenance (DEM SHA-256, algorithm, versions), content-addressed screen IDs and a DEM-hash-keyed cache. `GET /api/candidates/{id}/terrain-screen` (read-only). `BrushDefinition.terrain` and `evidence` (`visibility` = A, `visibility_terrain` = B); combined verdicts with `visibility_verdict`; `NOT_ASSESSED` verdict; terrain lineage IDs on every sample. |
+| Adaptive refinement | Without terrain evidence the milestone policy is unchanged (tested). Under B, seeds and refinements use only lattice points that do not fail the terrain screen. Terrain margins and normalized metric differences join the visibility evidence, and ties go to the larger terrain margin. Reasons state how many points were excluded and the selected point's terrain margin. |
+| UI | Region Brush terrain fieldset and A/B evidence selector; preview pre-screen count; per-result visibility/terrain verdicts and a reusable `TerrainScreenCard`; `NOT_ASSESSED` markers. The existing Rete Landing Graph gains a **Terrain screen** node fed by `Candidate.candidate_ref` (no second graph), with limits taken from the inspected region or defaults. Region lineage lists terrain evidence. |
+| Controlled comparison | [TERRAIN_AWARE_BRUSH_COMPARISON.md](TERRAIN_AWARE_BRUSH_COMPARISON.md): identical region, interval and budget. In April 2027, A had 0 and B had 4 combined passes; A spent 10 of 11 attempts on terrain-failing locations. In November 2026, neither had a combined pass (visibility infeasible). |
+
+Verification (isolated runner and E2E stack: kernels and terrain read-only, SQLite in `tmpfs`):
+
+| Check | Result |
+| --- | --- |
+| Backend: ruff, format, mypy strict, pytest | pass; **172 passed** (new: analytic slope/roughness/coverage tests, terrain-aware brush A/B invariants, missing-DEM `NOT_ASSESSED`, real-DEM reproducibility and provenance, read-only endpoint). |
+| Frontend unit tests (Vitest) | **107 passed** (new: terrain card, Rete terrain node memoization, brush terrain definitions, legacy region defaults). |
+| Lint, type checks, production build | pass; the three.js chunk warning remains. |
+| Browser tests (desktop + phone, Chrome) | **26 passed**, including the new `e2e/terrain.spec.ts` (B preview pre-screen, execution, result card, Terrain screen node in the existing graph). The existing "no writes on selection" tests stay strict: the terrain screen is a GET. |
+
+Limitations: 20 m interpolated DEM only (no LROC/NAC slopes, no rock abundance, no DEM
+uncertainty); slopes are relative to the reference sphere; one region and two time windows were
+compared; the terrain limits used are illustrative, not mission requirements; brush execution is
+still synchronous.

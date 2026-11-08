@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { NodeEditor } from "rete";
 import { DataflowEngine } from "rete-engine";
-import { addScientificNodes, buildLandingNodes, type EvaluationSettings, type LandingConnection, type LandingNodes, type LandingScheme, type PreviewResult,
-  type ScienceApi, type ScientificNodes } from "./landingGraph.ts";
-import type { Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
+import { addScientificNodes, addTerrainNode, buildLandingNodes, DEFAULT_TERRAIN_CONSTRAINTS, describeTerrain, type EvaluationSettings, type LandingConnection, type LandingNodes, type LandingScheme, type PreviewResult,
+  type ScienceApi, type ScientificNodes, type TerrainApi } from "./landingGraph.ts";
+import { terrainScreen } from "../lib/testFixtures.ts";
+import type { Candidate, CandidateRef, ScientificEvaluation, TerrainScreen, TerrainScreenConstraints } from "@clps/api-client";
 
 const candidate: Candidate = { terrain_dataset_sha256: "hash", terrain_nodata: "NaN", coverage_bounds_m: [0, 0, 1, 1], candidate_id: "c0", site_id: "site", latitude_deg: -89.5,
   longitude_deg: 0, terrain_elevation_m: -721, observer_height_m: 2,
@@ -131,4 +132,41 @@ it("stops constructing a graph after its host is disposed", async () => {
   await expect(buildLandingNodes(editor, candidate, (): void => { /* no UI */ }, (): boolean => ++checks < 2))
     .rejects.toThrow("Graph setup cancelled");
   expect(editor.getNodes()).toHaveLength(1);
+});
+
+describe("terrain screen node", (): void => {
+  it("receives candidate_ref through the existing graph and memoises one request per limit set", async (): Promise<void> => {
+    const editor: NodeEditor<LandingScheme> = new NodeEditor<LandingScheme>();
+    const engine: DataflowEngine<LandingScheme> = new DataflowEngine<LandingScheme>();
+    editor.use(engine);
+    const calls: string[] = [];
+    const api: TerrainApi = { screenTerrain: (id: string, constraints: TerrainScreenConstraints): Promise<TerrainScreen> => {
+      calls.push(`${id}:${String(constraints.max_local_slope_deg)}`);
+      return Promise.resolve(terrainScreen({ screen_id: `s-${id}-${String(constraints.max_local_slope_deg)}` }));
+    } };
+    const landing: LandingNodes = await buildLandingNodes(editor, candidate, (): void => undefined);
+    const terrain: Awaited<ReturnType<typeof addTerrainNode>> = await addTerrainNode(editor, landing.candidate, candidate, api);
+    // Still a single graph: the terrain node hangs off the same Candidate.candidate_ref output.
+    expect(editor.getConnections().filter((c: LandingConnection): boolean => c.source === landing.candidate.id && c.sourceOutput === "candidate_ref")).toHaveLength(1);
+    await expect(engine.fetch(terrain.node.id)).rejects.toThrow(/No CandidateRef/);
+    landing.candidate.value = ref(candidate);
+    engine.reset(landing.candidate.id);
+    const first: Record<string, unknown> = await engine.fetch(terrain.node.id);
+    expect((first["terrain_screen"] as TerrainScreen).screen_id).toBe("s-c0-12");
+    engine.reset(terrain.node.id);
+    await engine.fetch(terrain.node.id);
+    expect(calls).toEqual(["c0:12"]);
+    terrain.node.setConstraints({ ...DEFAULT_TERRAIN_CONSTRAINTS, max_local_slope_deg: 8 });
+    engine.reset(terrain.node.id);
+    const stricter: Record<string, unknown> = await engine.fetch(terrain.node.id);
+    expect((stricter["terrain_screen"] as TerrainScreen).screen_id).toBe("s-c0-8");
+    expect(calls).toEqual(["c0:12", "c0:8"]);
+    expect(terrain.node.contract.warnings.join(" ")).toMatch(/not certified landing safety/);
+  });
+
+  it("summarises verdicts and never shows missing metrics as numbers", (): void => {
+    expect(describeTerrain(terrainScreen())).toEqual({ verdict: "Terrain FAIL · COMPUTED_UNVERIFIED", metrics: "slope 14.2° (plane 13.4°) · RMS 0.91 m" });
+    const missing: TerrainScreen = terrainScreen({ status: "UNAVAILABLE", verdict: "NOT_ASSESSED", slope: null, roughness: null });
+    expect(describeTerrain(missing)).toEqual({ verdict: "Terrain NOT ASSESSED · UNAVAILABLE", metrics: "slope not assessed (plane not assessed) · RMS not assessed" });
+  });
 });

@@ -234,3 +234,117 @@ def test_far_field_nodata_and_missing_window_are_unavailable(client: TestClient,
     missing = client.post(path, json={}).json()
     assert missing["status"] == "UNAVAILABLE"
     assert "unavailable" in " ".join(missing["errors"])
+
+
+def test_horizon_reuse_tracks_physical_dependencies_and_rechecks_coverage(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from clps_api import evaluation
+    from lunar_core.geometry import Body, HorizontalPosition, SurfacePoint
+    from lunar_core.horizon import HorizonMask
+
+    masks: list[float] = []
+    coverage: list[int] = []
+    position_calls: list[int] = []
+    monkeypatch.setattr(evaluation, "verify_coverage", lambda *_args: coverage.append(1))
+    monkeypatch.setattr(evaluation, "kernel_hashes", lambda: {"kernel": "abc"})
+    monkeypatch.setattr(evaluation, "_loaded_kernel_hashes", {"kernel": "abc"})
+    monkeypatch.setattr(evaluation, "moon_radii_m", lambda: (1737400.0,) * 3)
+
+    def mask(
+        lat: float, lon: float, near: TerrainGrid, far: TerrainGrid, *, observer_height_m: float
+    ) -> HorizonMask:
+        masks.append(observer_height_m)
+        return HorizonMask(np.array([0.0, 180.0]), np.array([0.0, 0.0]))
+
+    def positions(
+        body: Body, point: SurfacePoint, times: list[datetime]
+    ) -> list[HorizontalPosition]:
+        position_calls.append(1)
+        return [HorizontalPosition(0, 1, 150000000 if body == Body.SUN else 380000) for _ in times]
+
+    monkeypatch.setattr(evaluation, "horizon_mask", mask)
+    monkeypatch.setattr(evaluation, "horizontal_positions", positions)
+    c0 = client.post(
+        "/api/sites/sample-a/candidate",
+        json={
+            "east_m": 0,
+            "north_m": 0,
+            "observer_height_m": 3,
+            "selected_time_utc": "2026-02-01T00:00:00Z",
+        },
+    ).json()
+    c1 = client.post(
+        f"/api/candidates/{c0['candidate_id']}/evolve",
+        json={"observer_height_m": 3, "selected_time_utc": "2026-02-02T00:00:00Z"},
+    ).json()
+    for candidate in (c0, c1):
+        assert (
+            client.post(
+                f"/api/candidates/{candidate['candidate_id']}/evaluations",
+                json={"duration_hours": 2, "step_minutes": 60},
+            ).json()["status"]
+            == "COMPUTED_UNVERIFIED"
+        )
+    assert masks == [3]
+    assert len(coverage) == 2
+    before = len(position_calls)
+    repeated = client.post(
+        f"/api/candidates/{c1['candidate_id']}/evaluations",
+        json={"duration_hours": 2, "step_minutes": 60},
+    ).json()
+    assert repeated["status"] == "COMPUTED_UNVERIFIED"
+    assert len(position_calls) == before
+    _, far = terrain_files(tmp_path / "terrain", "sample-a")
+    original_key = evaluation._physical_key
+    changed = False
+
+    def change_during_lookup(candidate: object, request: object) -> object:
+        nonlocal changed
+        key = original_key(candidate, request)  # type: ignore[arg-type]
+        if not changed:
+            changed = True
+            grid = TerrainGrid.load(far)
+            grid.heights[0, 0] = 1
+            grid.save(far)
+        return key
+
+    monkeypatch.setattr(evaluation, "_physical_key", change_during_lookup)
+    assert (
+        client.post(
+            f"/api/candidates/{c1['candidate_id']}/evaluations",
+            json={"duration_hours": 2, "step_minutes": 60},
+        ).json()["status"]
+        == "COMPUTED_UNVERIFIED"
+    )
+    assert len(position_calls) == before + 2
+    monkeypatch.setattr(evaluation, "_physical_key", original_key)
+    assert (
+        client.post(
+            f"/api/candidates/{c1['candidate_id']}/evaluations",
+            json={"duration_hours": 3, "step_minutes": 60},
+        ).json()["status"]
+        == "COMPUTED_UNVERIFIED"
+    )
+    assert masks == [3, 3]
+    assert len(coverage) == 4
+    assert len(position_calls) == before + 4
+    c2 = client.post(
+        f"/api/candidates/{c0['candidate_id']}/evolve",
+        json={"observer_height_m": 4, "selected_time_utc": "2026-02-02T00:00:00Z"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/candidates/{c2['candidate_id']}/evaluations",
+            json={"duration_hours": 2, "step_minutes": 60},
+        ).json()["status"]
+        == "COMPUTED_UNVERIFIED"
+    )
+    assert masks == [3, 3, 4]
+    monkeypatch.setattr(evaluation, "kernel_hashes", lambda: {"kernel": "changed"})
+    rejected = client.post(
+        f"/api/candidates/{c2['candidate_id']}/evaluations",
+        json={"duration_hours": 2, "step_minutes": 60},
+    ).json()
+    assert rejected["status"] == "UNAVAILABLE"
+    assert "kernel" in " ".join(rejected["errors"]).lower()

@@ -131,3 +131,32 @@ test("@phone draws and clears a brush without creating a candidate", async ({ pa
   expect(after).toEqual(before);
   expect(await page.evaluate((): boolean => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("restores an adaptive experiment with evidence-linked results", async ({ page, request }): Promise<void> => {
+  const definition: Record<string, unknown> = { polygon: [{ east_m: -400, north_m: -400 }, { east_m: 400, north_m: -400 },
+    { east_m: 400, north_m: 400 }, { east_m: -400, north_m: 400 }], spacing_m: 200, max_points: 6,
+    observer_height_m: 3, start_utc: "2026-11-07T00:00:00Z", duration_hours: 2, step_minutes: 60,
+    retention: "all", sampling: "adaptive" };
+  const before: unknown[] = await (await request.get("/api/rois/shackleton-rim-b/candidates")).json() as unknown[];
+  const previewResponse: APIResponse = await request.post("/api/rois/shackleton-rim-b/brush/preview", { data: definition });
+  expect(previewResponse.ok()).toBe(true);
+  const preview: { preview_token: string; samples: unknown[] } = await previewResponse.json() as { preview_token: string; samples: unknown[] };
+  expect(preview.samples).toHaveLength(4);
+  expect(await (await request.get("/api/rois/shackleton-rim-b/candidates")).json()).toEqual(before);
+  const response: APIResponse = await request.post("/api/rois/shackleton-rim-b/brush/execute", { data: { definition, preview_token: preview.preview_token, confirmed: true }, timeout: 60000 });
+  expect(response.ok()).toBe(true);
+  const run: { experiment_id: string; results: { sample: { iteration: number; parent_evaluation_ids: string[] }; evaluation: { evaluation_id: string; status: string } | null }[] } = await response.json() as { experiment_id: string; results: { sample: { iteration: number; parent_evaluation_ids: string[] }; evaluation: { evaluation_id: string; status: string } | null }[] };
+  expect(run.experiment_id).toMatch(/^brush-/);
+  expect(run.results).toHaveLength(6);
+  const initialIds: string[] = run.results.slice(0, 4).flatMap((r): string[] => r.evaluation === null ? [] : [r.evaluation.evaluation_id]);
+  expect(run.results[4]?.sample.iteration).toBeGreaterThan(0);
+  expect(run.results[4]?.sample.parent_evaluation_ids.length).toBeGreaterThan(0);
+  expect(run.results[4]?.sample.parent_evaluation_ids.every((id): boolean => initialIds.includes(id))).toBe(true);
+  await page.goto("/?sites=sample-a,sample-b&from=2026-01-01&to=2026-01-02&step=120&height=2&horizon=terrain&dte=0&mode=expert");
+  await page.getByRole("button", { name: "Scientific detail · 4 km" }).click();
+  await page.getByLabel("Saved experiment ID").fill(run.experiment_id);
+  await page.getByRole("button", { name: "Load experiment" }).click();
+  await expect(page.getByRole("list", { name: "Brush results" }).getByRole("button")).toHaveCount(6);
+  await page.getByRole("list", { name: "Brush results" }).getByRole("button").nth(4).click();
+  await expect(page.getByRole("region", { name: "Constraint Brush" }).getByText(/Parent evaluations:/)).toBeVisible();
+});

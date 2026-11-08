@@ -5,6 +5,8 @@ import json
 import math
 import os
 import re
+import threading
+from collections import OrderedDict
 from contextlib import closing
 from datetime import UTC, timedelta
 from importlib.metadata import version
@@ -14,7 +16,7 @@ from typing import Literal
 import numpy as np
 import spiceypy as spice
 from lunar_core.geometry import SPICE_LOCK, Body, SurfacePoint, horizontal_positions
-from lunar_core.horizon import _destination, horizon_mask
+from lunar_core.horizon import HorizonMask, _destination, horizon_mask
 from lunar_core.kernels import KERNELS
 from lunar_core.terrain import MOON_RADIUS_M, TerrainGrid, polar_stereographic_south, terrain_files
 from lunar_core.visibility import earth_center_visible, sun_upper_limb_visible
@@ -36,6 +38,51 @@ CREATE_TABLE = (
     "(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, payload TEXT NOT NULL)"
 )
 _loaded_kernel_hashes: dict[str, str] | None = None
+_horizon_cache: OrderedDict[tuple[object, ...], HorizonMask] = OrderedDict()
+_horizon_cache_lock = threading.Lock()
+HORIZON_CACHE_SIZE = 64
+
+
+def cached_horizon(
+    candidate: CandidateOut,
+    near: TerrainGrid,
+    far: TerrainGrid,
+    near_path: Path,
+    far_path: Path,
+    near_hash: str,
+    far_hash: str,
+) -> HorizonMask:
+    """Reuse only content-identical terrain and observer geometry after coverage checks."""
+    key: tuple[object, ...] = (
+        horizon_mask,
+        ALGORITHM,
+        near_hash,
+        far_hash,
+        candidate.latitude_deg,
+        candidate.longitude_deg,
+        candidate.observer_height_m,
+        candidate.terrain_elevation_m,
+    )
+    with _horizon_cache_lock:
+        result = _horizon_cache.get(key)
+        if result is not None:
+            if file_hash(near_path) != near_hash or file_hash(far_path) != far_hash:
+                raise ValueError("terrain files changed during horizon lookup")
+            _horizon_cache.move_to_end(key)
+            return result
+        result = horizon_mask(
+            candidate.latitude_deg,
+            candidate.longitude_deg,
+            near,
+            far,
+            observer_height_m=candidate.observer_height_m,
+        )
+        if file_hash(near_path) != near_hash or file_hash(far_path) != far_hash:
+            raise ValueError("terrain files changed during horizon computation")
+        _horizon_cache[key] = result
+        if len(_horizon_cache) > HORIZON_CACHE_SIZE:
+            _horizon_cache.popitem(last=False)
+        return result
 
 
 def file_hash(path: Path) -> str:
@@ -150,7 +197,68 @@ def software_commit() -> tuple[str, str] | None:
     return None
 
 
+_evaluation_cache: OrderedDict[tuple[object, ...], EvaluationOut] = OrderedDict()
+_evaluation_cache_lock = threading.Lock()
+EVALUATION_CACHE_SIZE = 16
+
+
+def _physical_key(candidate: CandidateOut, request: EvaluationRequest) -> tuple[object, ...] | None:
+    if candidate.terrain_window_id not in TERRAIN_WINDOWS:
+        return None
+    near, far = terrain_files(terrain_store.terrain_dir(), candidate.terrain_window_id)
+    try:
+        hashes = (file_hash(near), file_hash(far))
+        kernels = kernel_hashes()
+        if _loaded_kernel_hashes is None or kernels != _loaded_kernel_hashes:
+            return None
+    except (OSError, ValueError):
+        return None
+    return (
+        candidate.model_dump_json(),
+        request.model_dump_json(),
+        hashes,
+        tuple(sorted(kernels.items())),
+        software_commit(),
+        ALGORITHM,
+        version("lunar-core"),
+        version("clps-api"),
+        version("numpy"),
+        version("spiceypy"),
+        horizon_mask,
+        verify_coverage,
+        horizontal_positions,
+        moon_radii_m,
+        earth_center_visible,
+        sun_upper_limb_visible,
+        build_windows,
+    )
+
+
 def compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
+    """Reuse successful results only while all physical dependencies remain identical."""
+    key = _physical_key(candidate, request)
+    if key is not None:
+        with _evaluation_cache_lock:
+            cached = _evaluation_cache.get(key)
+            if cached is not None:
+                _evaluation_cache.move_to_end(key)
+        if cached is not None and _physical_key(candidate, request) == key:
+            return cached.model_copy(deep=True)
+    result = _compute(candidate, request)
+    if (
+        key is not None
+        and result.status == "COMPUTED_UNVERIFIED"
+        and _physical_key(candidate, request) == key
+    ):
+        with _evaluation_cache_lock:
+            _evaluation_cache[key] = result.model_copy(deep=True)
+            _evaluation_cache.move_to_end(key)
+            if len(_evaluation_cache) > EVALUATION_CACHE_SIZE:
+                _evaluation_cache.popitem(last=False)
+    return result
+
+
+def _compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOut:
     """Run the candidate evaluation without storing it."""
     window = candidate.terrain_window_id
     if window not in TERRAIN_WINDOWS:
@@ -246,13 +354,7 @@ def compute(candidate: CandidateOut, request: EvaluationRequest) -> EvaluationOu
         provenance["spice_moon_radii_m"] = list(radii)
         if any(abs(radius - MOON_RADIUS_M) > 0.001 for radius in radii):
             raise ValueError("SPICE lunar radii do not match the DEM reference sphere")
-        mask = horizon_mask(
-            candidate.latitude_deg,
-            candidate.longitude_deg,
-            near,
-            far,
-            observer_height_m=candidate.observer_height_m,
-        )
+        mask = cached_horizon(candidate, near, far, near_path, far_path, near_hash, far_hash)
         horizon_az = mask.azimuths_deg.tolist()
         horizon_el = mask.elevations_deg.tolist()
         start = candidate.selected_time_utc.astimezone(UTC)

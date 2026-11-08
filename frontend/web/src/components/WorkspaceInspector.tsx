@@ -2,8 +2,8 @@ import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation } from "@
 import { ExperimentPanel } from "./ExperimentPanel.tsx";
 import { ContextBadge } from "./ContextBar.tsx";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
-import { computationState, evaluationChart, horizonGap, visibleHours, type ComputationState, type EvaluationChart, type HorizonGap } from "../lib/evaluationCharts.ts";
-import { nearestSample, useExploration, useExplorationStore, type Draft, type ExplorationStore } from "../lib/explorationStore.ts";
+import { computationState, evaluationChart, exactStoredSample, horizonGap, visibleHours, type ComputationState, type EvaluationChart, type HorizonGap } from "../lib/evaluationCharts.ts";
+import { nearestSample, useExploration, useExplorationStore, type BrushRegion, type Draft, type ExplorationStore } from "../lib/explorationStore.ts";
 import { formatUtc } from "../lib/format.ts";
 import { clampIndex, DEFAULT_SPEED, samplesPerTick, TICK_MS, trailSamples } from "../lib/playback.ts";
 import type { Mode } from "../lib/mode.ts";
@@ -153,6 +153,7 @@ function ZeroVisibility({ gap }: { gap: HorizonGap }): JSX.Element | null {
 function EvaluationCharts({ chart, evaluation }: { chart: EvaluationChart; evaluation: ScientificEvaluation }): JSX.Element {
   const store: ExplorationStore = useExplorationStore();
   const cursorUtc: string | null = useExploration((state): string | null => state.cursorUtc);
+  const regions: BrushRegion[] = useExploration((state): BrushRegion[] => state.regions);
   const playing: boolean = useExploration((state): boolean => state.playing);
   const activeContext: string = useExploration((state): string => state.context);
   const host: RefObject<HTMLDivElement | null> = useRef<HTMLDivElement | null>(null);
@@ -193,5 +194,18 @@ function EvaluationCharts({ chart, evaluation }: { chart: EvaluationChart; evalu
     <SkyChart result={chart.site} width={width} index={shown} trailSamples={trailSamples(evaluation.request.step_minutes)} onHover={setHover} onSelect={select} />
     <Timeline times={chart.times} width={width} sites={[chart.site]} focused={chart.site} rangeEnd={chart.rangeEnd}
       index={shown} onHover={setHover} onSelect={select} />
+    {regions.some((region): boolean => region.execution !== null) && <details><summary>Compare region results at the cursor UTC</summary>
+      <p className="small muted">Exact stored samples only; a missing timestamp is unsampled, not interpolated.</p>
+      <table><thead><tr><th>Candidate</th><th>Sun</th><th>Earth</th><th>Both</th></tr></thead><tbody>
+      {regions.flatMap((region) => (region.execution?.results ?? []).map((result, i): JSX.Element => {
+        const recorded: boolean = result.persisted || region.execution?.experiment_id != null;
+        const computed: boolean = result.evaluation?.status === "COMPUTED_UNVERIFIED" || result.evaluation?.status === "VALIDATED";
+        const sample: ScientificEvaluation["samples"][number] | null = recorded && computed ? exactStoredSample(result.evaluation, cursorUtc) : null;
+        const state: string = !recorded ? "not stored" : result.evaluation === null || result.evaluation === undefined || result.evaluation.status === "UNAVAILABLE" || result.evaluation.status === "ERROR" ? "unavailable" : "unsampled";
+        const display: (value: boolean | undefined) => string = (value: boolean | undefined): string => value === undefined ? state : value ? "visible" : "not visible";
+        return <tr key={`${region.id}:${i.toString()}`}><td>R{region.number} · {result.sample.candidate_id ?? `point ${(i + 1).toString()}`}</td>
+          <td>{display(sample?.sun_visible)}</td><td>{display(sample?.earth_visible)}</td><td>{display(sample?.simultaneous_visible)}</td></tr>;
+      }))}</tbody></table>
+    </details>}
   </div>;
 }
