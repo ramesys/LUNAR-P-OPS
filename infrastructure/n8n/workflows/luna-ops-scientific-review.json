@@ -1,0 +1,748 @@
+{
+  "id": "LunaOpsSciRev001",
+  "name": "LUNA-P/OPS — AI Scientific Review (read-only)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "3d7befe0-886f-5f39-88b6-6641317a4010",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "luna-ops/scientific-review",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "94b88b9d-c52c-5797-89a3-653fe2e3f2f6",
+      "name": "Webhook (POST /luna-ops/scientific-review)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "1afd3a54-6459-5498-8199-888a280be1fd"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8da908a7-5be5-507f-8993-cca0f9edd993",
+              "name": "api_base_url",
+              "value": "http://host.docker.internal:8000",
+              "type": "string"
+            },
+            {
+              "id": "29c665ce-f1b3-507a-afc9-e5bd901c3854",
+              "name": "roi_id",
+              "value": "={{ $json.body?.roi_id ?? 'shackleton-rim-b' }}",
+              "type": "string"
+            },
+            {
+              "id": "470d2e4d-8b2e-51f3-a776-b93f97d21d94",
+              "name": "candidate_ids",
+              "value": "={{ Array.isArray($json.body?.candidate_ids) ? $json.body.candidate_ids : [] }}",
+              "type": "array"
+            },
+            {
+              "id": "688b76b5-3659-53d3-a1f5-7ca9fc35a047",
+              "name": "max_evaluations",
+              "value": "={{ Math.min(Math.max(Number($json.body?.max_evaluations ?? 25) || 25, 1), 60) }}",
+              "type": "number"
+            },
+            {
+              "id": "cfa9a3da-5087-5cc7-a725-12d49b0a272c",
+              "name": "question",
+              "value": "={{ String($json.body?.question ?? '').slice(0, 2000) }}",
+              "type": "string"
+            },
+            {
+              "id": "24cbff8b-a1e4-50e0-ab70-5b501458665a",
+              "name": "trigger",
+              "value": "={{ $json.body ? 'webhook' : 'manual' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "b3917c9a-46b8-56e5-862b-bd63a3d19044",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        100
+      ],
+      "notes": "Edit api_base_url here. Webhook body may set roi_id, candidate_ids, max_evaluations, question.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.api_base_url }}/api/health",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "13afd3f9-9a44-5d20-ba2c-8acc06df7e4b",
+      "name": "LUNA-P/OPS: Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        100
+      ],
+      "notes": "GET /api/health. Stops the run if the API is unreachable.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.api_base_url }}/api/rois/{{ encodeURIComponent($('Config').first().json.roi_id) }}/candidates",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b5194525-71ab-520c-b8b7-994c8e6f34d6",
+      "name": "LUNA-P/OPS: List ROI Root Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "GET /api/rois/{roi_id}/candidates",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Merge ROI root candidates with explicitly requested ids (read-only; nothing is created).\nconst cfg = $('Config').first().json;\nconst SAFE_ID = /^[A-Za-z0-9._:-]{1,200}$/;\nconst seeds = new Map();\nfor (const item of $input.all()) {\n  const id = item.json.candidate_id;\n  if (typeof id === 'string' && SAFE_ID.test(id)) seeds.set(id, 'roi_root:' + cfg.roi_id);\n}\nfor (const id of cfg.candidate_ids ?? []) {\n  if (typeof id === 'string' && SAFE_ID.test(id) && !seeds.has(id)) seeds.set(id, 'request');\n}\nif (seeds.size === 0) return [{ json: { no_candidates: true } }];\nreturn [...seeds].map(([candidate_id, seed_source]) => ({ json: { candidate_id, seed_source } }));\n"
+      },
+      "id": "f46b049c-128c-5852-8fe4-c12f248bd94a",
+      "name": "Seed Candidate IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        100
+      ],
+      "notes": "ROI roots + requested candidate_ids, validated",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e350ecc8-b702-5827-9369-31abb7200d6a",
+              "leftValue": "={{ $json.candidate_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "ca020db0-de64-5ee4-a6c5-5c6c6b1b81e4",
+      "name": "Candidates found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        100
+      ],
+      "notes": "No candidates -> evidence formatter directly",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.api_base_url }}/api/candidates/{{ encodeURIComponent($json.candidate_id) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b11b6298-a455-5fd2-980b-8e0814b61433",
+      "name": "LUNA-P/OPS: Get Candidate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "GET /api/candidates/{id}",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.api_base_url }}/api/candidates/{{ encodeURIComponent($json.candidate_id) }}/children",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "df118aac-6580-51b3-a4a8-1e532a1b8eb3",
+      "name": "LUNA-P/OPS: List Candidate Children",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "GET /api/candidates/{id}/children (lineage)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Unique candidates: requested/root candidates plus their direct children (lineage).\nconst byId = new Map();\nfor (const item of $('LUNA-P/OPS: Get Candidate').all(0)) {\n  const c = item.json;\n  if (c.candidate_id) byId.set(c.candidate_id, { ...c, discovered_via: 'seed' });\n}\nfor (const item of $input.all()) {\n  const c = item.json;\n  if (c.candidate_id && !byId.has(c.candidate_id)) {\n    byId.set(c.candidate_id, { ...c, discovered_via: 'child_of:' + c.parent_candidate_id });\n  }\n}\nreturn [...byId.values()].map((c) => ({ json: c }));\n"
+      },
+      "id": "79e54688-3b07-5cd8-b0c9-711d07b2a6de",
+      "name": "Collect Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ],
+      "notes": "Dedupe roots, requested ids and children",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.api_base_url }}/api/candidates/{{ encodeURIComponent($json.candidate_id) }}/evaluations",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "fcc0a098-1680-5bbb-89b5-aece32ba2155",
+      "name": "LUNA-P/OPS: List Candidate Evaluations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "GET /api/candidates/{id}/evaluations (stored only)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Choose which stored evaluations to review (newest candidate time first, capped).\nconst cfg = $('Config').first().json;\nconst seen = new Map();\nfor (const item of $input.all()) {\n  const e = item.json;\n  if (e.evaluation_id && !seen.has(e.evaluation_id)) {\n    seen.set(e.evaluation_id, {\n      evaluation_id: e.evaluation_id,\n      candidate_id: e.candidate_id,\n      selected_time_utc: e.candidate?.selected_time_utc ?? '',\n    });\n  }\n}\nconst all = [...seen.values()].sort((a, b) => String(b.selected_time_utc).localeCompare(String(a.selected_time_utc)));\nconst chosen = all.slice(0, cfg.max_evaluations);\nif (chosen.length === 0) return [{ json: { no_evaluations: true, evaluations_listed: 0 } }];\nreturn chosen.map((e) => ({ json: { ...e, evaluations_listed: all.length } }));\n"
+      },
+      "id": "a93c607c-bba7-55ee-81e4-f1f93c7138ec",
+      "name": "Select Evaluations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "notes": "Dedupe + cap at max_evaluations",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6ce0a4d9-b7fc-5d7c-b298-923a9ec2d3c7",
+              "leftValue": "={{ $json.evaluation_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "0d06da8a-8aca-5b18-9513-6629bd8384c5",
+      "name": "Evaluations found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2420,
+        0
+      ],
+      "notes": "No stored evaluations -> formatter directly",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.api_base_url }}/api/evaluations/{{ encodeURIComponent($json.evaluation_id) }}/manifest",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "65888df7-eec8-5b96-9d0d-75fd3cf37df4",
+      "name": "LUNA-P/OPS: Get Evaluation Manifest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        -100
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "GET /api/evaluations/{id}/manifest (provenance)",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Scientific Evidence Formatter.\n// Restructures STORED Python outputs from LUNA-P/OPS into a compact evidence pack.\n// It performs no scientific computation: only selection, counts, extrema and unit ratios of\n// stored values, all listed under `n8n_descriptive_summaries`.\nconst cfg = $('Config').first().json;\nconst health = $('LUNA-P/OPS: Health').first().json;\nconst ran = (name) => { try { return $(name).isExecuted; } catch (e) { return false; } };\nconst out = (name, branch = 0) => { try { return ran(name) ? $(name).all(branch) : []; } catch (e) { return []; } };\nconst errMsg = (j) => {\n  const e = j.error ?? j;\n  return String(e?.message ?? e?.description ?? JSON.stringify(e)).slice(0, 300);\n};\nconst pairedJson = (item, sourceNode, branch = 0) => {\n  try {\n    const p = Array.isArray(item.pairedItem) ? item.pairedItem[0] : item.pairedItem;\n    return $(sourceNode).all(branch)[p?.item ?? -1]?.json ?? {};\n  } catch (e) { return {}; }\n};\n\n// ---- Retrieval issues (HTTP error branches) -------------------------------------------\nconst retrieval_issues = [];\nfor (const it of out('LUNA-P/OPS: List ROI Root Candidates', 1)) {\n  if (!cfg.roi_id) continue; // roi_id \"\" = review only the requested candidate_ids\n  retrieval_issues.push({ step: 'list_roi_candidates', roi_id: cfg.roi_id, error: errMsg(it.json) });\n}\nfor (const id of cfg.candidate_ids ?? []) {\n  if (typeof id !== 'string' || !/^[A-Za-z0-9._:-]{1,200}$/.test(id)) {\n    retrieval_issues.push({ step: 'request', error: 'rejected malformed candidate id', value: String(id).slice(0, 80) });\n  }\n}\nconst stepSources = [\n  ['LUNA-P/OPS: Get Candidate', 'get_candidate', 'Candidates found?', 'candidate_id'],\n  ['LUNA-P/OPS: List Candidate Children', 'list_children', 'LUNA-P/OPS: Get Candidate', 'candidate_id'],\n  ['LUNA-P/OPS: List Candidate Evaluations', 'list_evaluations', 'Collect Candidates', 'candidate_id'],\n  ['LUNA-P/OPS: Get Evaluation Manifest', 'get_manifest', 'Evaluations found?', 'evaluation_id'],\n];\nfor (const [node, step, source, key] of stepSources) {\n  for (const it of out(node, 1)) {\n    const ref = pairedJson(it, source)[key];\n    if (ref) retrieval_issues.push({ step, [key]: ref, error: errMsg(it.json) });\n  }\n}\n\n// ---- Candidates ---------------------------------------------------------------------------\nconst candidates = out('Collect Candidates').map((i) => i.json).filter((c) => c.candidate_id);\nconst candidateById = new Map(candidates.map((c) => [c.candidate_id, c]));\nconst listedEvaluationIds = new Set();\nconst candidatesWithEvaluations = new Set();\nfor (const it of out('LUNA-P/OPS: List Candidate Evaluations')) {\n  if (it.json.evaluation_id) {\n    listedEvaluationIds.add(it.json.evaluation_id);\n    candidatesWithEvaluations.add(it.json.candidate_id);\n  }\n}\nconst candidateFacts = (c) => ({\n  candidate_id: c.candidate_id,\n  parent_candidate_id: c.parent_candidate_id ?? null,\n  site_id: c.site_id,\n  terrain_window_id: c.terrain_window_id,\n  latitude_deg: c.latitude_deg,\n  longitude_deg: c.longitude_deg,\n  terrain_elevation_m: c.terrain_elevation_m,\n  observer_height_m: c.observer_height_m,\n  selected_time_utc: c.selected_time_utc,\n  terrain_dataset_id: c.terrain_dataset_id,\n  dem_resolution_m: c.dem_resolution_m,\n  terrain_nodata: c.terrain_nodata,\n  coverage_bounds_m: c.coverage_bounds_m,\n  coordinate_reference: c.coordinate_reference,\n  validation_status: c.validation_status,\n});\n\n// ---- Provenance registry (deduplicated) ---------------------------------------------------\nconst provenance_registry = {};\nconst provKey = new Map();\nconst registerProvenance = (m) => {\n  const p = {\n    algorithm: m.method?.algorithm,\n    method: m.method,\n    spice: { configuration: m.spice?.configuration, moon_radii_m: m.spice?.moon_radii_m, kernel_sha256: m.spice?.kernel_sha256 },\n    terrain: m.terrain,\n    software: m.software,\n    time_sampling: m.interval?.sampling,\n  };\n  const key = JSON.stringify(p);\n  if (!provKey.has(key)) {\n    const id = 'provenance:P' + (provKey.size + 1);\n    provKey.set(key, id);\n    provenance_registry[id] = p;\n  }\n  return provKey.get(key);\n};\n\n// ---- Per-evaluation computed evidence -----------------------------------------------------\nconst finite = (xs) => xs.filter((x) => typeof x === 'number' && Number.isFinite(x));\nconst range = (xs) => { const f = finite(xs); return f.length ? [Math.min(...f), Math.max(...f)] : null; };\nconst round = (x, d = 4) => (typeof x === 'number' && Number.isFinite(x) ? Number(x.toFixed(d)) : x);\n\nconst computed_evidence = [];\nfor (const it of out('LUNA-P/OPS: Get Evaluation Manifest')) {\n  const m = it.json;\n  if (!m.evaluation_id) continue;\n  const o = m.outputs ?? {};\n  const samples = Array.isArray(o.samples) ? o.samples : [];\n  const intervals = o.intervals ?? {};\n  const windowSeconds = (m.request?.duration_hours ?? 0) * 3600;\n  const hz = Array.isArray(o.horizon_elevation_deg) ? o.horizon_elevation_deg : [];\n  const az = Array.isArray(o.horizon_azimuth_deg) ? o.horizon_azimuth_deg : [];\n  let hzMaxIdx = -1;\n  hz.forEach((v, i) => { if (typeof v === 'number' && (hzMaxIdx < 0 || v > hz[hzMaxIdx])) hzMaxIdx = i; });\n  const intervalStats = {};\n  for (const [k, list] of Object.entries(intervals)) {\n    const d = (list ?? []).map((x) => x.duration_seconds);\n    intervalStats[k] = {\n      interval_count: (list ?? []).length,\n      truncated_interval_count: (list ?? []).filter((x) => x.truncated).length,\n      longest_interval_seconds: d.length ? Math.max(...d) : 0,\n    };\n  }\n  const parent = m.parent_candidate;\n  computed_evidence.push({\n    evidence_id: m.evaluation_id,\n    epistemic_label: 'COMPUTED_EVIDENCE',\n    provenance_ref: registerProvenance(m),\n    candidate: candidateFacts(m.candidate ?? {}),\n    candidate_snapshot_sha256: m.candidate_ref?.snapshot_sha256 ?? null,\n    lineage: m.parent_candidate_id\n      ? {\n          parent_candidate_id: m.parent_candidate_id,\n          parent_available: Boolean(parent),\n          changes_from_parent: parent\n            ? Object.fromEntries(\n                ['observer_height_m', 'selected_time_utc', 'latitude_deg', 'longitude_deg', 'terrain_window_id']\n                  .filter((f) => JSON.stringify(parent[f]) !== JSON.stringify(m.candidate?.[f]))\n                  .map((f) => [f, { parent: parent[f], child: m.candidate?.[f] }]),\n              )\n            : null,\n        }\n      : null,\n    request: m.request,\n    time_window: { start_utc: m.interval?.start_utc, end_utc: m.interval?.end_utc, step_minutes: m.interval?.step_minutes, sample_count: m.interval?.sample_count },\n    status: m.status,\n    python_outputs: {\n      visible_seconds: o.visible_seconds ?? null,\n      output_sha256: o.output_sha256 ?? null,\n      horizon_sample_count: o.horizon_sample_count ?? hz.length,\n    },\n    n8n_descriptive_summaries: {\n      note: 'Counts, extrema and unit ratios of stored Python outputs; not new scientific computation.',\n      visible_fraction_of_window: windowSeconds > 0 && o.visible_seconds\n        ? Object.fromEntries(Object.entries(o.visible_seconds).map(([k, v]) => [k, round(v / windowSeconds)]))\n        : null,\n      intervals: intervalStats,\n      samples_visible_count: {\n        sun: samples.filter((s) => s.sun_visible).length,\n        earth: samples.filter((s) => s.earth_visible).length,\n        simultaneous: samples.filter((s) => s.simultaneous_visible).length,\n        total: samples.length,\n      },\n      sun_elevation_deg_range: range(samples.map((s) => s.sun_elevation_deg)),\n      earth_elevation_deg_range: range(samples.map((s) => s.earth_elevation_deg)),\n      sun_azimuth_deg_range: range(samples.map((s) => s.sun_azimuth_deg)),\n      terrain_horizon_elevation_deg: hz.length\n        ? { min: Math.min(...finite(hz)), max: hz[hzMaxIdx], azimuth_of_max_deg: az[hzMaxIdx] ?? null }\n        : null,\n    },\n    consistency: m.consistency,\n    not_recorded: m.not_recorded ?? [],\n  });\n}\n\nconst evaluatedIds = new Set(computed_evidence.map((e) => e.candidate.candidate_id));\nconst candidates_without_evaluations = candidates\n  .filter((c) => !candidatesWithEvaluations.has(c.candidate_id))\n  .map((c) => ({ ...candidateFacts(c), epistemic_label: 'COMPUTED_EVIDENCE', discovered_via: c.discovered_via }));\n\nconst evidence_pack = {\n  schema_version: 'luna-ops-evidence-pack/1',\n  assembled_at_utc: new Date().toISOString(),\n  source: {\n    system: 'LUNA-P/OPS FastAPI (Python scientific authority)',\n    api_base_url: cfg.api_base_url,\n    api_version: health.api_version,\n    lunar_core_version: health.lunar_core_version,\n    access: 'read-only HTTP GET of stored records',\n    endpoints: [\n      'GET /api/health',\n      'GET /api/rois/{roi_id}/candidates',\n      'GET /api/candidates/{id}',\n      'GET /api/candidates/{id}/children',\n      'GET /api/candidates/{id}/evaluations',\n      'GET /api/evaluations/{id}/manifest',\n    ],\n  },\n  request: { trigger: cfg.trigger, roi_id: cfg.roi_id, candidate_ids: cfg.candidate_ids, max_evaluations: cfg.max_evaluations, question: cfg.question || null },\n  scope: {\n    candidates_found: candidates.length,\n    candidates_with_stored_evaluations: candidatesWithEvaluations.size,\n    evaluations_listed: listedEvaluationIds.size,\n    evaluations_included: computed_evidence.length,\n    evaluations_omitted_by_cap: Math.max(listedEvaluationIds.size - computed_evidence.length, 0),\n    candidates_reviewed_via_evaluations: evaluatedIds.size,\n  },\n  provenance_registry,\n  computed_evidence,\n  candidates_without_evaluations,\n  not_in_evaluation_records: [\n    'DEM slope, roughness and terrain-hazard screening (only available by running GET /api/candidates/{id}/terrain-screen, a new Python computation not performed here)',\n    'Mission constraints / brush thresholds (stored only with brush experiments, not with evaluations)',\n    'Independent validation (all records are COMPUTED_UNVERIFIED unless status says VALIDATED)',\n    'Power, thermal, communication link-budget and landing-safety analyses (outside LUNA-P/OPS scope)',\n  ],\n  retrieval_issues,\n  epistemic_labels: {\n    COMPUTED_EVIDENCE: 'Values produced and stored by the LUNA-P/OPS Python pipeline, passed through unchanged.',\n    AI_INTERPRETATION: 'Model reasoning over COMPUTED_EVIDENCE; not a measurement.',\n    UNVERIFIED_SUGGESTION: 'Proposed next step; not executed, not validated.',\n  },\n};\n\nconst known_refs = [\n  ...computed_evidence.map((e) => e.evidence_id),\n  ...candidates.map((c) => c.candidate_id),\n  ...Object.keys(provenance_registry),\n  'pack.scope', 'pack.candidates_without_evaluations', 'pack.not_in_evaluation_records', 'pack.retrieval_issues', 'pack.source',\n];\nreturn [{ json: { evidence_pack, has_computed_evidence: computed_evidence.length > 0 ? 'yes' : null, known_refs } }];\n"
+      },
+      "id": "e6c7d4e0-be22-5039-bbf7-765dc1927b53",
+      "name": "Scientific Evidence Formatter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        100
+      ],
+      "notes": "Compact, labeled evidence pack. No new science.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e8e8c35f-5592-546e-81a4-bfd6ebe57129",
+              "leftValue": "={{ $json.has_computed_evidence }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "c0aa5350-be0e-5c82-a8ea-38bb0ce02342",
+      "name": "Computed evidence available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3080,
+        100
+      ],
+      "notes": "No stored evaluations -> deterministic report, no AI call",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'Review the LUNA-P/OPS evidence pack below. Identify scientific limitations, missing evidence and potential improvements, and propose next actions without executing them.\\n\\nRequester focus question: ' + ($json.evidence_pack.request.question || 'none (general review)') + '\\n\\nEVIDENCE PACK (JSON, authoritative):\\n' + JSON.stringify($json.evidence_pack) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a lunar scientific research assistant reviewing outputs of LUNA-P/OPS, a south-polar landing-site exploration tool. LUNA-P/OPS's Python pipeline (SPICE ephemerides + NASA LOLA DEMs) is the sole scientific computation authority. You interpret its stored results; you never compute, simulate or invent new results.\n\nEVIDENCE RULES\n1. Use only the evidence pack in the user message. Every number you state must appear in the pack (unit conversions such as seconds to hours or fractions to percent are allowed and must be stated as conversions). Never invent measurements, coordinates, slopes, roughness, hazard data, illumination or link values.\n2. Cite evidence with exact ids from the pack in evidence_refs: evaluation ids, candidate ids, provenance ids (provenance:P1, ...), or pack sections (pack.scope, pack.candidates_without_evaluations, pack.not_in_evaluation_records, pack.retrieval_issues, pack.source). Do not cite anything else.\n3. If evidence is absent, say so and list it under missing_evidence. Do not fill gaps with assumptions or typical values from literature.\n4. Label each statement: basis COMPUTED_EVIDENCE only when restating a value from the pack; AI_INTERPRETATION for your reasoning about it; recommendations are AI_INTERPRETATION or UNVERIFIED_SUGGESTION.\n5. Respect the pack's own caveats: COMPUTED_UNVERIFIED means numerically computed and not independently validated; geometric Earth visibility is not communication performance; sunlight visibility is not a power analysis; horizon sampling can miss unsampled terrain; transitions are uncertain up to one time step; truncated intervals are cut by the analysis window.\n6. n8n_descriptive_summaries are counts/extrema/ratios of stored values, not independent measurements.\n\nSAFETY RULES\n- Never state or imply that a site is safe to land, certified, validated or mission-ready. LUNA-P/OPS provides coarse screening and geometric visibility only.\n- Sun/Earth visibility over a short window does not characterise seasonal or long-term illumination.\n- Absence of terrain slope/roughness/hazard data in the pack means terrain safety is NOT ASSESSED.\n\nWHAT TO PRODUCE\n- Scientific limitations of the current evidence (time window length, step size, horizon resolution, DEM resolution, lineage coverage, missing validation, missing records).\n- Missing evidence needed for stronger conclusions, and where it could come from.\n- Possible improvements and next actions. Map each to an existing LUNA-P/OPS capability where one exists: evaluate a candidate over a longer window (POST /api/candidates/{id}/evaluations, duration_hours <= 168, step_minutes 1-360), evolve a candidate (observer height / time), coarse terrain screen (GET /api/candidates/{id}/terrain-screen), reproducibility check (POST /api/evaluations/{id}/recompute), region sampling (brush preview/execute in shackleton-rim-b). Otherwise mark it as outside LUNA-P/OPS. Nothing you recommend is executed; set executed=false and requires_new_python_computation=true whenever new numbers would be produced.\n\nOUTPUT\nReturn only JSON matching the required schema. Be concise, specific and evidence-referenced. Prefer fewer well-supported findings over many speculative ones.",
+          "maxIterations": 3,
+          "enableStreaming": false
+        }
+      },
+      "id": "966cb498-0169-5204-9d07-92bb010be92d",
+      "name": "AI Agent: Lunar Science Reviewer",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3320,
+        0
+      ],
+      "notes": "No tools attached: the agent cannot call APIs or execute anything.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "model": "",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "13a76632-5bf1-588c-b664-c62ccc910c5c",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        3240,
+        260
+      ],
+      "notes": "Select your OpenRouter credential and model here.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\n    \"summary\",\n    \"evidence_assessment\",\n    \"findings\",\n    \"limitations\",\n    \"missing_evidence\",\n    \"recommendations\",\n    \"safety_statement\"\n  ],\n  \"properties\": {\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"2-4 sentence overview grounded in the pack\"\n    },\n    \"evidence_assessment\": {\n      \"type\": \"object\",\n      \"required\": [\n        \"overall_strength\",\n        \"evaluations_reviewed\",\n        \"rationale\"\n      ],\n      \"properties\": {\n        \"overall_strength\": {\n          \"type\": \"string\",\n          \"enum\": [\n            \"insufficient\",\n            \"limited\",\n            \"moderate\",\n            \"strong\"\n          ]\n        },\n        \"evaluations_reviewed\": {\n          \"type\": \"integer\"\n        },\n        \"rationale\": {\n          \"type\": \"string\"\n        }\n      }\n    },\n    \"findings\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"finding_id\",\n          \"category\",\n          \"statement\",\n          \"basis\",\n          \"evidence_refs\",\n          \"confidence\"\n        ],\n        \"properties\": {\n          \"finding_id\": {\n            \"type\": \"string\"\n          },\n          \"category\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"sun_visibility\",\n              \"earth_visibility\",\n              \"simultaneous_visibility\",\n              \"terrain\",\n              \"lineage\",\n              \"provenance\",\n              \"data_coverage\",\n              \"methodology\"\n            ]\n          },\n          \"statement\": {\n            \"type\": \"string\"\n          },\n          \"basis\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"COMPUTED_EVIDENCE\",\n              \"AI_INTERPRETATION\"\n            ]\n          },\n          \"evidence_refs\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"string\"\n            }\n          },\n          \"confidence\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"low\",\n              \"medium\",\n              \"high\"\n            ]\n          }\n        }\n      }\n    },\n    \"limitations\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"limitation\",\n          \"impact\",\n          \"evidence_refs\"\n        ],\n        \"properties\": {\n          \"limitation\": {\n            \"type\": \"string\"\n          },\n          \"impact\": {\n            \"type\": \"string\"\n          },\n          \"evidence_refs\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"string\"\n            }\n          }\n        }\n      }\n    },\n    \"missing_evidence\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"item\",\n          \"why_it_matters\",\n          \"possible_source\"\n        ],\n        \"properties\": {\n          \"item\": {\n            \"type\": \"string\"\n          },\n          \"why_it_matters\": {\n            \"type\": \"string\"\n          },\n          \"possible_source\": {\n            \"type\": \"string\"\n          }\n        }\n      }\n    },\n    \"recommendations\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"recommendation_id\",\n          \"title\",\n          \"rationale\",\n          \"basis\",\n          \"evidence_refs\",\n          \"priority\",\n          \"proposed_action\",\n          \"luna_ops_capability\",\n          \"requires_new_python_computation\",\n          \"executed\"\n        ],\n        \"properties\": {\n          \"recommendation_id\": {\n            \"type\": \"string\"\n          },\n          \"title\": {\n            \"type\": \"string\"\n          },\n          \"rationale\": {\n            \"type\": \"string\"\n          },\n          \"basis\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"AI_INTERPRETATION\",\n              \"UNVERIFIED_SUGGESTION\"\n            ]\n          },\n          \"evidence_refs\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"string\"\n            }\n          },\n          \"priority\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"high\",\n              \"medium\",\n              \"low\"\n            ]\n          },\n          \"proposed_action\": {\n            \"type\": \"string\"\n          },\n          \"luna_ops_capability\": {\n            \"type\": \"string\",\n            \"description\": \"Existing endpoint/feature, or 'outside LUNA-P/OPS'\"\n          },\n          \"requires_new_python_computation\": {\n            \"type\": \"boolean\"\n          },\n          \"executed\": {\n            \"type\": \"boolean\",\n            \"enum\": [\n              false\n            ]\n          }\n        }\n      }\n    },\n    \"safety_statement\": {\n      \"type\": \"string\"\n    }\n  }\n}"
+      },
+      "id": "abaefc68-cd8e-5773-81d7-eed96c921810",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        3480,
+        260
+      ],
+      "notes": "JSON schema for the review.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Scientific Recommendations: separate computed evidence, AI interpretation and unverified\n// suggestions, and check the AI output against the evidence pack. Nothing is executed.\nconst pack = $('Scientific Evidence Formatter').first().json;\nconst known = new Set(pack.known_refs);\nconst ai = $input.first().json.output ?? {};\n\n// Every number present in the evidence pack, plus common unit conversions and collection sizes.\nconst evidenceNumbers = [];\nconst walk = (v) => {\n  if (typeof v === 'number' && Number.isFinite(v)) evidenceNumbers.push(v, v / 3600, v / 60, v * 100, v / 86400, v / 1000);\n  else if (Array.isArray(v)) { evidenceNumbers.push(v.length); v.forEach(walk); }\n  else if (v && typeof v === 'object') { evidenceNumbers.push(Object.keys(v).length); Object.values(v).forEach(walk); }\n};\nwalk(pack.evidence_pack.computed_evidence);\nwalk(pack.evidence_pack.candidates_without_evaluations);\nwalk(pack.evidence_pack.scope);\nwalk(pack.evidence_pack.provenance_registry);\nconst decimals = (s) => (s.includes('.') ? s.split('.')[1].length : 0);\nconst numberSupported = (s) => {\n  const x = Number(s);\n  const tol = 0.5 * Math.pow(10, -decimals(s)) + 1e-9;\n  return evidenceNumbers.some((v) => Math.abs(Math.abs(v) - Math.abs(x)) <= Math.max(tol, Math.abs(x) * 0.005));\n};\nconst unsupportedNumbers = (text) => {\n  const cleaned = String(text ?? '')\n    .replace(/\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?/g, ' ')        // ISO dates/times\n    .replace(/[A-Za-z_]+[-:][A-Za-z0-9_-]*\\d[A-Za-z0-9_-]*/g, ' ') // ids like candidate-..., provenance:P1\n    .replace(/\\bSHA-?\\d+\\b/gi, ' ')                            // hash algorithm names\n    .replace(/\\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,}\\b/gi, ' ')      // hashes / commit ids (hex with a letter)\n    .replace(/\\b(?=\\w*_)(?=\\w*\\d)\\w+\\b/g, ' ')                 // identifiers with underscores: LDEM_80S_20MPP_ADJ\n    .replace(/\\b[A-Za-z]\\w*\\d\\w*\\b/g, ' ');                    // identifiers like P1, DE421 (numbers+units like 168h are kept)\n  return [...new Set((cleaned.match(/\\d+(?:\\.\\d+)?/g) ?? []).filter((n) => !numberSupported(n)))];\n};\n\nconst checks = { unresolved_refs: [], numbers_not_found_in_evidence: [], terrain_values_without_terrain_data: [], downgraded_to_interpretation: [], forced_not_executed: [] };\n// The evidence pack never carries slope/roughness/hazard values, so any such quantity is unsupported.\nconst TERRAIN_VALUE = /\\b(slopes?|roughness|boulders?|rocks?|hazards?|craters?|relief)\\b[^.;]{0,40}?\\d|\\d[^.;]{0,25}?\\b(slopes?|roughness|boulders?|rocks?|hazards?|craters?)\\b/i;\nconst checkRefs = (where, refs) => {\n  const bad = (refs ?? []).filter((r) => !known.has(r));\n  if (bad.length) checks.unresolved_refs.push({ where, refs: bad });\n  return bad.length === 0;\n};\nconst checkNumbers = (where, text) => {\n  const bad = unsupportedNumbers(text);\n  if (bad.length) checks.numbers_not_found_in_evidence.push({ where, numbers: bad });\n  const terrain = TERRAIN_VALUE.test(String(text ?? '').replace(/\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?/g, ' '));\n  if (terrain) checks.terrain_values_without_terrain_data.push(where);\n  return bad.length === 0 && !terrain;\n};\n\nconst findings = (ai.findings ?? []).map((f) => {\n  const refsOk = checkRefs('finding ' + f.finding_id, f.evidence_refs);\n  const numsOk = checkNumbers('finding ' + f.finding_id, f.statement);\n  let basis = f.basis;\n  if (basis === 'COMPUTED_EVIDENCE' && (!refsOk || !numsOk || !(f.evidence_refs ?? []).length)) {\n    basis = 'AI_INTERPRETATION';\n    checks.downgraded_to_interpretation.push(f.finding_id);\n  }\n  return { ...f, basis, evidence_check: refsOk && numsOk ? 'refs_and_numbers_found_in_pack' : 'needs_human_check' };\n});\nconst limitations = (ai.limitations ?? []).map((l, i) => {\n  const refsOk = checkRefs('limitation ' + (i + 1), l.evidence_refs);\n  const numsOk = checkNumbers('limitation ' + (i + 1), l.limitation + ' ' + l.impact);\n  const ok = refsOk && numsOk;\n  return { ...l, epistemic_label: 'AI_INTERPRETATION', evidence_check: ok ? 'ok' : 'needs_human_check' };\n});\nconst recommendations = (ai.recommendations ?? []).map((r) => {\n  checkRefs('recommendation ' + r.recommendation_id, r.evidence_refs);\n  if (r.executed !== false) checks.forced_not_executed.push(r.recommendation_id);\n  return { ...r, epistemic_label: 'UNVERIFIED_SUGGESTION', executed: false, status: 'proposed_requires_human_approval' };\n});\ncheckNumbers('summary', ai.summary);\ncheckNumbers('safety_statement', ai.safety_statement);\n\nconst SAFETY = 'LUNA-P/OPS provides numerically computed geometric Sun/Earth visibility and coarse DEM screening only. ' +\n  'Nothing in this review certifies landing safety, validates a site, or replaces independent analysis.';\n\nreturn [{\n  json: {\n    schema_version: 'luna-ops-ai-review/1',\n    generated_at_utc: new Date().toISOString(),\n    read_only: true,\n    actions_executed: [],\n    computed_evidence: {\n      epistemic_label: 'COMPUTED_EVIDENCE',\n      authority: 'LUNA-P/OPS Python pipeline (stored records, retrieved read-only)',\n      scope: pack.evidence_pack.scope,\n      source: pack.evidence_pack.source,\n      evidence_pack: pack.evidence_pack,\n    },\n    ai_interpretation: {\n      epistemic_label: 'AI_INTERPRETATION',\n      summary: ai.summary,\n      evidence_assessment: ai.evidence_assessment,\n      findings,\n      limitations,\n      missing_evidence: (ai.missing_evidence ?? []).map((m) => ({ ...m, epistemic_label: 'AI_INTERPRETATION' })),\n    },\n    unverified_suggestions: {\n      epistemic_label: 'UNVERIFIED_SUGGESTION',\n      note: 'Proposed only. Any new computation must be run in LUNA-P/OPS (Python) after human review.',\n      recommendations,\n    },\n    safety_statement: { fixed: SAFETY, ai: ai.safety_statement ?? null },\n    output_checks: {\n      ...checks,\n      passed: checks.unresolved_refs.length === 0 && checks.numbers_not_found_in_evidence.length === 0 &&\n        checks.terrain_values_without_terrain_data.length === 0,\n      method: 'Heuristic: cited ids must exist in the pack; numbers must match some pack value (or s/min/h/day/km/% conversion, or a count) at stated precision; ' +\n        'any slope/roughness/hazard quantity is flagged because the pack has no terrain-screen data. A number matching the pack does not prove a range or comparison is correct.',\n    },\n  },\n}];\n"
+      },
+      "id": "34cf031b-cfc4-5cf3-acd4-a334aa7398d8",
+      "name": "Scientific Recommendations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3700,
+        0
+      ],
+      "notes": "Labels + evidence checks. Proposes, never executes.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Deterministic report when no stored evaluation exists: no AI call, nothing executed.\nconst pack = $input.first().json.evidence_pack;\nconst pending = pack.candidates_without_evaluations.map((c) => ({\n  recommendation_id: 'R-eval-' + c.candidate_id.slice(-8),\n  title: 'Candidate has no stored Sun/Earth visibility evaluation',\n  epistemic_label: 'UNVERIFIED_SUGGESTION',\n  proposed_action: 'A person may run POST /api/candidates/' + c.candidate_id + '/evaluations in LUNA-P/OPS.',\n  luna_ops_capability: 'POST /api/candidates/{id}/evaluations',\n  requires_new_python_computation: true,\n  executed: false,\n  status: 'proposed_requires_human_approval',\n}));\nreturn [{\n  json: {\n    schema_version: 'luna-ops-ai-review/1',\n    generated_at_utc: new Date().toISOString(),\n    read_only: true,\n    actions_executed: [],\n    ai_called: false,\n    reason: 'No stored evaluations were retrieved, so there is no computed evidence to interpret.',\n    computed_evidence: { epistemic_label: 'COMPUTED_EVIDENCE', scope: pack.scope, evidence_pack: pack },\n    unverified_suggestions: { epistemic_label: 'UNVERIFIED_SUGGESTION', recommendations: pending },\n    retrieval_issues: pack.retrieval_issues,\n  },\n}];\n"
+      },
+      "id": "ba746f66-a4fd-5f8d-869e-c7e44cac1290",
+      "name": "No Evidence Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3320,
+        420
+      ],
+      "notes": "Deterministic; no AI call",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "content": "## LUNA-P/OPS — AI Scientific Review (read-only)\n**Python (LUNA-P/OPS) is the scientific authority.** n8n only orchestrates and asks an AI to interpret stored results.\n\n- Only HTTP **GET** of stored records (health, candidates, children, evaluations, manifests).\n- No candidate creation, evaluation, recompute, brush execution, terrain screening or DB writes.\n- The AI Agent has **no tools**: it cannot call APIs or run anything.\n- Output separates **COMPUTED_EVIDENCE**, **AI_INTERPRETATION** and **UNVERIFIED_SUGGESTION**, and checks cited ids/numbers against the evidence pack.\n\nAPI base URL: edit the **Config** node (default `http://host.docker.internal:8000`, the dev stack's host port).",
+        "height": 360,
+        "width": 700,
+        "color": 5
+      },
+      "id": "391bf35c-85b4-5392-8161-48787d312e80",
+      "name": "Note: Read-only contract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Configure before first run\n1. Open **OpenRouter Chat Model** → Credential → *Create new* → paste your OpenRouter API key (stored encrypted in the n8n volume, never in Git).\n2. Pick a **model** that follows JSON instructions well.\n3. Optional: Options → Provider Routing → Data Collection = *deny*.\n\nWebhook body (all optional):\n`{\"roi_id\": \"shackleton-rim-b\", \"candidate_ids\": [], \"max_evaluations\": 25, \"question\": \"...\"}`",
+        "height": 300,
+        "width": 560,
+        "color": 3
+      },
+      "id": "44fd65ef-0b1c-5fa8-9283-712098f316a0",
+      "name": "Note: Configure OpenRouter",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3180,
+        -420
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (POST /luna-ops/scientific-review)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: Health": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: List ROI Root Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: List ROI Root Candidates": {
+      "main": [
+        [
+          {
+            "node": "Seed Candidate IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Candidate IDs": {
+      "main": [
+        [
+          {
+            "node": "Candidates found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidates found?": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: Get Candidate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scientific Evidence Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: Get Candidate": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: List Candidate Children",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: List Candidate Children": {
+      "main": [
+        [
+          {
+            "node": "Collect Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Candidates": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: List Candidate Evaluations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: List Candidate Evaluations": {
+      "main": [
+        [
+          {
+            "node": "Select Evaluations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Evaluations": {
+      "main": [
+        [
+          {
+            "node": "Evaluations found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluations found?": {
+      "main": [
+        [
+          {
+            "node": "LUNA-P/OPS: Get Evaluation Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Scientific Evidence Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LUNA-P/OPS: Get Evaluation Manifest": {
+      "main": [
+        [
+          {
+            "node": "Scientific Evidence Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scientific Evidence Formatter": {
+      "main": [
+        [
+          {
+            "node": "Computed evidence available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Computed evidence available?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent: Lunar Science Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Evidence Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent: Lunar Science Reviewer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent: Lunar Science Reviewer",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent: Lunar Science Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Scientific Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

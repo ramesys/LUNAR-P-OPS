@@ -1,0 +1,52 @@
+# Local n8n for LUNA-P/OPS orchestration and AI-assisted interpretation (read-only).
+#   docker compose -f infrastructure/n8n/docker-compose.n8n.yml up -d --wait   (or: make n8n-up)
+# Separate compose project: it never starts, stops or rebuilds the LUNA-P/OPS stack.
+# The API is reached through the host port the dev stack publishes (8000), so this works
+# whether or not the dev stack is running; requests simply fail until it is.
+# Credentials (OpenRouter key, n8n encryption key, owner account) live only in the named
+# volume below, never in this repository.
+name: luna-ops-n8n
+
+services:
+  n8n:
+    image: n8nio/n8n:2.38.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+      WEBHOOK_URL: http://localhost:5678/
+      # Plain HTTP on localhost only; the port is not published beyond 127.0.0.1.
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: UTC
+      TZ: UTC
+      DB_TYPE: sqlite
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+    extra_hosts:
+      # Docker Desktop provides this name already; the mapping makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows:ro
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:5678/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  n8n_data:
+    name: luna-ops-n8n-data
