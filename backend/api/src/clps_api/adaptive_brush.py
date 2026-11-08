@@ -1,9 +1,26 @@
-"""Deterministic selection on a polygon-clipped lattice, using computed evidence only."""
+"""Deterministic selection on a polygon-clipped lattice, using computed evidence only.
 
+Without a terrain context the policy is the visibility-only Experiment A policy. With one
+(Experiment B), lattice points whose DEM terrain screen FAILs are never proposed, terrain metric
+differences between parents count as evidence, and ties near a proposed location go to the
+point with the larger terrain margin. Points whose terrain is NOT_ASSESSED stay eligible but rank
+after assessed ones.
+"""
+
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import dist
 
 Point = tuple[float, float]
+
+
+@dataclass(frozen=True)
+class TerrainScore:
+    """DEM terrain screen of one lattice point, computed before any evaluation there."""
+
+    verdict: str
+    margin: float | None
+    screen_id: str
 
 
 @dataclass(frozen=True)
@@ -19,6 +36,9 @@ class Evidence:
     earth_gap_fraction: float = 0.0
     constraint_margin: float | None = None
     horizon_proximity: float = 0.0
+    terrain_values: tuple[float, ...] = ()
+    """Normalized terrain metrics (value / limit); empty for visibility-only evidence."""
+    terrain_screen_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +48,7 @@ class Refinement:
     parent_evaluation_ids: tuple[str, ...]
     reason: str
     priority: str
+    parent_terrain_screen_ids: tuple[str, ...] = ()
 
 
 def choose_seeds(pool: list[Point], count: int) -> list[Point]:
@@ -43,12 +64,56 @@ def choose_seeds(pool: list[Point], count: int) -> list[Point]:
 
 
 def choose_refinement(
-    pool: list[Point], evidence: list[Evidence], used: set[Point]
+    pool: list[Point],
+    evidence: list[Evidence],
+    used: set[Point],
+    terrain: Mapping[Point, TerrainScore] | None = None,
 ) -> Refinement | None:
-    available = sorted(set(pool) - used)
+    unattempted = sorted(set(pool) - used)
+    available = (
+        unattempted
+        if terrain is None
+        else [p for p in unattempted if p in terrain and terrain[p].verdict != "FAIL"]
+    )
     if not available or not evidence:
         return None
     ordered = sorted(evidence, key=lambda e: (e.point, e.evaluation_id))
+    choice = _choose(available, ordered, used, terrain)
+    if terrain is None:
+        return choice
+    score = terrain[choice.point]
+    excluded = len(unattempted) - len(available)
+    margin = "not assessed" if score.margin is None else f"{score.margin:.3g}"
+    return Refinement(
+        choice.point,
+        choice.parent_candidate_ids,
+        choice.parent_evaluation_ids,
+        f"{choice.reason}; terrain pre-screen excluded {excluded} of {len(unattempted)} "
+        f"unattempted lattice points (LandingZoneScreen FAIL)",
+        f"{choice.priority}; selected point terrain {score.verdict}, margin {margin}",
+        (
+            *(
+                e.terrain_screen_id
+                for e in ordered
+                if e.evaluation_id in choice.parent_evaluation_ids and e.terrain_screen_id
+            ),
+            score.screen_id,
+        ),
+    )
+
+
+def _choose(
+    available: list[Point],
+    ordered: list[Evidence],
+    used: set[Point],
+    terrain: Mapping[Point, TerrainScore] | None,
+) -> Refinement:
+    def terrain_rank(p: Point) -> tuple[int, float]:
+        if terrain is None:
+            return (0, 0.0)
+        m = terrain[p].margin
+        return (1, 0.0) if m is None else (0, -m)
+
     # Reserve every third post-seed proposal for spatial coverage, including failed
     # attempts in the coverage set so unavailable locations are not repeatedly tried.
     if len(used) >= 6 and (len(used) - 4) % 3 == 2:
@@ -69,6 +134,7 @@ def choose_refinement(
             abs(a.earth_fraction - b.earth_fraction),
             abs(a.darkness_fraction - b.darkness_fraction),
             abs(a.earth_gap_fraction - b.earth_gap_fraction),
+            *(abs(x - y) for x, y in zip(a.terrain_values, b.terrain_values, strict=False)),
         )
 
     def margin_distance(a: Evidence, b: Evidence) -> float:
@@ -91,10 +157,14 @@ def choose_refinement(
         proximity = max(a.horizon_proximity, b.horizon_proximity)
         if a.passes != b.passes or difference(a, b) > 0 or margin <= 0.1 or proximity >= 0.5:
             midpoint = ((a.point[0] + b.point[0]) / 2, (a.point[1] + b.point[1]) / 2)
-            point = min(available, key=lambda p: (dist(p, midpoint), p))
+            point = min(available, key=lambda p: (dist(p, midpoint), terrain_rank(p), p))
             if dist(point, midpoint) <= dist(a.point, b.point) / 2:
                 reason = (
-                    "different computed verdicts or visibility/gap metrics"
+                    (
+                        "different computed verdicts or visibility/gap/terrain metrics"
+                        if terrain is not None
+                        else "different computed verdicts or visibility/gap metrics"
+                    )
                     if a.passes != b.passes or difference(a, b) > 0
                     else "near an active constraint margin or sampled horizon"
                 )

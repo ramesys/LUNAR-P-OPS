@@ -100,7 +100,7 @@ it("compares exact UTC samples across region results without a write", async ():
   const region: BrushRegion | undefined = store.getState().regions[0];
   if (region === undefined) throw new Error("region missing");
   const sample: BrushSample = { east_m: 0, north_m: 0, status: "READY" as const, candidate_id: "c0", already_persisted: true,
-    iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [] };
+    iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [], parent_terrain_screen_ids: [] };
   const shifted: ScientificEvaluation = { ...roiEvaluation, evaluation_id: "shifted", samples: roiEvaluation.samples.map((s) => ({ ...s, time_utc: "2026-11-07T00:30:00Z" })) };
   store.dispatch({ type: "region-execution", regionId: "region", revision: region.revision, execution: {
     schema_version: "lunar-ops-brush/1", preview: { definition: definitionOf(region), coordinate_reference: "", alignment: "", tolerance_m: 0,

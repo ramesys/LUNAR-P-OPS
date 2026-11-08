@@ -5,7 +5,7 @@ import type { JSX } from "react";
 import { evaluation } from "../lib/testFixtures.ts";
 import type { BrushOverlay } from "../lib/brushTypes.ts";
 import { createExplorationStore, ExplorationContext, type ExplorationStore } from "../lib/explorationStore.ts";
-import { ConstraintBrush, definitionForPreview } from "./ConstraintBrush.tsx";
+import { ConstraintBrush, defaultParams, definitionForPreview, definitionOf } from "./ConstraintBrush.tsx";
 
 function fakeApi(calls: string[]): ApiClient {
   let stored: unknown = null;
@@ -16,7 +16,7 @@ function fakeApi(calls: string[]): ApiClient {
     const body: Record<string, unknown> = await request.json() as Record<string, unknown>;
     const definition: BrushDefinition = (path.endsWith("/preview") ? body : body["definition"]) as BrushDefinition;
     const sample: BrushSample = { east_m: 0, north_m: 0, latitude_deg: -89.5, longitude_deg: 56, elevation_m: -28,
-      candidate_id: "c0", status: "READY", already_persisted: false, error: null, iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [] };
+      candidate_id: "c0", status: "READY", already_persisted: false, error: null, iteration: 0, parent_candidate_ids: [], parent_evaluation_ids: [], parent_terrain_screen_ids: [] };
     const preview: BrushPreview = { definition, coordinate_reference: "MOON_ME", alignment: "ROI origin", tolerance_m: 1e-7,
       samples: [sample], ready_count: 1, new_count: 1, existing_count: 0, temporal_samples_per_point: 2, estimated_total_samples: 2, preview_token: "preview-token" };
     if (path.endsWith("/preview")) return Response.json(preview);
@@ -166,8 +166,24 @@ it("restores a saved adaptive experiment by ID without a write", async (): Promi
 
 it("reuses the stored definition exactly when previewing an unchanged restored experiment", (): void => {
   const definition: BrushDefinition = { polygon: [], spacing_m: 100, max_points: 5, observer_height_m: 3,
-    start_utc: "2026-11-07T00:00:00Z", duration_hours: 6, step_minutes: 60, retention: "all", sampling: "adaptive",
+    start_utc: "2026-11-07T00:00:00Z", duration_hours: 6, step_minutes: 60, retention: "all", sampling: "adaptive", evidence: "visibility",
     constraints: { min_sun_fraction: 0.12345678912345678, min_earth_fraction: 0, min_simultaneous_fraction: 0, max_darkness_hours: null, max_earth_gap_hours: null } };
   const region: Parameters<typeof definitionForPreview>[0] = { execution: { preview: { definition } } } as unknown as Parameters<typeof definitionForPreview>[0];
   expect(definitionForPreview(region)).toBe(definition);
+});
+
+it("sends terrain limits and the selected refinement evidence only when terrain screening is on", (): void => {
+  const base: Parameters<typeof definitionOf>[0] = { id: "r", number: 1, vertices: [], closed: true, revision: 0, preview: null, execution: null,
+    params: defaultParams("2026-11-07T00:00:00Z") };
+  const off: ReturnType<typeof definitionOf> = definitionOf(base);
+  expect(off.terrain).toBeNull();
+  expect(off.evidence).toBe("visibility");
+  const on: ReturnType<typeof definitionOf> = definitionOf({ ...base, params: { ...base.params, terrain_enabled: true, evidence: "visibility_terrain",
+    max_relief_m: "", max_roughness_rms_m: "2.5", min_coverage_pct: 90 } });
+  expect(on.evidence).toBe("visibility_terrain");
+  // An empty limit is sent as "not checked", never as a permissive number.
+  expect(on.terrain).toEqual({ neighborhood_radius_m: 100, max_local_slope_deg: 12, max_neighborhood_slope_deg: 12, max_roughness_rms_m: 2.5,
+    max_relief_m: null, min_coverage_fraction: 0.9 });
+  // Terrain evidence requires adaptive sampling: the uniform benchmark always runs as Experiment A.
+  expect(definitionOf({ ...base, params: { ...base.params, terrain_enabled: true, evidence: "visibility_terrain", sampling: "grid" } }).evidence).toBe("visibility");
 });

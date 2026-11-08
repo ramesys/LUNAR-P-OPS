@@ -27,8 +27,10 @@ export function RegionLineage({ regions, candidateId, evaluationId = null, regio
     <p>{item.sample.reason ?? "Uniform grid location"}</p>
     {item.sample.priority && <p>Selection priority: {item.sample.priority}</p>}
     {item.sample.parent_candidate_ids.length > 0 && <p>Parent candidates: {item.sample.parent_candidate_ids.join(", ")}<br />Parent evaluations: {item.sample.parent_evaluation_ids.join(", ")}</p>}
+    {item.sample.parent_terrain_screen_ids.length > 0 && <p>Terrain evidence (DEM screens): {item.sample.parent_terrain_screen_ids.join(", ")}</p>}
+    {item.sample.terrain !== null && item.sample.terrain !== undefined && <p>Terrain screen at this location: {item.sample.terrain.verdict} · {item.sample.terrain.screen_id}{item.visibility_verdict !== null && item.visibility_verdict !== undefined ? ` · visibility ${item.visibility_verdict}, combined ${item.verdict}` : ""}</p>}
     {ancestors.length > 0 && <ol aria-label="Scientific ancestors">{ancestors.map((parent): JSX.Element => <li key={parent.evaluation?.evaluation_id}>
-      Candidate {parent.sample.candidate_id ?? "unavailable"} · evaluation {parent.evaluation?.evaluation_id ?? "unavailable"} · {parent.sample.reason ?? "initial"}
+      Candidate {parent.sample.candidate_id ?? "unavailable"} · evaluation {parent.evaluation?.evaluation_id ?? "unavailable"} · {parent.sample.reason ?? "initial"}{parent.sample.terrain !== null && parent.sample.terrain !== undefined ? ` · terrain ${parent.sample.terrain.verdict}` : ""}
     </li>)}</ol>}
     <p>Evaluation: {item.evaluation?.evaluation_id ?? "unavailable"} · {item.evaluation?.status ?? item.verdict}</p>
     {region.execution?.experiment_id && <p>Experiment: {region.execution.experiment_id}</p>}

@@ -11,8 +11,8 @@ from lunar_core.roi import ROIS, local_frame
 from lunar_core.terrain import polar_stereographic_south_inverse
 from lunar_core.windows import build_windows
 
-from clps_api import brush_store, candidate, candidate_store, evaluation
-from clps_api.adaptive_brush import Evidence, choose_refinement, choose_seeds
+from clps_api import brush_store, candidate, candidate_store, evaluation, terrain_screen
+from clps_api.adaptive_brush import Evidence, TerrainScore, choose_refinement, choose_seeds
 from clps_api.schemas import (
     BrushConstraints,
     BrushDefinition,
@@ -25,10 +25,42 @@ from clps_api.schemas import (
     CandidateRequest,
     EvaluationOut,
     EvaluationRequest,
+    TerrainScreenOut,
 )
 
 TOLERANCE_M = 1e-7
 MAX_TEMPORAL_SAMPLES = 8192
+MAX_TERRAIN_NODES = 60_000_000
+"""Upper bound on DEM samples for one terrain pre-screen of the whole lattice."""
+Point = tuple[float, float]
+
+
+def _screen_points(
+    points: list[Point], definition: BrushDefinition
+) -> dict[Point, TerrainScreenOut]:
+    """DEM terrain screens keyed by lattice point; tests may replace this function."""
+    if definition.terrain is None or not points:
+        return {}
+    screens = terrain_screen.screen_roi_points(points, definition.terrain)
+    return dict(zip(points, screens, strict=True))
+
+
+def _terrain_pool(
+    definition: BrushDefinition, pool: list[Point]
+) -> dict[Point, TerrainScreenOut] | None:
+    """Whole-lattice terrain screens under evidence B, before any visibility evaluation."""
+    if definition.evidence != "visibility_terrain" or definition.terrain is None:
+        return None
+    nodes = (2 * math.floor(definition.terrain.neighborhood_radius_m / 20) + 3) ** 2
+    if len(pool) * nodes > MAX_TERRAIN_NODES:
+        raise ValueError(
+            "Terrain pre-screen workload is too large; increase spacing or reduce the radius"
+        )
+    return _screen_points(pool, definition)
+
+
+def _scores(screens: dict[Point, TerrainScreenOut]) -> dict[Point, TerrainScore]:
+    return {p: TerrainScore(t.verdict, t.margin, t.screen_id) for p, t in screens.items()}
 
 
 def _cross(a: tuple[float, float], b: tuple[float, float], p: tuple[float, float]) -> float:
@@ -154,8 +186,19 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
     )
     pool_size = len(points)
     budget = min(definition.max_points, pool_size)
-    if definition.sampling == "adaptive":
+    pool_screens = _terrain_pool(definition, points)
+    excluded: int | None = None
+    if pool_screens is not None:
+        eligible = [p for p in points if pool_screens[p].verdict != "FAIL"]
+        excluded = pool_size - len(eligible)
+        if not eligible:
+            raise ValueError(
+                "Every lattice point fails the terrain screen; relax the terrain constraints"
+            )
+        points = choose_seeds(eligible, min(4, budget, len(eligible)))
+    elif definition.sampling == "adaptive":
         points = choose_seeds(points, min(4, budget))
+    screens = pool_screens if pool_screens is not None else _screen_points(points, definition)
     per_point = math.ceil(definition.duration_hours * 60 / definition.step_minutes)
     temporal_possible = (
         definition.step_minutes >= 2
@@ -200,12 +243,24 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
                     error=str(exc),
                 )
             )
+    samples = [
+        s.model_copy(update={"terrain": screens.get((s.east_m, s.north_m))}) for s in samples
+    ]
     if definition.sampling == "adaptive":
         samples = [
             s.model_copy(
                 update={
-                    "reason": "Spatially distributed initial exploration",
+                    "reason": "Spatially distributed initial exploration"
+                    + (
+                        f" among {pool_size - (excluded or 0)} of {pool_size} lattice points "
+                        "not failing the DEM terrain screen"
+                        if pool_screens is not None
+                        else ""
+                    ),
                     "priority": "farthest-point seed order",
+                    "parent_terrain_screen_ids": (
+                        [s.terrain.screen_id] if pool_screens is not None and s.terrain else []
+                    ),
                 }
             )
             for s in samples
@@ -231,6 +286,7 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
         ),
         alignment=(
             "ROI-aligned lattice; distributed seeds followed by evidence-guided selection"
+            + ("; terrain-failing lattice points excluded" if pool_screens is not None else "")
             if definition.sampling == "adaptive"
             else "ROI origin; south to north, west to east"
         ),
@@ -242,6 +298,8 @@ def preview(definition: BrushDefinition) -> BrushPreviewOut:
         temporal_samples_per_point=per_point,
         estimated_total_samples=per_point * workload_points,
         preview_token=token,
+        terrain_pool_size=pool_size if pool_screens is not None else None,
+        terrain_excluded_count=excluded,
     )
 
 
@@ -261,22 +319,38 @@ def meets_constraints(metrics: BrushMetrics, rules: BrushConstraints) -> bool:
     )
 
 
-def pareto_indices(results: list[BrushResultOut]) -> set[int]:
-    """Non-dominated PASS results across the five reported sampled metrics."""
+def pareto_indices(results: list[BrushResultOut], terrain: bool = False) -> set[int]:
+    """Non-dominated PASS results across the five reported sampled visibility metrics.
 
-    def objectives(metrics: BrushMetrics) -> tuple[float, float, float, float, float]:
-        return (
+    With terrain constraints the neighbourhood slope and detrended RMS roughness are two more
+    objectives (lower is better); results without those metrics are not compared.
+    """
+
+    def objectives(r: BrushResultOut) -> tuple[float, ...] | None:
+        metrics = r.metrics
+        if metrics is None:
+            return None
+        values: tuple[float, ...] = (
             metrics.sun_fraction,
             metrics.earth_fraction,
             metrics.simultaneous_fraction,
             -metrics.longest_darkness_hours,
             -metrics.longest_earth_gap_hours,
         )
+        if not terrain:
+            return values
+        t = r.sample.terrain
+        if t is None or t.slope is None or t.roughness is None:
+            return None
+        slope, rms = t.slope.neighborhood_slope_deg, t.roughness.rms_residual_m
+        if slope is None or rms is None:
+            return None
+        return (*values, -slope, -rms)
 
     feasible = [
-        (i, objectives(r.metrics))
+        (i, value)
         for i, r in enumerate(results)
-        if r.verdict == "PASS" and r.metrics is not None
+        if r.verdict == "PASS" and (value := objectives(r)) is not None
     ]
     return {
         i
@@ -290,10 +364,26 @@ def pareto_indices(results: list[BrushResultOut]) -> set[int]:
     }
 
 
-def _refinement_evidence(result: BrushResultOut, rules: BrushConstraints) -> Evidence:
+def combined_verdict(
+    visibility: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"],
+    definition: BrushDefinition,
+    terrain: TerrainScreenOut | None,
+) -> Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED", "NOT_ASSESSED"]:
+    """Visibility verdict, further restricted by the terrain screen when one is configured."""
+    if definition.terrain is None or visibility != "PASS":
+        return visibility
+    if terrain is None or terrain.verdict == "NOT_ASSESSED":
+        return "NOT_ASSESSED"
+    return terrain.verdict
+
+
+def _refinement_evidence(result: BrushResultOut, definition: BrushDefinition) -> Evidence:
+    """Experiment A uses visibility evidence only; B adds the location's terrain screen."""
+    rules: BrushConstraints = definition.constraints
     if result.metrics is None or result.evaluation is None:
         raise ValueError("refinement requires computed metrics and evaluation")
     metrics, computed = result.metrics, result.evaluation
+    with_terrain = definition.evidence == "visibility_terrain"
     margins = [
         value - threshold
         for value, threshold in (
@@ -318,18 +408,29 @@ def _refinement_evidence(result: BrushResultOut, rules: BrushConstraints) -> Evi
         )
         for sample in computed.samples
     )
+    terrain = result.sample.terrain if with_terrain else None
+    terrain_values: tuple[float, ...] = ()
+    if terrain is not None:
+        assessed = [c for c in terrain.checks if c.name != "coverage_fraction"]
+        margins.extend(c.margin for c in assessed if c.margin is not None)
+        terrain_values = tuple(
+            min(c.value / c.limit, 4.0) if c.value is not None and c.limit > 0 else 0.0
+            for c in assessed
+        )
     return Evidence(
         (result.sample.east_m, result.sample.north_m),
         computed.candidate_id,
         computed.evaluation_id,
         metrics.simultaneous_fraction,
-        result.verdict == "PASS",
+        (result.verdict if with_terrain else result.visibility_verdict) == "PASS",
         sun_fraction=metrics.sun_fraction,
         earth_fraction=metrics.earth_fraction,
         darkness_fraction=metrics.longest_darkness_hours / metrics.duration_hours,
         earth_gap_fraction=metrics.longest_earth_gap_hours / metrics.duration_hours,
         constraint_margin=min(margins) if margins else None,
         horizon_proximity=1 / (1 + closest_clearance),
+        terrain_values=terrain_values,
+        terrain_screen_id=terrain.screen_id if terrain is not None else None,
     )
 
 
@@ -353,6 +454,8 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
         else []
     )
     used = {(s.east_m, s.north_m) for s in queue}
+    pool_screens = _terrain_pool(definition, pool)
+    scores = _scores(pool_screens) if pool_screens is not None else None
     index = 0
     temporal_definitions: dict[int, BrushDefinition] = {}
     while True:
@@ -418,6 +521,7 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                         ),
                         parent_candidate_ids=[temporal_parent.evaluation.candidate_id],
                         parent_evaluation_ids=[temporal_parent.evaluation.evaluation_id],
+                        terrain=temporal_parent.sample.terrain,
                     )
                     temporal_definitions[len(queue)] = proposal_definition
                     queue.append(refined)
@@ -426,14 +530,22 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                     # A failed temporal proposal does not authorize an invalid candidate.
                     pass
             evidence = [
-                _refinement_evidence(r, definition.constraints)
+                _refinement_evidence(r, definition)
                 for r in results
-                if r.metrics is not None and r.evaluation is not None
+                if r.metrics is not None
+                and r.evaluation is not None
+                and r.verdict != "NOT_EVALUATED"
             ]
-            choice = choose_refinement(pool, evidence, used)
+            choice = choose_refinement(pool, evidence, used, scores)
             if choice is not None:
                 used.add(choice.point)
                 east, north = choice.point
+                point_terrain = (
+                    pool_screens[choice.point]
+                    if pool_screens is not None
+                    else _screen_points([choice.point], definition).get(choice.point)
+                )
+                parent_screens = list(choice.parent_terrain_screen_ids)
                 try:
                     c = _candidate(choice.point, definition)
                     next_sample = BrushSampleOut(
@@ -451,6 +563,8 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                         priority=choice.priority,
                         parent_candidate_ids=list(choice.parent_candidate_ids),
                         parent_evaluation_ids=list(choice.parent_evaluation_ids),
+                        terrain=point_terrain,
+                        parent_terrain_screen_ids=parent_screens,
                     )
                 except (ValueError, FileNotFoundError) as exc:
                     next_sample = BrushSampleOut(
@@ -463,6 +577,8 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                         priority=choice.priority,
                         parent_candidate_ids=list(choice.parent_candidate_ids),
                         parent_evaluation_ids=list(choice.parent_evaluation_ids),
+                        terrain=point_terrain,
+                        parent_terrain_screen_ids=parent_screens,
                     )
                 queue.append(next_sample)
         if index == len(queue):
@@ -496,13 +612,16 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
             metrics = (
                 summarize(result) if result.status in ("COMPUTED_UNVERIFIED", "VALIDATED") else None
             )
-            verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"]
+            visibility: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"]
             if metrics is None:
-                verdict = "UNAVAILABLE" if result.status == "UNAVAILABLE" else "ERROR"
+                visibility = "UNAVAILABLE" if result.status == "UNAVAILABLE" else "ERROR"
             elif temporal is not None:
-                verdict = "NOT_EVALUATED"
+                visibility = "NOT_EVALUATED"
             else:
-                verdict = "PASS" if meets_constraints(metrics, definition.constraints) else "FAIL"
+                visibility = (
+                    "PASS" if meets_constraints(metrics, definition.constraints) else "FAIL"
+                )
+            verdict = combined_verdict(visibility, definition, sample.terrain)
             if definition.retention == "passing" and verdict == "PASS":
                 saved = candidate_store.save(c)
             if saved is not None:
@@ -511,6 +630,7 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                 BrushResultOut(
                     sample=sample,
                     verdict=verdict,
+                    visibility_verdict=visibility,
                     metrics=metrics,
                     candidate=saved,
                     evaluation=result,
@@ -528,7 +648,7 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
                     errors=[f"{type(exc).__name__}: {exc}"],
                 )
             )
-    frontier = pareto_indices(results)
+    frontier = pareto_indices(results, terrain=definition.terrain is not None)
     results = [
         r.model_copy(update={"pareto": i in frontier}) if r.verdict == "PASS" else r
         for i, r in enumerate(results)
@@ -555,9 +675,22 @@ def execute(definition: BrushDefinition, preview_token: str) -> BrushExecutionOu
             "and may differ by up to one step.",
             "Sun and Earth visibility are geometric, not power or communications performance.",
             "Computed results are not independently validated.",
+            *(
+                [
+                    "Terrain screening uses the 20 m interpolated LOLA DEM: coarse screening, "
+                    "not certified landing safety; DEM uncertainty and sub-resolution hazards "
+                    "are NOT_ASSESSED.",
+                ]
+                if definition.terrain is not None
+                else []
+            ),
         ],
-        refinement_policy="spatial-lattice-evidence-v1"
-        if definition.sampling == "adaptive"
-        else None,
+        refinement_policy=(
+            None
+            if definition.sampling != "adaptive"
+            else "spatial-lattice-evidence-terrain-v1"
+            if definition.evidence == "visibility_terrain"
+            else "spatial-lattice-evidence-v1"
+        ),
     )
     return brush_store.save(output) if definition.sampling == "adaptive" else output

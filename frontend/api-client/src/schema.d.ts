@@ -369,6 +369,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/candidates/{candidate_id}/terrain-screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Screen Candidate Terrain
+         * @description Coarse DEM slope/roughness/coverage screen at a stored candidate; read-only, not persisted.
+         *
+         *     Deterministic for a given DEM and constraints (content-addressed `screen_id`). Missing DEM
+         *     data and unavailable hazard/uncertainty information are reported as NOT_ASSESSED.
+         */
+        get: operations["screenCandidateTerrain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/evaluations/{evaluation_id}": {
         parameters: {
             query?: never;
@@ -575,6 +598,13 @@ export interface components {
              * @enum {string}
              */
             sampling: "grid" | "adaptive";
+            terrain?: components["schemas"]["TerrainScreenConstraints"] | null;
+            /**
+             * Evidence
+             * @default visibility
+             * @enum {string}
+             */
+            evidence: "visibility" | "visibility_terrain";
         };
         /** BrushExecuteRequest */
         BrushExecuteRequest: {
@@ -654,6 +684,10 @@ export interface components {
             estimated_total_samples: number;
             /** Preview Token */
             preview_token: string;
+            /** Terrain Pool Size */
+            terrain_pool_size?: number | null;
+            /** Terrain Excluded Count */
+            terrain_excluded_count?: number | null;
         };
         /** BrushResultOut */
         BrushResultOut: {
@@ -662,7 +696,9 @@ export interface components {
              * Verdict
              * @enum {string}
              */
-            verdict: "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED";
+            verdict: "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED" | "NOT_ASSESSED";
+            /** Visibility Verdict */
+            visibility_verdict?: ("PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED") | null;
             metrics?: components["schemas"]["BrushMetrics"] | null;
             /** Pareto */
             pareto?: boolean | null;
@@ -724,6 +760,12 @@ export interface components {
              * @default []
              */
             parent_evaluation_ids: string[];
+            terrain?: components["schemas"]["TerrainScreenOut"] | null;
+            /**
+             * Parent Terrain Screen Ids
+             * @default []
+             */
+            parent_terrain_screen_ids: string[];
         };
         /** CandidateEvolutionRequest */
         CandidateEvolutionRequest: {
@@ -1340,6 +1382,44 @@ export interface components {
             /** Earth Windows */
             earth_windows: components["schemas"]["WindowOut"][];
         };
+        /** SurfaceSlopeOut */
+        SurfaceSlopeOut: {
+            /** Local Slope Deg */
+            local_slope_deg: number | null;
+            /** Max Local Slope Deg */
+            max_local_slope_deg: number | null;
+            /** Neighborhood Slope Deg */
+            neighborhood_slope_deg: number | null;
+            /** Local Baseline M */
+            local_baseline_m: number;
+            /** Neighborhood Radius M */
+            neighborhood_radius_m: number;
+        };
+        /** TerrainCheckOut */
+        TerrainCheckOut: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: number | null;
+            /** Limit */
+            limit: number;
+            /**
+             * Comparison
+             * @enum {string}
+             */
+            comparison: "<=" | ">=";
+            /** Unit */
+            unit: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "PASS" | "FAIL" | "NOT_ASSESSED";
+            /** Margin */
+            margin: number | null;
+            /** Reason */
+            reason: string;
+        };
         /**
          * TerrainPatchOut
          * @description Local terrain for the 3D view: heights (m) relative to the site's ground, with curvature.
@@ -1360,6 +1440,146 @@ export interface components {
             site_ground_m: number;
             /** Source */
             source: string;
+        };
+        /** TerrainProvenanceOut */
+        TerrainProvenanceOut: {
+            /** Algorithm */
+            algorithm: string;
+            /** Terrain Dataset Id */
+            terrain_dataset_id: string;
+            /** Terrain Source Url */
+            terrain_source_url: string;
+            /** Terrain Dataset Sha256 */
+            terrain_dataset_sha256: string;
+            /** Dem Resolution M */
+            dem_resolution_m: number;
+            /** Coordinate Reference */
+            coordinate_reference: string;
+            /** Lunar Core Version */
+            lunar_core_version: string;
+        };
+        /** TerrainQualityOut */
+        TerrainQualityOut: {
+            /** Dem Resolution M */
+            dem_resolution_m: number;
+            /** Sample Spacing M */
+            sample_spacing_m: number;
+            /** Interpolation */
+            interpolation: string;
+            /** Neighborhood Node Count */
+            neighborhood_node_count: number;
+            /** Valid Node Count */
+            valid_node_count: number;
+            /** Coverage Fraction */
+            coverage_fraction: number;
+            /** Local Stencil Complete */
+            local_stencil_complete: boolean;
+            /**
+             * Vertical Uncertainty
+             * @constant
+             */
+            vertical_uncertainty: "NOT_ASSESSED";
+            /**
+             * Sub Resolution Hazards
+             * @constant
+             */
+            sub_resolution_hazards: "NOT_ASSESSED";
+        };
+        /** TerrainRoughnessOut */
+        TerrainRoughnessOut: {
+            /** Rms Residual M */
+            rms_residual_m: number | null;
+            /** Residual Relief M */
+            residual_relief_m: number | null;
+            /** Raw Relief M */
+            raw_relief_m: number | null;
+            /** Neighborhood Radius M */
+            neighborhood_radius_m: number;
+            /** Detrending */
+            detrending: string;
+        };
+        /**
+         * TerrainScreenConstraints
+         * @description LandingZoneScreen limits; a limit left empty is not checked (and never passes).
+         */
+        TerrainScreenConstraints: {
+            /**
+             * Neighborhood Radius M
+             * @default 100
+             */
+            neighborhood_radius_m: number;
+            /** Max Local Slope Deg */
+            max_local_slope_deg?: number | null;
+            /** Max Neighborhood Slope Deg */
+            max_neighborhood_slope_deg?: number | null;
+            /** Max Roughness Rms M */
+            max_roughness_rms_m?: number | null;
+            /** Max Relief M */
+            max_relief_m?: number | null;
+            /**
+             * Min Coverage Fraction
+             * @default 1
+             */
+            min_coverage_fraction: number;
+        };
+        /**
+         * TerrainScreenOut
+         * @description Coarse DEM screening of one location; PASS is not certified landing safety.
+         */
+        TerrainScreenOut: {
+            /**
+             * Schema Version
+             * @default lunar-ops-terrain-screen/1
+             * @constant
+             */
+            schema_version: "lunar-ops-terrain-screen/1";
+            /** Screen Id */
+            screen_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "COMPUTED_UNVERIFIED" | "UNAVAILABLE";
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "PASS" | "FAIL" | "NOT_ASSESSED";
+            /** East M */
+            east_m?: number | null;
+            /** North M */
+            north_m?: number | null;
+            /** Latitude Deg */
+            latitude_deg?: number | null;
+            /** Longitude Deg */
+            longitude_deg?: number | null;
+            constraints: components["schemas"]["TerrainScreenConstraints"];
+            slope?: components["schemas"]["SurfaceSlopeOut"] | null;
+            roughness?: components["schemas"]["TerrainRoughnessOut"] | null;
+            quality?: components["schemas"]["TerrainQualityOut"] | null;
+            /**
+             * Checks
+             * @default []
+             */
+            checks: components["schemas"]["TerrainCheckOut"][];
+            /** Margin */
+            margin?: number | null;
+            /**
+             * Not Assessed
+             * @default []
+             */
+            not_assessed: string[];
+            provenance?: components["schemas"]["TerrainProvenanceOut"] | null;
+            /**
+             * Scope Note
+             * @default Coarse screening on a 20 m interpolated LOLA DEM; not certified landing safety.
+             */
+            scope_note: string;
+            /**
+             * Errors
+             * @default []
+             */
+            errors: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -2109,6 +2329,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EvaluationOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    screenCandidateTerrain: {
+        parameters: {
+            query?: {
+                neighborhood_radius_m?: number;
+                max_local_slope_deg?: number | null;
+                max_neighborhood_slope_deg?: number | null;
+                max_roughness_rms_m?: number | null;
+                max_relief_m?: number | null;
+                min_coverage_fraction?: number;
+            };
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerrainScreenOut"];
+                };
+            };
+            /** @description Unknown candidate */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

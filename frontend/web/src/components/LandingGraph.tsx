@@ -1,4 +1,4 @@
-import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
+import type { ApiClient, Candidate, CandidateRef, ScientificEvaluation, TerrainScreen, TerrainScreenConstraints } from "@clps/api-client";
 import { useCallback, useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { ClassicPreset, NodeEditor } from "rete";
@@ -8,7 +8,10 @@ import { Cancelled, DataflowEngine } from "rete-engine";
 import { ReactPlugin, Presets, type ReactArea2D } from "rete-react-plugin";
 import {
   addScientificNodes,
+  addTerrainNode,
   buildLandingNodes,
+  DEFAULT_TERRAIN_CONSTRAINTS,
+  describeTerrain,
   InfoControl,
   describeRef,
   type CandidatePreview,
@@ -20,7 +23,11 @@ import {
   type PreviewResult,
   type ScienceApi,
   type ScientificNodes,
+  type TerrainApi,
+  type TerrainNodes,
 } from "./landingGraph.ts";
+import { terrainOf } from "./ConstraintBrush.tsx";
+import { TerrainScreenCard } from "./TerrainScreenCard.tsx";
 
 import { SelectionGuard } from "../lib/selectionGuard.ts";
 import { nearestSample, useExploration, useExplorationStore, type BrushRegion, type Draft, type ExperimentSettings, type ExplorationStore } from "../lib/explorationStore.ts";
@@ -31,7 +38,33 @@ import { WorkspaceInspector, revisionLabel } from "./WorkspaceInspector.tsx";
 import { RegionLineage } from "./RegionLineage.tsx";
 
 type Extra = ReactArea2D<LandingScheme>;
-interface Graph { engine: DataflowEngine<LandingScheme>; area: AreaPlugin<LandingScheme, Extra>; landing: LandingNodes; science: ScientificNodes; refresh: () => void }
+interface Graph { engine: DataflowEngine<LandingScheme>; area: AreaPlugin<LandingScheme, Extra>; landing: LandingNodes; science: ScientificNodes; terrain: TerrainNodes; refresh: () => void }
+
+function terrainApi(apiClient: ApiClient): TerrainApi {
+  return {
+    screenTerrain: async (id: string, constraints: TerrainScreenConstraints): Promise<TerrainScreen> => {
+      // Read-only GET: selecting a candidate never writes; empty limits are omitted (not checked).
+      const query: TerrainScreenConstraints = Object.fromEntries(Object.entries(constraints).filter(([, v]): boolean => v !== null)) as TerrainScreenConstraints;
+      const { data } = await apiClient.GET("/api/candidates/{candidate_id}/terrain-screen", { params: { path: { candidate_id: id }, query } });
+      if (data === undefined) throw new Error("Terrain screen request failed.");
+      return data;
+    },
+  };
+}
+
+/** Fetch the Terrain screen node through the dataflow, retrying when a cache reset cancels it. */
+async function fetchTerrain(graph: Graph): Promise<TerrainScreen | string> {
+  for (let attempt: number = 0; attempt < 4; attempt++) {
+    try {
+      const output: Record<string, unknown> = await graph.engine.fetch<LandingNode>(graph.terrain.node.id);
+      return output["terrain_screen"] as TerrainScreen;
+    } catch (caught: unknown) {
+      if (caught instanceof Cancelled) continue;
+      return caught instanceof Error ? caught.message : String(caught);
+    }
+  }
+  return "The dataflow was reset repeatedly; retry.";
+}
 type Outcome = { evaluation: ScientificEvaluation | null; error: null } | { evaluation: null; error: string };
 
 function scienceApi(apiClient: ApiClient): ScienceApi {
@@ -87,7 +120,7 @@ function statusOf(evaluation: ScientificEvaluation): LandingNode["contract"]["ex
 type NodeKind = "parameter" | "candidate" | "compute" | "result";
 function kindOf(label: string): NodeKind {
   if (label === "Candidate") return "candidate";
-  if (label === "Scientific computation") return "compute";
+  if (label === "Scientific computation" || label === "Terrain screen") return "compute";
   return label === "Results" ? "result" : "parameter";
 }
 type NodeProps = Parameters<typeof Presets.classic.Node<LandingScheme>>[0];
@@ -142,6 +175,16 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
   const [outputRef, setOutputRef] = useState<CandidateRef | null>(null);
   const [graphReady, setGraphReady] = useState<boolean>(false);
   const [focus, setFocus] = useState<{ part: "candidate" | "result"; at: number } | null>(null);
+  const [terrainScreen, setTerrainScreen] = useState<TerrainScreen | null>(null);
+  const [terrainError, setTerrainError] = useState<string | null>(null);
+  const terrainGuard: RefObject<SelectionGuard> = useRef(new SelectionGuard());
+  // Terrain limits: those of the Region Brush region this candidate was inspected from, else defaults.
+  const inspectedRegion: BrushRegion | undefined = regions.find((r: BrushRegion): boolean => r.id === inspectedRegionId);
+  const regionTerrain: TerrainScreenConstraints | null = inspectedRegion === undefined ? null : terrainOf(inspectedRegion.params);
+  const terrainConstraints: TerrainScreenConstraints = regionTerrain ?? DEFAULT_TERRAIN_CONSTRAINTS;
+  const terrainSource: string = regionTerrain !== null && inspectedRegion !== undefined
+    ? `limits from Region ${inspectedRegion.number.toString()}` : "default screening limits";
+  const terrainKey: string = JSON.stringify(terrainConstraints);
   const graphRef: RefObject<Graph | null> = useRef<Graph | null>(null);
   const refs: RefObject<Map<string, CandidateRef>> = useRef(new Map<string, CandidateRef>());
   const evalGeneration: RefObject<SelectionGuard> = useRef(new SelectionGuard());
@@ -324,7 +367,7 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
           const wire: LandingConnection = context.data;
           const source: LandingNode | undefined = editor.getNode(wire.source);
           const target: LandingNode | undefined = editor.getNode(wire.target);
-          if (source === undefined || target === undefined || !(["Candidate", "Scientific computation", "Results"].includes(target.label)) ||
+          if (source === undefined || target === undefined || !(["Candidate", "Scientific computation", "Results", "Terrain screen"].includes(target.label)) ||
               source.outputs[wire.sourceOutput] === undefined || target.inputs[wire.targetInput] === undefined ||
               source.outputs[wire.sourceOutput]?.socket !== target.inputs[wire.targetInput]?.socket ||
               editor.getConnections().some((existing): boolean => existing.target === wire.target && existing.targetInput === wire.targetInput)) return undefined;
@@ -350,18 +393,22 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       const science: ScientificNodes = await addScientificNodes(editor, built.candidate, candidate, api.current, (): boolean => !disposed);
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (disposed) return;
+      const terrain: TerrainNodes = await addTerrainNode(editor, built.candidate, candidate, terrainApi(apiClient), (): boolean => !disposed);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      if (disposed) return;
       // Restore the evaluation inspected before reload (read-only; falls back to the latest).
       const saved: ReturnType<typeof loadSelection> = loadSelection();
       if (preferredEvaluation !== null) science.compute.prefer(candidate.candidate_id, preferredEvaluation.evaluationId);
       else if (saved?.rootId === candidate.candidate_id && typeof saved.evaluationId === "string") science.compute.prefer(saved.revisionId, saved.evaluationId);
-      graphRef.current = { engine, area, landing: built, science, refresh };
-      setContracts([...built.nodes, ...science.nodes]);
+      graphRef.current = { engine, area, landing: built, science, terrain, refresh };
+      setContracts([...built.nodes, ...science.nodes, terrain.node]);
       for (const [index, node] of built.nodes.entries()) {
         await area.translate(node.id, index === 4 ? { x: 600, y: 80 } : { x: Math.floor(index / 2) * 270, y: (index % 2) * 220 });
       }
       for (const [index, node] of science.nodes.entries()) {
         await area.translate(node.id, { x: 930 + index * 320, y: 80 });
       }
+      await area.translate(terrain.node.id, { x: 930, y: 400 });
       ready = true;
       refresh();
       await AreaExtensions.zoomAt(area, editor.getNodes());
@@ -372,6 +419,38 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     // showOutcome reads refs only; the graph is rebuilt per root candidate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiClient, candidate]);
+
+  /** Recompute the terrain node for the current candidate_ref and limits; stale replies are dropped. */
+  async function refreshTerrain(graph: Graph): Promise<void> {
+    const token: number = terrainGuard.current.next();
+    graph.terrain.node.setConstraints(terrainConstraints);
+    graph.engine.reset(graph.terrain.node.id);
+    graph.terrain.verdict.setValue("Terrain: screening…");
+    void graph.area.update("control", graph.terrain.verdict.id);
+    const outcome: TerrainScreen | string = await fetchTerrain(graph);
+    if (!terrainGuard.current.isCurrent(token)) return;
+    const { contract } = graph.terrain.node;
+    if (typeof outcome === "string") {
+      contract.execution_status = "failed"; contract.errors = [outcome];
+      graph.terrain.verdict.setValue(`FAILED: ${outcome}`); graph.terrain.metrics.setValue("slope —, roughness —");
+      setTerrainScreen(null); setTerrainError(outcome);
+    } else {
+      contract.execution_status = outcome.status === "COMPUTED_UNVERIFIED" ? "succeeded" : "unavailable";
+      contract.errors = outcome.errors;
+      const text: { verdict: string; metrics: string } = describeTerrain(outcome);
+      graph.terrain.verdict.setValue(text.verdict); graph.terrain.metrics.setValue(text.metrics);
+      setTerrainScreen(outcome); setTerrainError(null);
+    }
+    void graph.area.update("node", graph.terrain.node.id);
+  }
+
+  // New Region Brush limits re-screen the current candidate (the backend memo is per limit set).
+  useEffect((): void => {
+    const graph: Graph | null = graphRef.current;
+    if (graphReady && graph !== null && selected !== null) void refreshTerrain(graph);
+    // refreshTerrain reads refs and the current limits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphReady, terrainKey]);
 
   // The app-level selection drives candidate_ref, the parameter nodes and the restored result.
   const selectedId: string | null = selected?.candidate_id ?? null;
@@ -391,6 +470,7 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
     applyDraft(graph, { observer_height_m: selected.observer_height_m, selected_time_utc: selected.selected_time_utc });
     void selectOutput(graph, selected).then(async (current: boolean): Promise<void> => {
       if (!current || !active) return;
+      void refreshTerrain(graph);
       const outcome: Outcome = await fetchResults(graph);
       // The selection may have changed during the fetch.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -523,9 +603,14 @@ export function LandingGraph({ apiClient, candidate, selectedRevisionId, onSelec
       </div>
       <ul className="graph-legend" aria-label="Node legend">
         <li><span className="kind parameter" /> Parameters</li><li><span className="kind candidate" /> Candidate (preview + candidate_ref)</li>
-        <li><span className="kind compute" /> Scientific computation (backend)</li><li><span className="kind result" /> Results (persisted)</li>
+        <li><span className="kind compute" /> Scientific computation &amp; Terrain screen (backend)</li><li><span className="kind result" /> Results (persisted)</li>
       </ul>
       <div ref={host} className="graph-canvas" aria-label="Rete landing graph canvas" />
+      <div className="landing-terrain" aria-label="Candidate terrain screen">
+        <p className="muted terrain-limits">Terrain screen node: candidate_ref → LandingZoneScreen ({terrainSource}: radius {terrainConstraints.neighborhood_radius_m.toString()} m · local slope ≤ {terrainConstraints.max_local_slope_deg?.toString() ?? "not checked"}° · plane slope ≤ {terrainConstraints.max_neighborhood_slope_deg?.toString() ?? "not checked"}° · RMS ≤ {terrainConstraints.max_roughness_rms_m?.toString() ?? "not checked"} m · relief ≤ {terrainConstraints.max_relief_m?.toString() ?? "not checked"} m · coverage ≥ {(terrainConstraints.min_coverage_fraction * 100).toString()}%).</p>
+        {terrainScreen !== null && <TerrainScreenCard screen={terrainScreen} title={`Terrain screen · ${label}`} />}
+        {terrainError !== null && <p role="alert">Terrain screen: {terrainError}</p>}
+      </div>
       <RegionLineage regions={regions} candidateId={candidate.candidate_id} evaluationId={storeEvaluation?.evaluation_id ?? preferredEvaluation?.evaluationId ?? null} regionId={inspectedRegionId} />
       <p aria-live="polite" className="muted">Dataflow: {outputRef === null ? "building graph…" : `candidate_ref carries ${labelFor(outputRef.candidate_id)} (${outputRef.candidate_id.slice(0, 22)}…) → Scientific computation → Results.`}</p>
       {preview === null ? <p>Live preview unavailable.</p> : <p>Live preview (unsaved): height {preview.observer_height_m} m · time {preview.selected_time_utc} · elevation {preview.terrain_elevation_m.toFixed(2)} m.</p>}

@@ -3,9 +3,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
+from typing import Annotated
 
 import lunar_core
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from lunar_core.kernels import load_kernels
@@ -22,6 +23,7 @@ from clps_api import (
     experiment,
     pole_map,
     roi_terrain,
+    terrain_screen,
     terrain_store,
 )
 from clps_api.schemas import (
@@ -46,6 +48,8 @@ from clps_api.schemas import (
     RoiTerrainOut,
     SiteOut,
     TerrainPatchOut,
+    TerrainScreenConstraints,
+    TerrainScreenOut,
 )
 from clps_api.service import CATALOG, resolve_site, run_analysis, site_out
 
@@ -315,6 +319,25 @@ def evaluate_candidate(candidate_id: str, request: EvaluationRequest) -> Evaluat
     if found is None:
         raise HTTPException(status_code=404, detail="candidate not found")
     return evaluation.evaluate(found, request)
+
+
+@app.get(
+    "/api/candidates/{candidate_id}/terrain-screen",
+    operation_id="screenCandidateTerrain",
+    responses={404: {"description": "Unknown candidate"}},
+)
+def screen_candidate_terrain(
+    candidate_id: str, constraints: Annotated[TerrainScreenConstraints, Query()]
+) -> TerrainScreenOut:
+    """Coarse DEM slope/roughness/coverage screen at a stored candidate; read-only, not persisted.
+
+    Deterministic for a given DEM and constraints (content-addressed `screen_id`). Missing DEM
+    data and unavailable hazard/uncertainty information are reported as NOT_ASSESSED.
+    """
+    found = candidate_store.get(candidate_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return terrain_screen.screen_candidate(found, constraints)
 
 
 @app.get("/api/candidates/{candidate_id}/evaluations", operation_id="listCandidateEvaluations")

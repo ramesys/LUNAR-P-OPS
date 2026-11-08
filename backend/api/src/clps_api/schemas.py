@@ -6,7 +6,7 @@ from lunar_core.analysis import (
     MAX_SITES,
     MIN_SITES,
 )
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -391,6 +391,93 @@ class BrushConstraints(BaseModel):
     max_earth_gap_hours: float | None = Field(default=None, ge=0, le=168)
 
 
+class TerrainScreenConstraints(BaseModel):
+    """LandingZoneScreen limits; a limit left empty is not checked (and never passes)."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    neighborhood_radius_m: float = Field(default=100, ge=40, le=500)
+    max_local_slope_deg: float | None = Field(default=None, ge=0, le=90)
+    max_neighborhood_slope_deg: float | None = Field(default=None, ge=0, le=90)
+    max_roughness_rms_m: float | None = Field(default=None, ge=0, le=1000)
+    max_relief_m: float | None = Field(default=None, ge=0, le=5000)
+    min_coverage_fraction: float = Field(default=1, ge=0, le=1)
+
+
+class SurfaceSlopeOut(BaseModel):
+    local_slope_deg: float | None
+    max_local_slope_deg: float | None
+    neighborhood_slope_deg: float | None
+    local_baseline_m: float
+    neighborhood_radius_m: float
+
+
+class TerrainRoughnessOut(BaseModel):
+    rms_residual_m: float | None
+    residual_relief_m: float | None
+    raw_relief_m: float | None
+    neighborhood_radius_m: float
+    detrending: str
+
+
+class TerrainQualityOut(BaseModel):
+    dem_resolution_m: float
+    sample_spacing_m: float
+    interpolation: str
+    neighborhood_node_count: int
+    valid_node_count: int
+    coverage_fraction: float
+    local_stencil_complete: bool
+    vertical_uncertainty: Literal["NOT_ASSESSED"]
+    sub_resolution_hazards: Literal["NOT_ASSESSED"]
+
+
+class TerrainCheckOut(BaseModel):
+    name: str
+    value: float | None
+    limit: float
+    comparison: Literal["<=", ">="]
+    unit: str
+    status: Literal["PASS", "FAIL", "NOT_ASSESSED"]
+    margin: float | None
+    reason: str
+
+
+class TerrainProvenanceOut(BaseModel):
+    algorithm: str
+    terrain_dataset_id: str
+    terrain_source_url: str
+    terrain_dataset_sha256: str
+    dem_resolution_m: float
+    coordinate_reference: str
+    lunar_core_version: str
+
+
+class TerrainScreenOut(BaseModel):
+    """Coarse DEM screening of one location; PASS is not certified landing safety."""
+
+    schema_version: Literal["lunar-ops-terrain-screen/1"] = "lunar-ops-terrain-screen/1"
+    screen_id: str
+    """Content hash of the inputs, constraints and computed metrics."""
+    status: Literal["COMPUTED_UNVERIFIED", "UNAVAILABLE"]
+    verdict: Literal["PASS", "FAIL", "NOT_ASSESSED"]
+    east_m: float | None = None
+    north_m: float | None = None
+    latitude_deg: float | None = None
+    longitude_deg: float | None = None
+    constraints: TerrainScreenConstraints
+    slope: SurfaceSlopeOut | None = None
+    roughness: TerrainRoughnessOut | None = None
+    quality: TerrainQualityOut | None = None
+    checks: list[TerrainCheckOut] = []
+    margin: float | None = None
+    not_assessed: list[str] = []
+    provenance: TerrainProvenanceOut | None = None
+    scope_note: str = (
+        "Coarse screening on a 20 m interpolated LOLA DEM; not certified landing safety."
+    )
+    errors: list[str] = []
+
+
 class BrushDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     polygon: list[BrushPoint] = Field(min_length=3, max_length=64)
@@ -403,6 +490,20 @@ class BrushDefinition(BaseModel):
     constraints: BrushConstraints = BrushConstraints()
     retention: Literal["all", "passing"] = "all"
     sampling: Literal["grid", "adaptive"] = "grid"
+    terrain: TerrainScreenConstraints | None = None
+    """LandingZoneScreen limits; when set, a PASS also requires the terrain screen to pass."""
+    evidence: Literal["visibility", "visibility_terrain"] = "visibility"
+    """Evidence driving adaptive refinement: A = visibility only, B = visibility + terrain."""
+
+    @model_validator(mode="after")
+    def _terrain_evidence_needs_constraints(self) -> "BrushDefinition":
+        if self.evidence == "visibility_terrain" and (
+            self.sampling != "adaptive" or self.terrain is None
+        ):
+            raise ValueError(
+                "visibility + terrain evidence requires adaptive sampling and terrain constraints"
+            )
+        return self
 
 
 class BrushSampleOut(BaseModel):
@@ -420,6 +521,10 @@ class BrushSampleOut(BaseModel):
     priority: str | None = None
     parent_candidate_ids: list[str] = []
     parent_evaluation_ids: list[str] = []
+    terrain: TerrainScreenOut | None = None
+    """Terrain screen of this location, computed from the DEM before any evaluation."""
+    parent_terrain_screen_ids: list[str] = []
+    """Terrain screens of the parents that the refinement policy used as evidence."""
 
 
 class BrushPreviewOut(BaseModel):
@@ -434,6 +539,9 @@ class BrushPreviewOut(BaseModel):
     temporal_samples_per_point: int
     estimated_total_samples: int
     preview_token: str
+    terrain_pool_size: int | None = None
+    terrain_excluded_count: int | None = None
+    """Lattice points failing the terrain screen; excluded from selection under evidence B."""
 
 
 class BrushMetrics(BaseModel):
@@ -448,7 +556,11 @@ class BrushMetrics(BaseModel):
 
 class BrushResultOut(BaseModel):
     sample: BrushSampleOut
-    verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"]
+    verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED", "NOT_ASSESSED"]
+    """Combined verdict: visibility constraints and, when configured, the terrain screen."""
+    visibility_verdict: Literal["PASS", "FAIL", "UNAVAILABLE", "ERROR", "NOT_EVALUATED"] | None = (
+        None
+    )
     metrics: BrushMetrics | None = None
     pareto: bool | None = None
     candidate: CandidateOut | None = None

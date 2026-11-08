@@ -873,6 +873,145 @@
         }
       }
     },
+    "/api/candidates/{candidate_id}/terrain-screen": {
+      "get": {
+        "summary": "Screen Candidate Terrain",
+        "description": "Coarse DEM slope/roughness/coverage screen at a stored candidate; read-only, not persisted.\n\nDeterministic for a given DEM and constraints (content-addressed `screen_id`). Missing DEM\ndata and unavailable hazard/uncertainty information are reported as NOT_ASSESSED.",
+        "operationId": "screenCandidateTerrain",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "neighborhood_radius_m",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 500,
+              "minimum": 40,
+              "default": 100,
+              "title": "Neighborhood Radius M"
+            }
+          },
+          {
+            "name": "max_local_slope_deg",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 90,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Local Slope Deg"
+            }
+          },
+          {
+            "name": "max_neighborhood_slope_deg",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 90,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Neighborhood Slope Deg"
+            }
+          },
+          {
+            "name": "max_roughness_rms_m",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 1000,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Roughness Rms M"
+            }
+          },
+          {
+            "name": "max_relief_m",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 5000,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Relief M"
+            }
+          },
+          {
+            "name": "min_coverage_fraction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 1,
+              "minimum": 0,
+              "default": 1,
+              "title": "Min Coverage Fraction"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerrainScreenOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown candidate"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/evaluations/{evaluation_id}": {
       "get": {
         "summary": "Get Evaluation",
@@ -1291,6 +1430,25 @@
             ],
             "title": "Sampling",
             "default": "grid"
+          },
+          "terrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerrainScreenConstraints"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "enum": [
+              "visibility",
+              "visibility_terrain"
+            ],
+            "title": "Evidence",
+            "default": "visibility"
           }
         },
         "additionalProperties": false,
@@ -1505,6 +1663,28 @@
           "preview_token": {
             "type": "string",
             "title": "Preview Token"
+          },
+          "terrain_pool_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Pool Size"
+          },
+          "terrain_excluded_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Excluded Count"
           }
         },
         "type": "object",
@@ -1535,9 +1715,28 @@
               "FAIL",
               "UNAVAILABLE",
               "ERROR",
-              "NOT_EVALUATED"
+              "NOT_EVALUATED",
+              "NOT_ASSESSED"
             ],
             "title": "Verdict"
+          },
+          "visibility_verdict": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "UNAVAILABLE",
+                  "ERROR",
+                  "NOT_EVALUATED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility Verdict"
           },
           "metrics": {
             "anyOf": [
@@ -1720,6 +1919,24 @@
             },
             "type": "array",
             "title": "Parent Evaluation Ids",
+            "default": []
+          },
+          "terrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerrainScreenOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parent_terrain_screen_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Parent Terrain Screen Ids",
             "default": []
           }
         },
@@ -3186,6 +3403,131 @@
         ],
         "title": "SiteResult"
       },
+      "SurfaceSlopeOut": {
+        "properties": {
+          "local_slope_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Slope Deg"
+          },
+          "max_local_slope_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Local Slope Deg"
+          },
+          "neighborhood_slope_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Neighborhood Slope Deg"
+          },
+          "local_baseline_m": {
+            "type": "number",
+            "title": "Local Baseline M"
+          },
+          "neighborhood_radius_m": {
+            "type": "number",
+            "title": "Neighborhood Radius M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "local_slope_deg",
+          "max_local_slope_deg",
+          "neighborhood_slope_deg",
+          "local_baseline_m",
+          "neighborhood_radius_m"
+        ],
+        "title": "SurfaceSlopeOut"
+      },
+      "TerrainCheckOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "limit": {
+            "type": "number",
+            "title": "Limit"
+          },
+          "comparison": {
+            "type": "string",
+            "enum": [
+              "<=",
+              ">="
+            ],
+            "title": "Comparison"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_ASSESSED"
+            ],
+            "title": "Status"
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value",
+          "limit",
+          "comparison",
+          "unit",
+          "status",
+          "margin",
+          "reason"
+        ],
+        "title": "TerrainCheckOut"
+      },
       "TerrainPatchOut": {
         "properties": {
           "site_id": {
@@ -3227,6 +3569,399 @@
         ],
         "title": "TerrainPatchOut",
         "description": "Local terrain for the 3D view: heights (m) relative to the site's ground, with curvature.\n\nRow-major `size` by `size` values: row 0 is the north edge, column 0 the west edge, spanning\n\u00b1half_width_m east/north of the site."
+      },
+      "TerrainProvenanceOut": {
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "terrain_dataset_id": {
+            "type": "string",
+            "title": "Terrain Dataset Id"
+          },
+          "terrain_source_url": {
+            "type": "string",
+            "title": "Terrain Source Url"
+          },
+          "terrain_dataset_sha256": {
+            "type": "string",
+            "title": "Terrain Dataset Sha256"
+          },
+          "dem_resolution_m": {
+            "type": "number",
+            "title": "Dem Resolution M"
+          },
+          "coordinate_reference": {
+            "type": "string",
+            "title": "Coordinate Reference"
+          },
+          "lunar_core_version": {
+            "type": "string",
+            "title": "Lunar Core Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "algorithm",
+          "terrain_dataset_id",
+          "terrain_source_url",
+          "terrain_dataset_sha256",
+          "dem_resolution_m",
+          "coordinate_reference",
+          "lunar_core_version"
+        ],
+        "title": "TerrainProvenanceOut"
+      },
+      "TerrainQualityOut": {
+        "properties": {
+          "dem_resolution_m": {
+            "type": "number",
+            "title": "Dem Resolution M"
+          },
+          "sample_spacing_m": {
+            "type": "number",
+            "title": "Sample Spacing M"
+          },
+          "interpolation": {
+            "type": "string",
+            "title": "Interpolation"
+          },
+          "neighborhood_node_count": {
+            "type": "integer",
+            "title": "Neighborhood Node Count"
+          },
+          "valid_node_count": {
+            "type": "integer",
+            "title": "Valid Node Count"
+          },
+          "coverage_fraction": {
+            "type": "number",
+            "title": "Coverage Fraction"
+          },
+          "local_stencil_complete": {
+            "type": "boolean",
+            "title": "Local Stencil Complete"
+          },
+          "vertical_uncertainty": {
+            "type": "string",
+            "const": "NOT_ASSESSED",
+            "title": "Vertical Uncertainty"
+          },
+          "sub_resolution_hazards": {
+            "type": "string",
+            "const": "NOT_ASSESSED",
+            "title": "Sub Resolution Hazards"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dem_resolution_m",
+          "sample_spacing_m",
+          "interpolation",
+          "neighborhood_node_count",
+          "valid_node_count",
+          "coverage_fraction",
+          "local_stencil_complete",
+          "vertical_uncertainty",
+          "sub_resolution_hazards"
+        ],
+        "title": "TerrainQualityOut"
+      },
+      "TerrainRoughnessOut": {
+        "properties": {
+          "rms_residual_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rms Residual M"
+          },
+          "residual_relief_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residual Relief M"
+          },
+          "raw_relief_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Relief M"
+          },
+          "neighborhood_radius_m": {
+            "type": "number",
+            "title": "Neighborhood Radius M"
+          },
+          "detrending": {
+            "type": "string",
+            "title": "Detrending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rms_residual_m",
+          "residual_relief_m",
+          "raw_relief_m",
+          "neighborhood_radius_m",
+          "detrending"
+        ],
+        "title": "TerrainRoughnessOut"
+      },
+      "TerrainScreenConstraints": {
+        "properties": {
+          "neighborhood_radius_m": {
+            "type": "number",
+            "maximum": 500.0,
+            "minimum": 40.0,
+            "title": "Neighborhood Radius M",
+            "default": 100
+          },
+          "max_local_slope_deg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Local Slope Deg"
+          },
+          "max_neighborhood_slope_deg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Neighborhood Slope Deg"
+          },
+          "max_roughness_rms_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Roughness Rms M"
+          },
+          "max_relief_m": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Relief M"
+          },
+          "min_coverage_fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Coverage Fraction",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TerrainScreenConstraints",
+        "description": "LandingZoneScreen limits; a limit left empty is not checked (and never passes)."
+      },
+      "TerrainScreenOut": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "lunar-ops-terrain-screen/1",
+            "title": "Schema Version",
+            "default": "lunar-ops-terrain-screen/1"
+          },
+          "screen_id": {
+            "type": "string",
+            "title": "Screen Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "COMPUTED_UNVERIFIED",
+              "UNAVAILABLE"
+            ],
+            "title": "Status"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_ASSESSED"
+            ],
+            "title": "Verdict"
+          },
+          "east_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "East M"
+          },
+          "north_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "North M"
+          },
+          "latitude_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude Deg"
+          },
+          "longitude_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude Deg"
+          },
+          "constraints": {
+            "$ref": "#/components/schemas/TerrainScreenConstraints"
+          },
+          "slope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SurfaceSlopeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "roughness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerrainRoughnessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerrainQualityOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/TerrainCheckOut"
+            },
+            "type": "array",
+            "title": "Checks",
+            "default": []
+          },
+          "margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin"
+          },
+          "not_assessed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Not Assessed",
+            "default": []
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TerrainProvenanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope_note": {
+            "type": "string",
+            "title": "Scope Note",
+            "default": "Coarse screening on a 20 m interpolated LOLA DEM; not certified landing safety."
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "screen_id",
+          "status",
+          "verdict",
+          "constraints"
+        ],
+        "title": "TerrainScreenOut",
+        "description": "Coarse DEM screening of one location; PASS is not certified landing safety."
       },
       "ValidationError": {
         "properties": {

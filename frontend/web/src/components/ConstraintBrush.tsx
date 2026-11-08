@@ -1,10 +1,11 @@
-import type { ApiClient, BrushDefinition, BrushExecution, BrushPreview, BrushResult, BrushSample, Candidate } from "@clps/api-client";
+import type { ApiClient, BrushDefinition, BrushExecution, BrushPreview, BrushResult, BrushSample, Candidate, TerrainScreenConstraints } from "@clps/api-client";
 import { useEffect, useRef, useState, type ChangeEvent, type JSX, type RefObject } from "react";
 import { describeApiError } from "../lib/apiError.ts";
 import type { BrushOverlay, BrushVerdict, RegionOverlay } from "../lib/brushTypes.ts";
 import { downloadBlob } from "../lib/download.ts";
-import { useExploration, useExplorationStore, type BrushParams, type BrushRegion, type ExplorationStore, type InspectedSample, type RegionPatch } from "../lib/explorationStore.ts";
+import { TERRAIN_PARAM_DEFAULTS, useExploration, useExplorationStore, type BrushParams, type BrushRegion, type ExplorationStore, type InspectedSample, type RegionPatch } from "../lib/explorationStore.ts";
 import type { LocalPoint } from "../lib/roiFrame.ts";
+import { TerrainScreenCard } from "./TerrainScreenCard.tsx";
 
 interface Props {
   apiClient: ApiClient;
@@ -20,7 +21,18 @@ type Pending = { kind: "delete" | "clear"; regionId: string } | null;
 
 export function defaultParams(startUtc: string): BrushParams {
   return { spacing_m: 100, max_points: 16, observer_height_m: 3, start_utc: startUtc, duration_hours: 168, step_minutes: 60,
-    min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all", sampling: "adaptive" };
+    min_sun_pct: 0, min_earth_pct: 0, min_both_pct: 0, max_darkness_hours: "", max_earth_gap_hours: "", retention: "all", sampling: "adaptive",
+    ...TERRAIN_PARAM_DEFAULTS };
+}
+
+function optionalNumber(text: string): number | null { return text.trim() === "" ? null : Number(text); }
+
+/** Terrain constraints of a region, or null when terrain screening is off. */
+export function terrainOf(p: BrushParams): TerrainScreenConstraints | null {
+  if (!p.terrain_enabled) return null;
+  return { neighborhood_radius_m: p.terrain_radius_m, max_local_slope_deg: optionalNumber(p.max_local_slope_deg),
+    max_neighborhood_slope_deg: optionalNumber(p.max_neighborhood_slope_deg), max_roughness_rms_m: optionalNumber(p.max_roughness_rms_m),
+    max_relief_m: optionalNumber(p.max_relief_m), min_coverage_fraction: p.min_coverage_pct / 100 };
 }
 
 export function definitionOf(region: BrushRegion): BrushDefinition {
@@ -29,7 +41,10 @@ export function definitionOf(region: BrushRegion): BrushDefinition {
     start_utc: p.start_utc, duration_hours: p.duration_hours, step_minutes: p.step_minutes, retention: p.retention, sampling: p.sampling,
     constraints: { min_sun_fraction: p.min_sun_pct / 100, min_earth_fraction: p.min_earth_pct / 100, min_simultaneous_fraction: p.min_both_pct / 100,
       max_darkness_hours: p.max_darkness_hours === "" ? null : Number(p.max_darkness_hours),
-      max_earth_gap_hours: p.max_earth_gap_hours === "" ? null : Number(p.max_earth_gap_hours) } };
+      max_earth_gap_hours: p.max_earth_gap_hours === "" ? null : Number(p.max_earth_gap_hours) },
+    terrain: terrainOf(p),
+    // Terrain evidence needs adaptive sampling and terrain limits; otherwise Experiment A applies.
+    evidence: p.terrain_enabled && p.sampling === "adaptive" ? p.evidence : "visibility" };
 }
 
 /** Region edits discard the execution, so an existing snapshot remains the exact definition. */
@@ -131,7 +146,15 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
         min_both_pct: d.constraints.min_simultaneous_fraction * 100,
         max_darkness_hours: d.constraints.max_darkness_hours == null ? "" : String(d.constraints.max_darkness_hours),
         max_earth_gap_hours: d.constraints.max_earth_gap_hours == null ? "" : String(d.constraints.max_earth_gap_hours),
-        retention: d.retention, sampling: d.sampling };
+        retention: d.retention, sampling: d.sampling,
+        terrain_enabled: d.terrain !== null && d.terrain !== undefined,
+        terrain_radius_m: d.terrain?.neighborhood_radius_m ?? TERRAIN_PARAM_DEFAULTS.terrain_radius_m,
+        max_local_slope_deg: d.terrain?.max_local_slope_deg?.toString() ?? "",
+        max_neighborhood_slope_deg: d.terrain?.max_neighborhood_slope_deg?.toString() ?? "",
+        max_roughness_rms_m: d.terrain?.max_roughness_rms_m?.toString() ?? "",
+        max_relief_m: d.terrain?.max_relief_m?.toString() ?? "",
+        min_coverage_pct: (d.terrain?.min_coverage_fraction ?? 1) * 100,
+        evidence: d.evidence };
       const regionId: string = newRegionId();
       store.dispatch({ type: "region-create", id: regionId, params: p });
       store.dispatch({ type: "region-edit", regionId, patch: { vertices: d.polygon, closed: true } });
@@ -209,9 +232,14 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
   function field(key: keyof BrushParams, value: BrushParams[keyof BrushParams]): void {
     if (active !== null) edit(active.id, { params: { ...active.params, [key]: value } });
   }
-  function numberInput(labelText: string, key: "spacing_m" | "max_points" | "observer_height_m" | "duration_hours" | "step_minutes" | "min_sun_pct" | "min_earth_pct" | "min_both_pct", min: string, max: string): JSX.Element {
-    return <label>{labelText}<input type="number" min={min} max={max} value={p?.[key] ?? 0} disabled={locked || active === null}
+  function numberInput(labelText: string, key: "spacing_m" | "max_points" | "observer_height_m" | "duration_hours" | "step_minutes" | "min_sun_pct" | "min_earth_pct" | "min_both_pct" | "terrain_radius_m" | "min_coverage_pct", min: string, max: string, off: boolean = false): JSX.Element {
+    return <label>{labelText}<input type="number" min={min} max={max} value={p?.[key] ?? 0} disabled={locked || active === null || off}
       onChange={(e: ChangeEvent<HTMLInputElement>): void => { field(key, Number(e.target.value)); }} /></label>;
+  }
+  /** Optional limit: an empty field is not checked (and is never treated as passing). */
+  function textNumber(labelText: string, key: "max_local_slope_deg" | "max_neighborhood_slope_deg" | "max_roughness_rms_m" | "max_relief_m", max: string, off: boolean): JSX.Element {
+    return <label>{labelText}<input type="number" min="0" max={max} placeholder="not checked" value={p?.[key] ?? ""} disabled={locked || active === null || off}
+      onChange={(e: ChangeEvent<HTMLInputElement>): void => { field(key, e.target.value); }} /></label>;
   }
 
   return <>
@@ -267,9 +295,20 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
             {numberInput("Minimum simultaneous (%)", "min_both_pct", "0", "100")}
             <label>Max darkness (h, optional)<input type="number" min="0" max="168" value={p.max_darkness_hours} disabled={locked} onChange={(e: ChangeEvent<HTMLInputElement>): void => { field("max_darkness_hours", e.target.value); }} /></label>
             <label>Max Earth gap (h, optional)<input type="number" min="0" max="168" value={p.max_earth_gap_hours} disabled={locked} onChange={(e: ChangeEvent<HTMLInputElement>): void => { field("max_earth_gap_hours", e.target.value); }} /></label>
+            <fieldset className="terrain-fields"><legend>Terrain screen (LOLA 20 m DEM)</legend>
+              <label><input type="checkbox" checked={p.terrain_enabled} disabled={locked} onChange={(e: ChangeEvent<HTMLInputElement>): void => { field("terrain_enabled", e.target.checked); }} /> Apply slope / roughness limits</label>
+              <label>Refinement evidence<select value={p.evidence} disabled={locked || !p.terrain_enabled || p.sampling !== "adaptive"} onChange={(e: ChangeEvent<HTMLSelectElement>): void => { field("evidence", e.target.value === "visibility_terrain" ? "visibility_terrain" : "visibility"); }}>
+                <option value="visibility">A · Visibility only</option><option value="visibility_terrain">B · Visibility + terrain</option></select></label>
+              {numberInput("Neighbourhood radius (m)", "terrain_radius_m", "40", "500", !p.terrain_enabled)}
+              {textNumber("Max local slope (°)", "max_local_slope_deg", "90", !p.terrain_enabled)}
+              {textNumber("Max plane slope (°)", "max_neighborhood_slope_deg", "90", !p.terrain_enabled)}
+              {textNumber("Max RMS roughness (m)", "max_roughness_rms_m", "1000", !p.terrain_enabled)}
+              {textNumber("Max detrended relief (m)", "max_relief_m", "5000", !p.terrain_enabled)}
+              {numberInput("Min DEM coverage (%)", "min_coverage_pct", "0", "100", !p.terrain_enabled)}
+            </fieldset>
             <label>Persist results<select value={p.retention} disabled={locked} onChange={(e: ChangeEvent<HTMLSelectElement>): void => { field("retention", e.target.value === "passing" ? "passing" : "all"); }}><option value="all">All valid locations (default)</option><option value="passing">Passing locations only</option></select></label>
           </div>
-          <p className="muted small">Locations use a grid aligned to the ROI origin; adaptive execution selects later locations using computed evidence. Boundary tolerance 0.0000001 m. Maximum 64 locations and 8,192 location-time samples. Fractions count stored samples; gaps are sampled estimates. Editing a region discards its preview and results view, never persisted records.</p>
+          <p className="muted small">Locations use a grid aligned to the ROI origin; adaptive execution selects later locations using computed evidence. Boundary tolerance 0.0000001 m. Maximum 64 locations and 8,192 location-time samples. Fractions count stored samples; gaps are sampled estimates. Editing a region discards its preview and results view, never persisted records. The terrain screen is coarse DEM screening (20 m interpolated LOLA grid), not certified landing safety; DEM uncertainty and hazards below the DEM resolution are reported as not assessed. Under evidence B, lattice points failing the terrain screen are never evaluated and terrain metrics guide later locations.</p>
           {mode === "edit" && <div className="brush-vertices">{active.vertices.map((point, index): JSX.Element => <button type="button" key={index} disabled={locked}
             onClick={(): void => { edit(active.id, { vertices: active.vertices.filter((_, i): boolean => i !== index), closed: active.vertices.length > 3 }); if (active.vertices.length <= 3) store.dispatch({ type: "brush-mode", mode: "draw" }); }}>
             Remove vertex {index + 1} ({point.east_m.toFixed(0)}, {point.north_m.toFixed(0)})</button>)}</div>}
@@ -278,11 +317,11 @@ export function ConstraintBrush({ apiClient, defaultTimeUtc, onCandidatesCreated
           confirmed={confirmed} locked={locked} evaluated={execution !== null} onConfirm={setConfirmed} onExecute={(): void => { void executeRegion(active); }} />}
         {panel === "results" && execution !== null && <div className="brush-results">
           <div className="brush-results-head"><h4>Experiment results · {regionName(active)}</h4>
-          <span>{execution.results.length} requested · {execution.results.filter((r): boolean => r.persisted).length} persisted candidates · {execution.results.filter((r): boolean => r.evaluation?.status === "COMPUTED_UNVERIFIED" || r.evaluation?.status === "VALIDATED").length} scientifically evaluated · {count("PASS")} pass · {count("FAIL")} fail · {count("UNAVAILABLE")} unavailable · {count("ERROR")} error</span>
+          <span>{execution.results.length} requested · {execution.results.filter((r): boolean => r.persisted).length} persisted candidates · {execution.results.filter((r): boolean => r.evaluation?.status === "COMPUTED_UNVERIFIED" || r.evaluation?.status === "VALIDATED").length} scientifically evaluated · {count("PASS")} pass · {count("FAIL")} fail · {count("NOT_ASSESSED")} not assessed · {count("UNAVAILABLE")} unavailable · {count("ERROR")} error{execution.refinement_policy !== null && execution.refinement_policy !== undefined ? ` · policy ${execution.refinement_policy}` : ""}</span>
           <button type="button" onClick={(): void => { downloadBlob(`lunar-ops-brush-${regionName(active).toLowerCase().replace(" ", "-")}.json`, new Blob([JSON.stringify({ region: { id: active.id, name: regionName(active) }, ...execution }, null, 2)], { type: "application/json" })); }}>Export experiment JSON</button></div>
           <p className="muted small">Non-dominated compares passing results across Sun, Earth and simultaneous fractions and both longest gaps; it is not a ranking. Geometric visibility, not power or communications performance; not independently validated. To retry, preview again. This results view lasts for the browser session; export it to keep it. {execution.experiment_id !== null && execution.experiment_id !== undefined ? `Saved experiment: ${execution.experiment_id}` : ""}</p>
           <ol aria-label="Brush results">{execution.results.map((item, index): JSX.Element => <li key={`${index.toString()}:${item.sample.east_m.toString()}:${item.sample.north_m.toString()}`}><button type="button" onClick={(): void => { inspect(active.id, index); }} aria-pressed={inspected?.regionId === active.id && inspected.index === index}>
-            {item.verdict} · {item.sample.east_m.toFixed(0)} m E, {item.sample.north_m.toFixed(0)} m N · {item.sample.iteration === 0 ? "initial" : `iteration ${item.sample.iteration.toString()}`} {item.pareto === true ? "· non-dominated" : ""} {item.persisted ? "· saved" : "· not saved"}</button></li>)}</ol>
+            {item.verdict}{item.sample.terrain !== null && item.sample.terrain !== undefined ? ` (visibility ${item.visibility_verdict ?? "—"}, terrain ${item.sample.terrain.verdict})` : ""} · {item.sample.east_m.toFixed(0)} m E, {item.sample.north_m.toFixed(0)} m N · {item.sample.iteration === 0 ? "initial" : `iteration ${item.sample.iteration.toString()}`} {item.pareto === true ? "· non-dominated" : ""} {item.persisted ? "· saved" : "· not saved"}</button></li>)}</ol>
           {outcome !== undefined && <ResultDetail outcome={outcome} />}
         </div>}
       </div>}
@@ -294,13 +333,14 @@ function RunPanel({ preview, retention, confirmed, locked, evaluated, onConfirm,
   confirmed: boolean; locked: boolean; evaluated: boolean; onConfirm: (value: boolean) => void; onExecute: () => void }): JSX.Element | null {
   if (preview === null) return null;
   return <div className="brush-preview" role="status"><strong>{preview.samples.length} locations · {preview.ready_count} DEM-ready</strong> · {preview.temporal_samples_per_point} times per location · up to {preview.estimated_total_samples} location-time samples
+    {preview.terrain_pool_size !== null && preview.terrain_pool_size !== undefined && <p data-testid="terrain-prescreen">Terrain pre-screen (evidence B): {preview.terrain_excluded_count?.toString() ?? "0"} of {preview.terrain_pool_size.toString()} lattice points fail the DEM terrain screen and are never evaluated.</p>}
     {preview.definition.sampling === "adaptive" && <p>These are initial seeds. After confirmation, computed results select further locations, up to {preview.definition.max_points} total attempts. Later locations and their persistence counts cannot be known at preview time. One final attempt may refine an observed visibility transition within the same interval. A completed adaptive experiment stores all evaluation evidence, including failed results, even when only passing candidates are retained.</p>}
     <p>{retention === "all" ? `At preview: ${preview.new_count.toString()} new C0 records and ${preview.existing_count.toString()} existing C0 records to reuse.` : `At preview: at most ${preview.new_count.toString()} new C0 records; up to ${preview.existing_count.toString()} existing C0 records may be reused if they pass.`} Counts may change if another session creates a matching candidate. An invalid DEM point is reported and skipped.</p>
     <details><summary>Inspect all preview locations</summary><ol>{preview.samples.map((point): JSX.Element =>
       <li key={`${point.east_m.toString()}:${point.north_m.toString()}`}>{point.status} · {point.east_m.toFixed(0)} m E, {point.north_m.toFixed(0)} m N · {point.latitude_deg?.toFixed(6) ?? "—"}°, {point.longitude_deg?.toFixed(6) ?? "—"}°E · DEM {point.elevation_m?.toFixed(1) ?? "unavailable"} m · {point.already_persisted ? "existing C0" : "not saved"} {point.error ?? ""}</li>)}</ol></details>
     <label><input type="checkbox" checked={confirmed} disabled={locked || evaluated} onChange={(e: ChangeEvent<HTMLInputElement>): void => { onConfirm(e.target.checked); }} /> I approve evaluating and persisting this preview and any budgeted adaptive locations.</label>{" "}
     <button type="button" className="primary" disabled={locked || !confirmed || preview.ready_count === 0 || evaluated} onClick={onExecute}>Evaluate region &amp; create candidates</button>
-    <p className="brush-legend small">● <span className="brush-proposed">Proposed</span> · <span className="brush-pass">● Pass</span> · <span className="brush-fail">● Fail</span> · <span className="brush-unavailable">● Unavailable</span> · <span className="brush-error">● Error</span></p>
+    <p className="brush-legend small">● <span className="brush-proposed">Proposed</span> · <span className="brush-pass">● Pass</span> · <span className="brush-fail">● Fail</span> · <span className="brush-not-assessed">● Not assessed</span> · <span className="brush-unavailable">● Unavailable</span> · <span className="brush-error">● Error</span></p>
   </div>;
 }
 
@@ -309,6 +349,9 @@ function ResultDetail({ outcome }: { outcome: BrushResult }): JSX.Element {
     <p>{outcome.sample.iteration === 0 ? "Initial candidate" : `Refinement iteration ${outcome.sample.iteration.toString()}`} · {outcome.sample.reason ?? "Grid sample"}</p>
     {outcome.sample.priority && <p>Selection priority: {outcome.sample.priority}</p>}
     {outcome.sample.parent_evaluation_ids.length > 0 && <p className="mono-wrap">Parent candidates: {outcome.sample.parent_candidate_ids.join(", ")}<br />Parent evaluations: {outcome.sample.parent_evaluation_ids.join(", ")}</p>}
+    {outcome.sample.parent_terrain_screen_ids.length > 0 && <p className="mono-wrap">Terrain evidence: {outcome.sample.parent_terrain_screen_ids.join(", ")}</p>}
+    {outcome.visibility_verdict !== null && outcome.visibility_verdict !== undefined && outcome.visibility_verdict !== outcome.verdict && <p>Visibility verdict {outcome.visibility_verdict}; combined verdict {outcome.verdict} after the terrain screen.</p>}
+    {outcome.sample.terrain !== null && outcome.sample.terrain !== undefined && <TerrainScreenCard screen={outcome.sample.terrain} />}
     <p>Position {outcome.sample.latitude_deg?.toFixed(6) ?? "—"}°, {outcome.sample.longitude_deg?.toFixed(6) ?? "—"}°E · elevation {outcome.sample.elevation_m?.toFixed(1) ?? "—"} m · observer {outcome.candidate?.observer_height_m ?? outcome.evaluation?.candidate.observer_height_m ?? "—"} m</p>
     {outcome.metrics !== null && outcome.metrics !== undefined && <p>Sun {(outcome.metrics.sun_fraction * 100).toFixed(1)}% · Earth {(outcome.metrics.earth_fraction * 100).toFixed(1)}% · both {(outcome.metrics.simultaneous_fraction * 100).toFixed(1)}% · longest darkness {outcome.metrics.longest_darkness_hours.toFixed(1)} h · Earth gap {outcome.metrics.longest_earth_gap_hours.toFixed(1)} h</p>}
     <p className="mono-wrap">Candidate {outcome.candidate?.candidate_id ?? "not persisted"}<br />Evaluation {outcome.evaluation?.evaluation_id ?? "not available"}</p>

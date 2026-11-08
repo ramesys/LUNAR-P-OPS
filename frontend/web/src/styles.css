@@ -1451,3 +1451,52 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   /* The header links reach every section on desktop; the floating shortcut would cover content. */
   .more-tools { display: none; }
 }
+
+/* Terrain screen (LandingZoneScreen): Region Brush fields, result card and Landing Graph panel. */
+.brush-not-assessed { color: #e7c75f; }
+.brush-fields .terrain-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+.brush-fields .terrain-fields legend { padding: 0 4px; font-size: 0.74rem; color: var(--text-secondary); }
+.brush-fields .terrain-fields label:first-of-type { flex-direction: row; align-items: center; gap: 6px; }
+.brush-fields .terrain-fields label:first-of-type input { width: auto; }
+.terrain-card {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+}
+.terrain-card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.terrain-verdict {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.terrain-verdict.verdict-pass { background: rgba(94, 227, 163, 0.18); color: #5ee3a3; }
+.terrain-verdict.verdict-fail { background: rgba(255, 133, 110, 0.18); color: #ff856e; }
+.terrain-verdict.verdict-not_assessed { background: rgba(231, 199, 95, 0.18); color: #e7c75f; }
+.terrain-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 4px 10px;
+  margin: 6px 0;
+}
+.terrain-metrics div { display: flex; flex-direction: column; }
+.terrain-metrics dt { font-size: 0.7rem; color: var(--text-secondary); }
+.terrain-metrics dd { margin: 0; font-variant-numeric: tabular-nums; }
+.terrain-checks { margin: 4px 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.terrain-card details ul { margin: 4px 0; padding-left: 16px; }
+.landing-terrain { margin-top: 8px; }
+.landing-terrain .terrain-limits { font-size: 0.74rem; }

@@ -210,7 +210,7 @@ function drawMarkers(parts: SceneParts, terrain: RoiTerrain, candidates: Candida
 
 
 const BRUSH_COLORS: Record<BrushVerdict, string> = {
-  PASS: "#5ee3a3", FAIL: "#ff856e", UNAVAILABLE: "#bca8ff", ERROR: "#ff4874", NOT_EVALUATED: "#72d8ed",
+  PASS: "#5ee3a3", FAIL: "#ff856e", UNAVAILABLE: "#bca8ff", ERROR: "#ff4874", NOT_EVALUATED: "#72d8ed", NOT_ASSESSED: "#e7c75f",
 };
 
 /** Region geometry uses the active DEM surface for display; all plan coordinates stay in ROI metres. */

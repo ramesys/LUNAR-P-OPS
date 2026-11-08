@@ -1,7 +1,7 @@
 import type { LocalPoint } from "./roiFrame.ts";
 
 export type BrushMode = "off" | "draw" | "edit";
-export type BrushVerdict = "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED";
+export type BrushVerdict = "PASS" | "FAIL" | "UNAVAILABLE" | "ERROR" | "NOT_EVALUATED" | "NOT_ASSESSED";
 
 /** One drawn region as the 3D view shows it; plan coordinates are ROI-local projected metres. */
 export interface RegionOverlay {

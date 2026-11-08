@@ -50,7 +50,19 @@ export interface BrushParams {
   spacing_m: number; max_points: number; observer_height_m: number; start_utc: string;
   duration_hours: number; step_minutes: number; min_sun_pct: number; min_earth_pct: number; min_both_pct: number;
   max_darkness_hours: string; max_earth_gap_hours: string; retention: "all" | "passing"; sampling: "adaptive" | "grid";
+  /** LandingZoneScreen limits; empty strings are unconfigured (never treated as passing). */
+  terrain_enabled: boolean; terrain_radius_m: number; max_local_slope_deg: string; max_neighborhood_slope_deg: string;
+  max_roughness_rms_m: string; max_relief_m: string; min_coverage_pct: number;
+  /** Adaptive refinement evidence: Experiment A (visibility) or B (visibility + terrain). */
+  evidence: "visibility" | "visibility_terrain";
 }
+
+/** Defaults for terrain fields, also applied to regions stored before terrain screening existed. */
+export const TERRAIN_PARAM_DEFAULTS: Pick<BrushParams, "terrain_enabled" | "terrain_radius_m" | "max_local_slope_deg" | "max_neighborhood_slope_deg"
+  | "max_roughness_rms_m" | "max_relief_m" | "min_coverage_pct" | "evidence"> = {
+  terrain_enabled: false, terrain_radius_m: 100, max_local_slope_deg: "12", max_neighborhood_slope_deg: "12",
+  max_roughness_rms_m: "1.5", max_relief_m: "", min_coverage_pct: 100, evidence: "visibility",
+};
 
 export interface BrushRegion {
   id: string;

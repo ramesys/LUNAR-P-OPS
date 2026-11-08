@@ -1,4 +1,4 @@
-import type { Candidate, CandidateRef, ScientificEvaluation } from "@clps/api-client";
+import type { Candidate, CandidateRef, ScientificEvaluation, TerrainScreen, TerrainScreenConstraints } from "@clps/api-client";
 import { ClassicPreset, NodeEditor, type GetSchemes } from "rete";
 
 export interface ScientificNodeContract {
@@ -49,10 +49,11 @@ export function evaluationRef(evaluation: ScientificEvaluation, origin: Evaluati
 }
 
 /** Sockets are shared objects: a connection is accepted only between identical socket types. */
-export const SOCKETS: { candidateRef: ClassicPreset.Socket; evaluationRef: ClassicPreset.Socket; preview: ClassicPreset.Socket } = {
+export const SOCKETS: { candidateRef: ClassicPreset.Socket; evaluationRef: ClassicPreset.Socket; preview: ClassicPreset.Socket; terrainScreen: ClassicPreset.Socket } = {
   candidateRef: new ClassicPreset.Socket("CandidateRef"),
   evaluationRef: new ClassicPreset.Socket("EvaluationRef"),
   preview: new ClassicPreset.Socket("CandidatePreview"),
+  terrainScreen: new ClassicPreset.Socket("TerrainScreen"),
 };
 
 /**
@@ -322,4 +323,85 @@ export async function addScientificNodes(editor: NodeEditor<LandingScheme>, cand
     await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(source, output, target, input));
   }
   return { nodes, compute, result, computeStatus, nextRun, display, interval, cursor };
+}
+
+
+/** Backend call used by the terrain node; the Python service computes every terrain metric. */
+export interface TerrainApi {
+  screenTerrain: (candidateId: string, constraints: TerrainScreenConstraints) => Promise<TerrainScreen>;
+}
+
+/** Screening limits used when no Region Brush terrain constraints apply to the candidate. */
+export const DEFAULT_TERRAIN_CONSTRAINTS: TerrainScreenConstraints = {
+  neighborhood_radius_m: 100, max_local_slope_deg: 12, max_neighborhood_slope_deg: 12, max_roughness_rms_m: 1.5,
+  max_relief_m: null, min_coverage_fraction: 1,
+};
+
+function constraintsKey(candidateId: string, constraints: TerrainScreenConstraints): string {
+  return `${candidateId}|${JSON.stringify(constraints, Object.keys(constraints).sort())}`;
+}
+
+/**
+ * Receives a CandidateRef and outputs the DEM terrain screen (slope, roughness, coverage and
+ * LandingZoneScreen verdict) at that candidate. Deterministic and not persisted; memoised per
+ * candidate and constraint set so dataflow resets never repeat a request.
+ */
+export class TerrainScreenNode extends LandingNode {
+  constraints: TerrainScreenConstraints = { ...DEFAULT_TERRAIN_CONSTRAINTS };
+  backendCalls: number = 0;
+  private readonly memo: Map<string, Promise<TerrainScreen>> = new Map<string, Promise<TerrainScreen>>();
+  private readonly api: TerrainApi;
+  constructor(api: TerrainApi, contract: ScientificNodeContract) {
+    super("Terrain screen", null, contract);
+    this.api = api;
+  }
+  setConstraints(constraints: TerrainScreenConstraints): void { this.constraints = { ...constraints }; }
+  override data(inputs: Record<string, unknown[]>): Promise<Record<string, unknown>> {
+    const ref: unknown = inputs["candidate_ref"]?.[0];
+    if (!isCandidateRef(ref)) return Promise.reject(new Error("No CandidateRef received: connect Candidate.candidate_ref to Terrain screen."));
+    const key: string = constraintsKey(ref.candidate_id, this.constraints);
+    let pending: Promise<TerrainScreen> | undefined = this.memo.get(key);
+    if (pending === undefined) {
+      this.backendCalls++;
+      pending = this.api.screenTerrain(ref.candidate_id, { ...this.constraints });
+      this.memo.set(key, pending);
+      pending.catch((): void => { this.memo.delete(key); });
+    }
+    return pending.then((terrain_screen: TerrainScreen): Record<string, unknown> => ({ terrain_screen }));
+  }
+}
+
+export interface TerrainNodes { node: TerrainScreenNode; verdict: InfoControl; metrics: InfoControl }
+
+export async function addTerrainNode(editor: NodeEditor<LandingScheme>, candidateNode: LandingNode, candidate: Candidate,
+  api: TerrainApi, active: () => boolean = (): boolean => true): Promise<TerrainNodes> {
+  const node: TerrainScreenNode = new TerrainScreenNode(api, {
+    input_types: { candidate_ref: "CandidateRef" }, output_types: { terrain_screen: "TerrainScreen (not persisted)" },
+    units: "degrees, metres, fraction", reference_frame: candidate.coordinate_reference,
+    data_sources: [candidate.terrain_source_url, `Local window SHA-256: ${candidate.terrain_dataset_sha256}`],
+    algorithm: "landing-terrain-screen-v1 (SurfaceSlope, TerrainRoughness, TerrainQuality, LandingZoneScreen; Python)",
+    execution_status: "pending", validation_status: "unverified", errors: [],
+    warnings: ["Coarse 20 m DEM screening, not certified landing safety.", "DEM uncertainty and sub-resolution hazards: NOT_ASSESSED."],
+  });
+  node.addInput("candidate_ref", new ClassicPreset.Input(SOCKETS.candidateRef, "candidate_ref: CandidateRef"));
+  node.addOutput("terrain_screen", new ClassicPreset.Output(SOCKETS.terrainScreen, "terrain_screen: TerrainScreen"));
+  const verdict: InfoControl = new InfoControl("Terrain: waiting for candidate", "status");
+  const metrics: InfoControl = new InfoControl("slope —, roughness —", "info");
+  node.addControl("verdict", verdict);
+  node.addControl("metrics", metrics);
+  if (!active()) throw new Error("Graph setup cancelled");
+  await editor.addNode(node);
+  if (!active()) throw new Error("Graph setup cancelled");
+  await editor.addConnection(new ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>(candidateNode, "candidate_ref", node, "candidate_ref"));
+  return { node, verdict, metrics };
+}
+
+/** One-line node summaries of a terrain screen (verdict, then slope and roughness). */
+export function describeTerrain(screen: TerrainScreen): { verdict: string; metrics: string } {
+  const fmt: (v: number | null | undefined, d: number, u: string) => string = (v: number | null | undefined, d: number, u: string): string =>
+    v === null || v === undefined ? "not assessed" : `${v.toFixed(d)}${u}`;
+  return {
+    verdict: `Terrain ${screen.verdict.replace("_", " ")} · ${screen.status}`,
+    metrics: `slope ${fmt(screen.slope?.local_slope_deg, 1, "°")} (plane ${fmt(screen.slope?.neighborhood_slope_deg, 1, "°")}) · RMS ${fmt(screen.roughness?.rms_residual_m, 2, " m")}`,
+  };
 }
