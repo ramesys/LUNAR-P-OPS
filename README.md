@@ -1,10 +1,10 @@
-# LUNA-P/OPS
+# LUNAR-P/OPS
 
 **A spatial–temporal parametric environment for exploring lunar south-pole landing-site candidates.
 It is built on NASA LOLA terrain and NASA/NAIF SPICE geometry, keeps a provenance-tracked record of
 every result, and adds an optional AI-assisted step that interprets the evidence.**
 
-LUNA-P/OPS was developed for the **NASA Space Apps Challenge 2026** (*Lunar Landing Site
+LUNAR-P/OPS was developed for the **NASA Space Apps Challenge 2026** (*Lunar Landing Site
 Navigator*). It extends the MIT-licensed
 [CLPS Lunar Mission Browser](https://github.com/EmanuelAbasto/CLPS-Lunar-Mission-Browser) by
 Emanuel Abasto (see [Credits](#credits-sources-and-license)). The original catalog comparison is
